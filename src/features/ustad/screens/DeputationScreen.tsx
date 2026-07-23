@@ -5,15 +5,15 @@
 import React, { useState } from 'react';
 import {
   ArrowRightLeft, Plus, X, Trash2, CheckCircle2, XCircle,
-  Users, Calendar, AlertTriangle, Loader2, TrendingUp, TrendingDown,
-  ArrowDown, ArrowUp, Building2, Phone,
+  AlertTriangle, Loader2,
+  ArrowDown, ArrowUp,
 } from 'lucide-react';
 import { useDeputation } from '../hooks/useDeputation';
 import { useStaff } from '../hooks/useStaff';
 import {
   DeputationRecord, DeputationFormData, DEFAULT_DEPUTATION_FORM,
   DEPUTATION_STATUS_COLORS, DEPUTATION_STATUS_LABELS,
-  DEPUTATION_PURPOSES, DIRECTION_LABELS,
+  DEPUTATION_PURPOSES,
 } from '../types/deputation.types';
 import { COMPANIES } from '../types/staff.types';
 import FormModal from '../components/shared/FormModal';
@@ -22,7 +22,7 @@ import ConfirmDialog from '../components/shared/ConfirmDialog';
 const DeputationScreen: React.FC = () => {
   const {
     deputations, summary, loading, submitting, error, hasBatch,
-    handleAdd, handleMarkReturned, handleCancel, handleDelete, clearError,
+    handleAdd, handleMarkReturned, handleDelete, clearError,
   } = useDeputation();
 
   const { staffList } = useStaff();

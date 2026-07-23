@@ -2,10 +2,10 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  UserX, Plus, Save, X, Search, Calendar, Filter,
-  CheckCircle2, AlertCircle, Loader2, Users, RefreshCw,
-  ChevronDown, ChevronUp, BarChart3, Clock, Heart,
-  Layers, Eye, Trash2, Edit3
+  UserX, Plus, Save, X, Search,
+  CheckCircle2, AlertCircle, Loader2,
+  BarChart3,
+  Layers, Trash2, Edit3
 } from 'lucide-react';
 import {
   collection, addDoc, getDocs, updateDoc, deleteDoc,
@@ -248,7 +248,6 @@ export const AbsentManagement: React.FC = () => {
 
   // ── Analytics ──
   const activeAbsent  = records.filter(r => r.status === 'Active');
-  const totalRecords  = records.length;
   const typeWiseCount = ABSENT_TYPES.map(t => ({
     ...t,
     active: records.filter(r => r.type === t.value && r.status === 'Active').length,

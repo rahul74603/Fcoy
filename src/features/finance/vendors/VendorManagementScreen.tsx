@@ -1,22 +1,22 @@
 // D:\ALL PROJECTS\BSF COYs\frontend\src\features\finance\vendors\VendorManagementScreen.tsx
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Plus, X, Loader2, CheckCircle2, AlertTriangle,
   RefreshCw, Trash2, Edit2, Check, Eye, Building2,
-  ShoppingCart, IndianRupee, Package, ChevronDown,
-  ChevronUp, Phone, MapPin, Tag, Filter, Search,
-  Clock, TrendingUp, TrendingDown, Wallet, FileText,
+  ShoppingCart,
+  Phone, Tag, Search,
+  Clock, FileText,
   Upload
 } from 'lucide-react';
 import {
   collection, addDoc, getDocs, doc, updateDoc,
-  deleteDoc, serverTimestamp, query, orderBy, where
+  serverTimestamp
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { useAuth } from '../../../contexts/AuthContext';
 import {
-  formatCurrency, formatDate, formatDateTime,
+  formatCurrency, formatDateTime,
   processBillFile, FIXED_MESS_CATEGORIES,
   type MessCategory
 } from '../shared/utils';
@@ -44,7 +44,6 @@ const VendorCard: React.FC<{
   const totalAmount   = vendorEntries.reduce((s, e) => s + e.totalAmount, 0);
   const totalPaid     = vendorEntries.reduce((s, e) => s + e.paidAmount,  0);
   const totalDue      = vendorEntries.reduce((s, e) => s + e.dueAmount,   0);
-  const pendingCount  = vendorEntries.filter(e => e.status !== 'Paid').length;
 
   return (
     <div className={`bg-white border-2 rounded-xl shadow-sm hover:shadow-md transition-all ${
@@ -156,7 +155,6 @@ export const VendorManagementScreen: React.FC = () => {
   const [addEntryVendor,  setAddEntryVendor]  = useState<Vendor | null>(null);
   const [historyVendor,   setHistoryVendor]   = useState<Vendor | null>(null);
   const [previewBill,     setPreviewBill]     = useState<BillAttachment | null>(null);
-  const [uploadingEntry,  setUploadingEntry]  = useState<VendorEntry | null>(null);
 
   // ── VENDOR FORM ──
   const [vName,    setVName]    = useState('');
@@ -174,9 +172,8 @@ export const VendorManagementScreen: React.FC = () => {
   const [entryLoading, setEntryLoading] = useState(false);
 
   // ── BILL UPLOAD ──
-  const [billFiles,   setBillFiles]   = useState<File[]>([]);
+  const [, setBillFiles] = useState<File[]>([]);
   const [billUploading, setBillUploading] = useState(false);
-  const billInputRef = useRef<HTMLInputElement>(null);
 
   // ─────────────────────────────────────────
   // ALL CATEGORIES (fixed + custom)

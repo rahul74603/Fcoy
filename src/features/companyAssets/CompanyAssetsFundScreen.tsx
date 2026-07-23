@@ -3,11 +3,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Wallet, Plus, Loader2, X, CheckCircle2, AlertTriangle,
-  RefreshCw, Users, TrendingUp, TrendingDown, Info, Trash2,
+  RefreshCw, TrendingUp, TrendingDown, Info, Trash2,
   Filter, ArrowDownToLine, ArrowUpFromLine, Calculator,
-  FileText, Building2, IndianRupee, Receipt, Package,
-  ChevronDown, ChevronUp, ShoppingBag, ShoppingCart, Clock, Upload,
-  Landmark, Shield, Eye, Archive, Phone, Tag, ArrowRightLeft,
+  Building2, Receipt,
+  ShoppingCart,
+  Landmark, Shield, Archive, Tag, ArrowRightLeft,
   Boxes
 } from 'lucide-react';
 
@@ -30,9 +30,7 @@ import type { PaymentMode } from '../shared/PaymentModeSelector';
 import {
   formatCurrency,
   formatDate,
-  processBillFile,
-  FIXED_MESS_CATEGORIES,
-  type MessCategory
+  processBillFile
 } from '../finance/shared/utils';
 
 import { BILL_STATUS_CONFIG } from '../finance/shared/constants';
@@ -399,7 +397,6 @@ export const CompanyAssetsFundScreen: React.FC = () => {
   const activeAssets   = expenses.filter(e => e.assetStatus === 'Active').reduce((s, e) => s + e.quantity, 0);
   const damagedAssets  = expenses.filter(e => e.assetStatus === 'Damaged').reduce((s, e) => s + e.quantity, 0);
   const disposedAssets = expenses.filter(e => e.assetStatus === 'Disposed').reduce((s, e) => s + e.quantity, 0);
-  const pendingBills   = expenses.filter(e => e.billStatus === 'Pending').length;
 
   const veTotal = veItems.reduce((s, i) => s + i.total, 0);
 

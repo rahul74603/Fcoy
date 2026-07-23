@@ -10,7 +10,7 @@ import {
   PieChart, Menu,
   Bot, Sparkles,
   UserCog, ClipboardList,
-  ArrowRightLeft, Database,
+  ArrowRightLeft,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBatch } from '../../contexts/BatchContext';
@@ -539,27 +539,6 @@ export const Sidebar = () => {
 
                 {/* Daily Operations */}
                 <NavGroup
-                  title="Daily Operations"
-                  icon={ClipboardList}
-                  menuKey="clerkStaffOps"
-                >
-                  <SubItem title="🆕 Training Schedule" path="/training-schedule" dot="bg-blue-400" />
-                  <SubItem title="Mark Attendance" path="/staff-attendance" dot="bg-green-400" />
-                  <SubItem title="Leave Management" path="/staff-leave" dot="bg-yellow-400" />
-                  <SubItem title="Duty Management" path="/duty-management" dot="bg-amber-400" />
-                </NavGroup>
-                <NavGroup
-                  title="Daily Operations"
-                  icon={ClipboardList}
-                  menuKey="clerkStaffOps"
-                >
-                  <SubItem title="📊 Batch Progress" path="/batch-progress" dot="bg-purple-500" />
-                  <SubItem title="🆕 Training Schedule" path="/training-schedule" dot="bg-blue-400" />
-                  <SubItem title="Mark Attendance" path="/staff-attendance" dot="bg-green-400" />
-                  <SubItem title="Leave Management" path="/staff-leave" dot="bg-yellow-400" />
-                  <SubItem title="Duty Management" path="/duty-management" dot="bg-amber-400" />
-                </NavGroup>
-                                <NavGroup
                   title="Daily Operations"
                   icon={ClipboardList}
                   menuKey="clerkStaffOps"

@@ -328,8 +328,6 @@ export const TraineeProfileScreen = () => {
     hasBatch,
     searchTrainee,
     setTrainee:   setSearchedTrainee,
-    setTraineeId: setSearchedTraineeId,
-    setError:     setSearchError,
   } = useTraineeSearch();
 
   const [searchQuery, setSearchQuery] = useState('');

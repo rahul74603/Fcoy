@@ -11,7 +11,6 @@ import {
   doc,
   serverTimestamp,
   limit,
-  orderBy,
 } from "firebase/firestore";
 import { db } from "../../../config/firebase";
 import type { AIResponse } from "../api/aiAgent.api";
@@ -234,25 +233,31 @@ async function fetchAbsentList(
     const targetDate =
       !filters.date || filters.date === "TODAY" ? today : filters.date;
 
-    // ── Attendance collection se absent fetch karo ──
+    // ── App schema: AbsentManagement absentRecords collection use karta hai ──
     const absentQuery = query(
-      collection(db, "attendance"),           // ← apna collection name
+      collection(db, "absentRecords"),
       where("batchId", "==", batchId),
-      where("date", "==", targetDate),
-      where("status", "==", "A")              // A = Absent
+      where("status", "==", "Active"),
+      where("type", "==", "A")
     );
     const snap = await getDocs(absentQuery);
 
-    if (snap.empty) {
+    let records = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() })) as any[];
+
+    records = records.filter((r) => {
+      const from = r.fromDate || targetDate;
+      const to = r.toDate || from;
+      return from <= targetDate && targetDate <= to;
+    });
+
+    if (records.length === 0) {
       return {
         success: true,
         message: `✅ ${targetDate} ko koi absent nahi`,
         details: "Sab present hain!",
       };
     }
-
-    const records = snap.docs
-      .map((d) => ({ id: d.id, ...d.data() })) as any[];
 
     records.sort((a, b) => parseInt(a.chestNo) - parseInt(b.chestNo));
 
@@ -285,24 +290,31 @@ async function fetchLeaveList(
   filters: { leaveType?: string; date?: string }
 ): Promise<ActionResult> {
   try {
-    const conditions: any[] = [where("batchId", "==", batchId)];
+    const conditions: any[] = [
+      where("batchId", "==", batchId),
+      where("status", "==", "Active"),
+      where("type", "==", "L"),
+    ];
 
-    if (filters.leaveType) {
-      conditions.push(where("leaveType", "==", filters.leaveType));
-    }
-
-    const leaveQuery = query(collection(db, "leaves"), ...conditions);
+    const leaveQuery = query(collection(db, "absentRecords"), ...conditions);
     const snap = await getDocs(leaveQuery);
 
-    if (snap.empty) {
+    let records = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() })) as any[];
+
+    if (filters.leaveType) {
+      const leaveType = filters.leaveType.toLowerCase();
+      records = records.filter((r) =>
+        String(r.leaveType || r.reason || "").toLowerCase().includes(leaveType)
+      );
+    }
+
+    if (records.length === 0) {
       return {
         success: true,
         message: `📭 Koi ${filters.leaveType || ""} leave record nahi mila`,
       };
     }
-
-    const records = snap.docs
-      .map((d) => ({ id: d.id, ...d.data() })) as any[];
 
     records.sort((a, b) => parseInt(a.chestNo) - parseInt(b.chestNo));
 
@@ -521,23 +533,34 @@ export async function executeAction(
         };
       }
 
+      const batch = await getActiveBatch();
       const trainee = await findTraineeByChest(aiResponse.chestNo);
       const traineeName = trainee?.name || `Chest #${aiResponse.chestNo}`;
       const traineeId   = trainee?.id   || "";
       const today       = new Date().toISOString().split("T")[0];
 
-      await addDoc(collection(db, "leaves"), {
-        chestNo:     String(aiResponse.chestNo),
-        traineeName: traineeName,
+      await addDoc(collection(db, "absentRecords"), {
+        batchId:     batch.id,
         traineeId:   traineeId,
+        traineeName: traineeName,
+        chestNo:     String(aiResponse.chestNo),
+        regNo:       trainee?.regNo || "",
+        platoon:     trainee?.platoon || "",
+        type:        "L",
         reason:      aiResponse.reason,
         leaveType:   aiResponse.leaveType || "general",
-        startDate:   today,
-        endDate:     today,
-        status:      "approved",
+        fromDate:    today,
+        toDate:      today,
+        totalDays:   1,
+        status:      "Active",
+        remarks:     `AI Agent by ${userEmail}`,
+        createdAt:   new Date().toISOString(),
         addedBy:     userEmail,
-        createdAt:   serverTimestamp(),
       });
+
+      if (traineeId) {
+        await updateDoc(doc(db, "trainees", traineeId), { attn: "L" });
+      }
 
       return {
         success: true,

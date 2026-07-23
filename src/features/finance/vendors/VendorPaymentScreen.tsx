@@ -4,8 +4,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   IndianRupee, CheckCircle2, AlertTriangle, Loader2,
   X, RefreshCw, ChevronDown, Building2,
-  Wallet, Receipt, Eye, Info, TrendingUp,
-  TrendingDown, Phone, Clock, Search, Filter
+  Wallet, Receipt, Eye, Info,
+  Clock, Search
 } from 'lucide-react';
 import {
   collection, getDocs, doc, updateDoc,

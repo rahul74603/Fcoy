@@ -3,9 +3,9 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import {
   Users, Calculator, CheckCircle2, AlertTriangle,
-  Loader2, X, Plus, Trash2, Save, Info,
-  IndianRupee, Calendar, RefreshCw, Edit2, UserPlus,
-  Check, Eye, Lock, Wallet, TrendingDown, ArrowRightLeft
+  Loader2, X, Trash2, Save, Info,
+  Calendar, RefreshCw, Edit2, UserPlus,
+  Check, Eye, Lock, Wallet
 } from 'lucide-react';
 import {
   collection, addDoc, getDocs, serverTimestamp,

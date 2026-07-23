@@ -3,12 +3,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Wallet, Plus, Loader2, X, CheckCircle2, AlertTriangle,
-  RefreshCw, Users, TrendingUp, TrendingDown, Info, Trash2,
-  Filter, ArrowDownToLine, ArrowUpFromLine, Calculator,
-  FileText, Building2, IndianRupee, Receipt, Package,
-  ChevronDown, ChevronUp, Eye, ShoppingBag, CreditCard,
-  Clock, Upload, Lock, UserMinus, ShoppingCart, Phone,
-  Archive, Landmark, Shield, Tag, Ruler
+  RefreshCw, TrendingUp, TrendingDown, Info, Trash2,
+  ArrowDownToLine, ArrowUpFromLine, Calculator,
+  Building2, Receipt, Package,
+  ShoppingBag,
+  UserMinus, ShoppingCart,
+  Tag, Ruler
 } from 'lucide-react';
 import {
   collection, addDoc, getDocs, doc, updateDoc,

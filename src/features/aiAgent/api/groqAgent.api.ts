@@ -265,7 +265,7 @@ export async function checkGroqHealth() {
   }
   try {
     const start = Date.now();
-    const response = await askGroq("hello test");
+    await askGroq("hello test");
     return {
       status: "healthy" as const,
       message: `Working! ${Date.now() - start}ms`,

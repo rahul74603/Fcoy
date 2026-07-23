@@ -2,10 +2,10 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Wallet, TrendingUp, TrendingDown, RefreshCw,
+  Wallet, RefreshCw,
   AlertTriangle, CheckCircle2, X, Loader2,
-  Building2, ShoppingCart, IndianRupee, Receipt,
-  ChevronRight, Eye, Clock, Package, Users,
+  Building2,
+  Eye, Clock,
   ArrowDownToLine, ArrowUpFromLine, ArrowRightLeft
 } from 'lucide-react';
 import { collection, getDocs } from 'firebase/firestore';

@@ -6,10 +6,10 @@
 import React, { useState, useEffect } from 'react';
 import {
   ClipboardCheck, Plus, X, Trash2, CheckCircle2, XCircle,
-  Users, Calendar, AlertTriangle, Loader2, Award, Target,
-  Edit3, PlayCircle, TrendingUp, FileText, Search,
-  Settings2, BarChart3, Lock, Unlock, RefreshCw,
-  Trophy, ChevronDown, ChevronUp,  Save,
+  AlertTriangle, Loader2, Award, Target,
+  Edit3, PlayCircle, Search,
+  Settings2, BarChart3,
+  ChevronDown, ChevronUp,  Save,
 } from 'lucide-react';
 import { useTestRecords } from '../hooks/useTestRecords';
 import { useStaff } from '../hooks/useStaff';
@@ -18,7 +18,7 @@ import { db } from '../../../config/firebase';
 import { useBatch } from '../../../contexts/BatchContext';
 import {
   TestRecord, TestFormData, TestType, TraineeResult, FPTEvent,
-  FPTEventResult, RunningGrade, DEFAULT_TEST_FORM, TEST_TYPE_INFO,
+  RunningGrade, DEFAULT_TEST_FORM, TEST_TYPE_INFO,
   STATUS_COLORS, STATUS_LABELS, GRADE_COLORS, calculateGrade,
   BSF_SUBJECTS, DEFAULT_FPT_EVENTS, RUNNING_GRADES, GRADE_STYLE,
   gradeToMarks, BSF_PLATOONS,  // 🆕
@@ -41,7 +41,6 @@ const TestRecordsScreen: React.FC = () => {
   const [showResultsModal, setShowResultsModal] = useState(false);
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
-  const [showConfig, setShowConfig] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   
   const [selectedTest, setSelectedTest] = useState<TestRecord | null>(null);
@@ -50,8 +49,6 @@ const TestRecordsScreen: React.FC = () => {
   const [message, setMessage] = useState('');
 
   // ─── Config Lock ─────────────────────────
-  const [configEditable, setConfigEditable] = useState(false);
-
   // ─── Form State ──────────────────────────
     // ─── Form State ──────────────────────────
   const [testForm, setTestForm] = useState<TestFormData>(DEFAULT_TEST_FORM);

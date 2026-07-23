@@ -3,7 +3,7 @@ import {
   Wallet, Plus, Loader2, X, CheckCircle2, AlertTriangle,
   RefreshCw, TrendingUp, TrendingDown, Info, Trash2,
   ArrowRightLeft, ArrowUpFromLine, Building2, Receipt,
-  IndianRupee, Filter, Briefcase, Shield, Phone
+  Briefcase, Shield, Phone
 } from 'lucide-react';
 
 import {
@@ -16,7 +16,6 @@ import { useAuth } from '../../../contexts/AuthContext';
 
 import {
   PaymentModeSelector,
-  PaymentModeBadge,
   validatePaymentMode,
   getPaymentRef,
   type PaymentMode
@@ -29,7 +28,7 @@ import {
 } from '../shared/utils';
 
 import { BILL_STATUS_CONFIG } from '../shared/constants';
-import type { Vendor, VendorEntry, VendorItem, BillAttachment } from '../vendors/types';
+import type { Vendor, VendorEntry, BillAttachment } from '../vendors/types';
 import BillPreviewModal from '../shared/BillPreviewModal';
 
 // ─────────────────────────────────────────────

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  HeartPulse, Plus, Save, Trash2, Calendar, User,
+  HeartPulse, Plus, Trash2,
   AlertCircle, Layers, CheckCircle2, X, Loader2, Activity,
   Stethoscope, BedDouble
 } from 'lucide-react';
