@@ -544,7 +544,6 @@ export const Sidebar = () => {
                   menuKey="clerkStaffOps"
                 >
                   <SubItem title="📊 Batch Progress" path="/batch-progress" dot="bg-purple-500" />
-                  <SubItem title="🎯 Test Records" path="/test-records" dot="bg-pink-500" />
                   <SubItem title="🆕 Training Schedule" path="/training-schedule" dot="bg-blue-400" />
                   <SubItem title="Mark Attendance" path="/staff-attendance" dot="bg-green-400" />
                   <SubItem title="Leave Management" path="/staff-leave" dot="bg-yellow-400" />
