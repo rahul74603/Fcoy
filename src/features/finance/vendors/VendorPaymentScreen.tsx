@@ -8,8 +8,8 @@ import {
   Clock, Search
 } from 'lucide-react';
 import {
-  collection, getDocs, doc, updateDoc,
-  addDoc, serverTimestamp
+  collection, getDocs, doc, writeBatch,
+  serverTimestamp
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -67,6 +67,16 @@ const calcActuallyPaid = (expList: any[]): number =>
 
 const calcVendorDue = (expList: any[]): number =>
   expList.reduce((s, e) => s + Number(e.dueAmount ?? 0), 0);
+
+const getFundExpenseCollection = (fundKey: string): string | null => {
+  switch (fundKey) {
+    case 'mess_fund': return 'mess_fund_expenses';
+    case 'company_assets_fund': return 'company_assets_expenses';
+    case 'training_fund': return 'training_fund_expenses';
+    case 'general_fund': return 'general_fund_expenses';
+    default: return null;
+  }
+};
 
 // ═════════════════════════════════════════════
 // MAIN COMPONENT
@@ -374,8 +384,16 @@ export const VendorPaymentScreen: React.FC = () => {
     : [];
 
   const selectedEntry = entries.find(e => e.id === selectedEntryId);
-  const selectedFund  = funds.find(f => f.key === selectedFundKey);
+  const entryFundKey = selectedEntry ? ((selectedEntry as any).fundKey || '') : '';
+  const effectiveFundKey = entryFundKey || selectedFundKey;
+  const selectedFund  = funds.find(f => f.key === effectiveFundKey);
   const maxPayable    = selectedEntry?.dueAmount ?? 0;
+
+  useEffect(() => {
+    if (entryFundKey && selectedFundKey !== entryFundKey) {
+      setSelectedFundKey(entryFundKey);
+    }
+  }, [entryFundKey, selectedFundKey]);
 
   // Filtered entries for list
   const filteredEntries = entries.filter(e => {
@@ -443,46 +461,93 @@ export const VendorPaymentScreen: React.FC = () => {
     const payErr = validatePaymentMode(payMode, checkNumber, transactionId);
     if (payErr) { setErrorMsg(payErr); return; }
 
-    // ── FIX: balance check — actuallyPaid wala balance use karo ──
-    const fund = funds.find(f => f.key === selectedFundKey);
-    if (fund && Number(payAmount) > fund.balance) {
-      setErrorMsg(
-        `${fund.label} mein sirf ${formatCurrency(fund.balance)} available hai ` +
-        `(Collection: ${formatCurrency(fund.totalCollection)} − Paid: ${formatCurrency(fund.actuallyPaid)})`
-      );
-      return;
-    }
-
     setPayLoading(true);
     try {
       const amount  = Number(payAmount);
       const entry   = entries.find(e => e.id === selectedEntryId)!;
       const vendor  = vendors.find(v => v.id === selectedVendorId)!;
+      const paymentFundKey = (entry as any).fundKey || selectedFundKey;
+      const paymentFund = funds.find(f => f.key === paymentFundKey);
+      const fundExpCollection = getFundExpenseCollection(paymentFundKey);
       const nowISO  = new Date().toISOString();
+
+      if (!fundExpCollection) {
+        setErrorMsg('Is entry ka fund mapping nahi mila. Payment stop kar diya.');
+        return;
+      }
+
+      if (paymentFund && amount > paymentFund.balance) {
+        setErrorMsg(
+          `${paymentFund.label} mein sirf ${formatCurrency(paymentFund.balance)} available hai ` +
+          `(Collection: ${formatCurrency(paymentFund.totalCollection)} − Paid: ${formatCurrency(paymentFund.actuallyPaid)})`
+        );
+        return;
+      }
 
       const newPaid   = entry.paidAmount + amount;
       const newDue    = Math.max(0, entry.totalAmount - newPaid);
       const newStatus: VendorEntry['status'] =
         newDue <= 0 ? 'Paid' : newPaid > 0 ? 'Partial' : 'Pending';
 
-      // ── STEP 1: vendor_entries UPDATE ──
-      await updateDoc(doc(db, 'vendor_entries', selectedEntryId), {
+      // Fund balance expense se calculate hota hai, isliye expense doc milna mandatory hai.
+      let expenseDocId = (entry as any).linkedExpenseId || '';
+      if (!expenseDocId) {
+        const expSnap = await getDocs(collection(db, fundExpCollection));
+        for (const expDoc of expSnap.docs) {
+          const expData = expDoc.data();
+          const expVendorId = expData.vendorId ?? expData.linkedVendorId ?? '';
+          if (
+            expVendorId === selectedVendorId &&
+            Number(expData.amount ?? 0) === entry.totalAmount &&
+            Number(expData.dueAmount ?? 0) > 0
+          ) {
+            expenseDocId = expDoc.id;
+            break;
+          }
+        }
+      }
+
+      if (!expenseDocId) {
+        setErrorMsg(
+          'Payment stop: is vendor entry ka linked fund expense nahi mila. ' +
+          'Fund balance galat na ho isliye payment save nahi kiya.'
+        );
+        return;
+      }
+
+      const batch = writeBatch(db);
+      const entryRef = doc(db, 'vendor_entries', selectedEntryId);
+      const expenseRef = doc(db, fundExpCollection, expenseDocId);
+      const paymentRef = doc(collection(db, 'vendor_payments'));
+
+      batch.update(entryRef, {
         paidAmount: newPaid,
         dueAmount:  newDue,
         status:     newStatus,
+        fundKey:    paymentFundKey,
+        linkedExpenseId: expenseDocId,
         updatedAt:  serverTimestamp(),
       });
 
-      // ── STEP 2: vendor_payments mein record ──
-      await addDoc(collection(db, 'vendor_payments'), {
+      batch.update(expenseRef, {
+        paidAmount:    newPaid,
+        dueAmount:     newDue,
+        status:        newStatus,
+        paymentMode:   payMode,
+        checkNumber:   payMode === 'Check' ? checkNumber : '',
+        transactionId: getPaymentRef(payMode, checkNumber, transactionId),
+        updatedAt:     serverTimestamp(),
+      });
+
+      batch.set(paymentRef, {
         vendorId:      selectedVendorId,
         vendorName:    vendor.name,
         entryId:       selectedEntryId,
         categoryKey:   entry.categoryKey,
         categoryLabel: entry.categoryLabel,
         paidAmount:    amount,
-        fundKey:       selectedFundKey,
-        fundLabel:     fund?.label ?? selectedFundKey,
+        fundKey:       paymentFundKey,
+        fundLabel:     paymentFund?.label ?? paymentFundKey,
         paymentMode:   payMode,
         checkNumber:   payMode === 'Check' ? checkNumber : '',
         transactionId: getPaymentRef(payMode, checkNumber, transactionId),
@@ -492,72 +557,10 @@ export const VendorPaymentScreen: React.FC = () => {
         createdAt:     serverTimestamp(),
       });
 
-      // ── STEP 3: Linked expense UPDATE (dueAmount + paidAmount sync) ──
-      // Naya expense NAHI banana — sirf linked expense update karo
-      const linkedExpenseId = (entry as any).linkedExpenseId;
-      if (linkedExpenseId) {
-        const fundExpCollection =
-          selectedFundKey === 'mess_fund'            ? 'mess_fund_expenses' :
-          selectedFundKey === 'company_assets_fund'  ? 'company_assets_expenses' :
-          selectedFundKey === 'training_fund'        ? 'training_fund_expenses' :
-          'expenses';
-
-        try {
-          await updateDoc(doc(db, fundExpCollection, linkedExpenseId), {
-            paidAmount:    newPaid,
-            dueAmount:     newDue,
-            paymentMode:   payMode,
-            checkNumber:   payMode === 'Check' ? checkNumber : '',
-            transactionId: getPaymentRef(payMode, checkNumber, transactionId),
-            updatedAt:     serverTimestamp(),
-          });
-        } catch (err) {
-          // Linked expense nahi mili — payment record ban gaya, no problem
-          console.warn('Linked expense update failed (non-critical):', err);
-        }
-      }
-
-      // ── STEP 4: Agar linked expense nahi hai, fund expense mein
-      //    vendor entry se match karke update karo ──
-      if (!linkedExpenseId) {
-        const fundExpCollection =
-          selectedFundKey === 'mess_fund'           ? 'mess_fund_expenses' :
-          selectedFundKey === 'company_assets_fund' ? 'company_assets_expenses' :
-          selectedFundKey === 'training_fund'       ? 'training_fund_expenses' :
-          null;
-
-        if (fundExpCollection) {
-          try {
-            // vendorId + amount match karke update karo
-            const expSnap = await getDocs(collection(db, fundExpCollection));
-            for (const expDoc of expSnap.docs) {
-              const expData = expDoc.data();
-              const expVendorId =
-                expData.vendorId ?? expData.linkedVendorId ?? '';
-              if (
-                expVendorId === selectedVendorId &&
-                Number(expData.amount ?? 0) === entry.totalAmount &&
-                Number(expData.dueAmount ?? 0) > 0
-              ) {
-                await updateDoc(doc(db, fundExpCollection, expDoc.id), {
-                  paidAmount:    newPaid,
-                  dueAmount:     newDue,
-                  paymentMode:   payMode,
-                  checkNumber:   payMode === 'Check' ? checkNumber : '',
-                  transactionId: getPaymentRef(payMode, checkNumber, transactionId),
-                  updatedAt:     serverTimestamp(),
-                });
-                break; // sirf ek expense update karo
-              }
-            }
-          } catch (err) {
-            console.warn('Fallback expense update failed (non-critical):', err);
-          }
-        }
-      }
+      await batch.commit();
 
       setSuccessMsg(
-        `✓ ${formatCurrency(amount)} paid to ${vendor.name} from ${fund?.label}! ` +
+        `✓ ${formatCurrency(amount)} paid to ${vendor.name} from ${paymentFund?.label ?? paymentFundKey}! ` +
         `Status: ${newStatus}. ` +
         (newDue > 0
           ? `Remaining: ${formatCurrency(newDue)}`
@@ -1006,13 +1009,18 @@ export const VendorPaymentScreen: React.FC = () => {
             Fund se Payment *
           </label>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-            {funds.map(fund => (
+            {funds.map(fund => {
+              const lockedToEntryFund = Boolean(entryFundKey) && fund.key !== entryFundKey;
+              return (
               <button key={fund.key} type="button"
-                onClick={() => setSelectedFundKey(fund.key)}
+                disabled={lockedToEntryFund}
+                onClick={() => !lockedToEntryFund && setSelectedFundKey(fund.key)}
                 className={`p-3 rounded-xl border-2 text-left transition-all ${
-                  selectedFundKey === fund.key
+                  effectiveFundKey === fund.key
                     ? 'border-amber-500 bg-amber-50'
-                    : 'border-slate-200 hover:border-amber-300'
+                    : lockedToEntryFund
+                      ? 'border-slate-100 bg-slate-50 opacity-50 cursor-not-allowed'
+                      : 'border-slate-200 hover:border-amber-300'
                 }`}>
                 <div className="flex items-center gap-2">
                   <span className="text-lg">{fund.emoji}</span>
@@ -1031,7 +1039,8 @@ export const VendorPaymentScreen: React.FC = () => {
                   </div>
                 </div>
               </button>
-            ))}
+              );
+            })}
           </div>
         </div>
 
