@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import {
   ClipboardCheck, Plus, X, Trash2, CheckCircle2, XCircle,
   AlertTriangle, Loader2, Award, Target,
-  Edit3, PlayCircle, Search,
+  Edit3, PlayCircle, Search, Eye,
   Settings2, BarChart3,
   ChevronDown, ChevronUp,  Save,
 } from 'lucide-react';
@@ -25,6 +25,156 @@ import {
 } from '../types/testRecord.types';
 import FormModal from '../components/shared/FormModal';
 import ConfirmDialog from '../components/shared/ConfirmDialog';
+
+const TestResultDetailsPanel: React.FC<{ test: TestRecord }> = ({ test }) => {
+  const [openRows, setOpenRows] = useState<Record<string, boolean>>({});
+  const sortedResults = [...test.results].sort((a, b) => {
+    const order = { fail: 0, absent: 1, pass: 2 } as Record<string, number>;
+    return (order[a.status] ?? 3) - (order[b.status] ?? 3) || Number(a.chestNo) - Number(b.chestNo);
+  });
+
+  const toggleRow = (id: string) => {
+    setOpenRows(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const groups = [
+    { key: 'fail', label: 'Failed', color: 'red', list: sortedResults.filter(r => r.status === 'fail') },
+    { key: 'absent', label: 'Absent', color: 'slate', list: sortedResults.filter(r => r.status === 'absent') },
+    { key: 'pass', label: 'Passed', color: 'green', list: sortedResults.filter(r => r.status === 'pass') },
+  ];
+
+  return (
+    <div className="pt-3 border-t border-slate-200 space-y-3">
+      <div className="grid grid-cols-3 gap-2">
+        <div className="rounded-lg bg-green-50 border border-green-200 p-2 text-center">
+          <p className="text-lg font-black text-green-700">{test.passCount}</p>
+          <p className="text-[9px] font-bold text-green-600 uppercase">Pass</p>
+        </div>
+        <div className="rounded-lg bg-red-50 border border-red-200 p-2 text-center">
+          <p className="text-lg font-black text-red-700">{test.failCount}</p>
+          <p className="text-[9px] font-bold text-red-600 uppercase">Fail</p>
+        </div>
+        <div className="rounded-lg bg-slate-50 border border-slate-200 p-2 text-center">
+          <p className="text-lg font-black text-slate-600">{test.absentCount}</p>
+          <p className="text-[9px] font-bold text-slate-500 uppercase">Absent</p>
+        </div>
+      </div>
+
+      {groups.map(group => (
+        <div key={group.key} className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <p className={`text-[10px] font-black uppercase ${
+              group.color === 'green' ? 'text-green-700' : group.color === 'red' ? 'text-red-700' : 'text-slate-600'
+            }`}>
+              {group.label} List ({group.list.length})
+            </p>
+            <p className="text-[9px] text-slate-400 font-bold">Click trainee row for full detail</p>
+          </div>
+
+          {group.list.length === 0 ? (
+            <div className="text-[10px] text-slate-400 bg-white rounded-lg border border-slate-100 px-3 py-2">
+              No {group.label.toLowerCase()} trainees
+            </div>
+          ) : (
+            group.list.map((r, idx) => {
+              const rowId = `${test.id}_${r.traineeId}_${group.key}_${idx}`;
+              const isOpen = !!openRows[rowId];
+              const isPass = r.status === 'pass';
+              const isFail = r.status === 'fail';
+              const maxMarks = test.testType === 'fpt' && r.events
+                ? r.events.reduce((sum, event) => sum + Number(event.maxMarks || 0), 0)
+                : test.totalMarks;
+              const pct = maxMarks > 0 ? Math.round((Number(r.marks || 0) / maxMarks) * 100) : 0;
+
+              return (
+                <div key={rowId} className={`rounded-lg border overflow-hidden ${
+                  isPass ? 'bg-green-50 border-green-200' : isFail ? 'bg-red-50 border-red-200' : 'bg-slate-50 border-slate-200'
+                }`}>
+                  <button
+                    type="button"
+                    onClick={() => toggleRow(rowId)}
+                    className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left hover:bg-white/60 transition-colors"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      {isOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                      <span className="text-[10px] font-mono font-black bg-white px-1.5 py-0.5 rounded border border-slate-200">
+                        {r.chestNo || '—'}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-black text-slate-800 truncate">{r.traineeName}</p>
+                        <p className="text-[9px] text-slate-500">
+                          {r.platoon || '—'} · {r.marks}/{maxMarks} · {pct}%
+                        </p>
+                      </div>
+                    </div>
+                    <span className={`text-[9px] font-black px-2 py-1 rounded-lg flex-shrink-0 ${
+                      isPass ? 'bg-green-600 text-white' : isFail ? 'bg-red-600 text-white' : 'bg-slate-500 text-white'
+                    }`}>
+                      {r.status.toUpperCase()}
+                    </span>
+                  </button>
+
+                  {isOpen && (
+                    <div className="bg-white border-t border-white/70 px-3 py-2 space-y-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        {[
+                          ['Chest No', r.chestNo || '—'],
+                          ['Reg No', r.regNo || '—'],
+                          ['Platoon', r.platoon || '—'],
+                          ['Marks', `${r.marks}/${maxMarks}`],
+                          ['Percentage', `${pct}%`],
+                          ['Grade', r.grade || '—'],
+                          ['Status', r.status.toUpperCase()],
+                          ['Remarks', r.remarks || '—'],
+                        ].map(([label, value]) => (
+                          <div key={label} className="rounded bg-slate-50 border border-slate-100 px-2 py-1">
+                            <p className="text-[8px] font-black text-slate-400 uppercase">{label}</p>
+                            <p className="text-[10px] font-bold text-slate-800 break-words">{String(value)}</p>
+                          </div>
+                        ))}
+                      </div>
+
+                      {test.testType === 'fpt' && r.events && r.events.length > 0 && (
+                        <div className="space-y-1">
+                          <p className="text-[9px] font-black text-slate-500 uppercase">FPT Event-wise Pass / Fail</p>
+                          {r.events.map((event, eventIdx) => (
+                            <div key={`${rowId}_event_${eventIdx}`} className={`flex items-center justify-between gap-2 rounded border px-2 py-1.5 ${
+                              event.passed ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
+                            }`}>
+                              <div>
+                                <p className="text-[10px] font-black text-slate-800">{event.name || `Event ${eventIdx + 1}`}</p>
+                                <p className="text-[8px] text-slate-500">
+                                  Passing {event.passingMarks} · Max {event.maxMarks}
+                                  {event.runningGrade ? ` · ${event.runningGrade}` : ''}
+                                </p>
+                              </div>
+                              <span className={`text-[9px] font-black px-2 py-0.5 rounded ${
+                                event.passed ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+                              }`}>
+                                {event.marks}/{event.maxMarks} {event.passed ? 'PASS' : 'FAIL'}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {r.weakAreas && r.weakAreas.length > 0 && (
+                        <div className="rounded bg-amber-50 border border-amber-200 px-2 py-1.5">
+                          <p className="text-[8px] font-black text-amber-600 uppercase">Weak Areas</p>
+                          <p className="text-[10px] font-bold text-amber-800">{r.weakAreas.join(', ')}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      ))}
+    </div>
+  );
+};
 
 const TestRecordsScreen: React.FC = () => {
   const {
@@ -930,40 +1080,19 @@ const TestRecordsScreen: React.FC = () => {
                           </span>
                         </div>
 
-                        {/* Expand Toggle */}
+                        {/* Full Details Toggle */}
                         <button
                           onClick={() => setExpandedTest(isExpanded ? null : test.id)}
                           className="w-full flex items-center justify-center gap-1 text-[10px] font-bold text-blue-600 hover:text-blue-800 pt-1"
                         >
                           {isExpanded ? (
-                            <><ChevronUp size={12} /> Hide Details</>
+                            <><ChevronUp size={12} /> Hide Full Pass/Fail Details</>
                           ) : (
-                            <><ChevronDown size={12} /> Show Top Performers</>
+                            <><Eye size={12} /> View Full Pass/Fail Details</>
                           )}
                         </button>
 
-                        {isExpanded && (
-                          <div className="pt-2 border-t border-slate-200 space-y-1">
-                            {test.results
-                              .filter(r => r.status === 'pass')
-                              .sort((a, b) => b.marks - a.marks)
-                              .slice(0, 3)
-                              .map((r, i) => (
-                                <div key={r.traineeId} className="flex items-center justify-between text-[10px] bg-white rounded p-1.5">
-                                  <span className="flex items-center gap-1">
-                                    <span>{i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'}</span>
-                                    <span className="font-mono font-bold">{r.chestNo}</span>
-                                    <span className="truncate max-w-[80px]">{r.traineeName}</span>
-                                  </span>
-                                  <span className={`px-1.5 py-0.5 rounded font-bold text-white text-[9px] ${
-                                    GRADE_COLORS[r.grade]
-                                  }`}>
-                                    {r.marks}
-                                  </span>
-                                </div>
-                              ))}
-                          </div>
-                        )}
+                        {isExpanded && <TestResultDetailsPanel test={test} />}
                       </div>
                     ) : (
                       <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-center">
