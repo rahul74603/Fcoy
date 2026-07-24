@@ -777,6 +777,8 @@ const TraineeProfileModal: React.FC<{
   onClose: () => void;
 }> = ({ trainee, fptRecords, weeklyTests, medicalRecords, recoveries, allTrainingItems, healthScore, onClose }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'documents' | 'kit' | 'fpt' | 'tests' | 'medical' | 'recovery'>('overview');
+  const [expandedFptId, setExpandedFptId] = useState<string | null>(null);
+  const [expandedTestId, setExpandedTestId] = useState<string | null>(null);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -1045,21 +1047,89 @@ const TraineeProfileModal: React.FC<{
                 <p className="text-[11px] text-slate-400 font-bold">No FPT records</p>
               </div>
             ) : (
-              <div className="space-y-1.5">
-                {fptList.map((r: any) => (
-                  <div key={r.id} className={`flex items-center justify-between px-4 py-3 rounded-xl border ${
-                    r.result === 'Pass' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
-                  }`}>
-                    <div className="flex items-center gap-3">
-                      <span className="text-[10px] font-black bg-blue-100 text-blue-700 px-2 py-1 rounded-lg">W{r.weekNumber}</span>
-                      <span className="text-[11px] font-bold text-slate-800">{r.obtainedMarks}/{r.totalMarks}</span>
-                      <span className="text-[9px] text-slate-400">{r.testDate}</span>
+              <div className="space-y-2">
+                {fptList.map((r: any, idx: number) => {
+                  const rowId = String(r.id || `fpt-${idx}`);
+                  const isOpen = expandedFptId === rowId;
+                  const resultIsPass = r.result === 'Pass';
+                  const events = Array.isArray(r.events) ? r.events : [];
+                  return (
+                    <div key={rowId} className={`rounded-xl border overflow-hidden ${
+                      resultIsPass ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
+                    }`}>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setExpandedFptId(isOpen ? null : rowId);
+                        }}
+                        className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-white/50 transition-colors"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          {isOpen ? <ChevronUp size={14} className="text-slate-500" /> : <ChevronDown size={14} className="text-slate-500" />}
+                          <span className="text-[10px] font-black bg-blue-100 text-blue-700 px-2 py-1 rounded-lg">W{r.weekNumber || '—'}</span>
+                          <div className="min-w-0">
+                            <p className="text-[11px] font-black text-slate-800 truncate">
+                              FPT Attempt · {r.obtainedMarks ?? r.marks ?? 0}/{r.totalMarks ?? '—'} marks
+                            </p>
+                            <p className="text-[9px] text-slate-500">
+                              Date: {r.testDate || r.date || '—'} · Events: {events.length || 'N/A'} · Click for details
+                            </p>
+                          </div>
+                        </div>
+                        <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg flex-shrink-0 ${
+                          resultIsPass ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+                        }`}>{r.percentage ?? 0}% {resultIsPass ? 'PASS ✅' : 'FAIL ❌'}</span>
+                      </button>
+
+                      {isOpen && (
+                        <div className="border-t border-white/70 bg-white px-4 py-3">
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+                            {[
+                              ['Result', r.result || '—'],
+                              ['Obtained', `${r.obtainedMarks ?? r.marks ?? 0}/${r.totalMarks ?? '—'}`],
+                              ['Percentage', `${r.percentage ?? 0}%`],
+                              ['Passing', r.totalPassingMarks ?? r.passingMarks ?? '—'],
+                              ['Events Passed', r.eventsPassed ?? '—'],
+                              ['Events Failed', r.eventsFailed ?? '—'],
+                              ['Overall Pass %', r.overallPassPercent ? `${r.overallPassPercent}%` : '—'],
+                              ['Remarks', r.remarks || '—'],
+                            ].map(([label, value]) => (
+                              <div key={label} className="rounded-lg border border-slate-100 bg-slate-50 px-2 py-1.5">
+                                <p className="text-[8px] font-black text-slate-400 uppercase">{label}</p>
+                                <p className="text-[10px] font-bold text-slate-800 mt-0.5 break-words">{String(value)}</p>
+                              </div>
+                            ))}
+                          </div>
+
+                          {events.length > 0 && (
+                            <div className="space-y-1.5">
+                              <p className="text-[9px] font-black text-slate-500 uppercase tracking-wider">Event-wise details</p>
+                              {events.map((ev: any, evIdx: number) => (
+                                <div key={`${rowId}-event-${evIdx}`} className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 ${
+                                  ev.passed ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
+                                }`}>
+                                  <div>
+                                    <p className="text-[10px] font-black text-slate-800">{ev.name || `Event ${evIdx + 1}`}</p>
+                                    <p className="text-[9px] text-slate-500">
+                                      Passing: {ev.passingMarks ?? '—'} · Max: {ev.maxMarks ?? '—'}
+                                      {ev.runningGrade ? ` · Grade: ${ev.runningGrade}` : ''}
+                                    </p>
+                                  </div>
+                                  <span className={`text-[10px] font-black px-2 py-1 rounded-lg ${
+                                    ev.passed ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+                                  }`}>
+                                    {ev.marks ?? 0}/{ev.maxMarks ?? '—'} {ev.passed ? 'PASS' : 'FAIL'}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg ${
-                      r.result === 'Pass' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
-                    }`}>{r.percentage}% {r.result === 'Pass' ? '✅' : '❌'}</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )
           )}
@@ -1071,23 +1141,62 @@ const TraineeProfileModal: React.FC<{
                 <p className="text-[11px] text-slate-400 font-bold">No test records</p>
               </div>
             ) : (
-              <div className="space-y-1.5">
-                {testList.map((r: any) => (
-                  <div key={r.id} className={`flex items-center justify-between px-4 py-3 rounded-xl border ${
-                    r.result === 'Pass' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
-                  }`}>
-                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                      <span className="text-[10px] font-black bg-blue-100 text-blue-700 px-2 py-1 rounded-lg flex-shrink-0">W{r.weekNumber}</span>
-                      <div className="min-w-0">
-                        <p className="text-[11px] font-bold text-slate-800 truncate">{r.testName}</p>
-                        <p className="text-[9px] text-slate-400">{r.subject} · {r.testDate}</p>
-                      </div>
+              <div className="space-y-2">
+                {testList.map((r: any, idx: number) => {
+                  const rowId = String(r.id || `test-${idx}`);
+                  const isOpen = expandedTestId === rowId;
+                  const resultIsPass = r.result === 'Pass';
+                  return (
+                    <div key={rowId} className={`rounded-xl border overflow-hidden ${
+                      resultIsPass ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
+                    }`}>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setExpandedTestId(isOpen ? null : rowId);
+                        }}
+                        className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-white/50 transition-colors"
+                      >
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          {isOpen ? <ChevronUp size={14} className="text-slate-500" /> : <ChevronDown size={14} className="text-slate-500" />}
+                          <span className="text-[10px] font-black bg-blue-100 text-blue-700 px-2 py-1 rounded-lg flex-shrink-0">W{r.weekNumber || '—'}</span>
+                          <div className="min-w-0">
+                            <p className="text-[11px] font-bold text-slate-800 truncate">{r.testName || 'Weekly Test'}</p>
+                            <p className="text-[9px] text-slate-500">
+                              {r.subject || '—'} · {r.testDate || '—'} · {r.obtainedMarks ?? r.marks ?? 0}/{r.totalMarks ?? '—'} marks
+                            </p>
+                          </div>
+                        </div>
+                        <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg flex-shrink-0 ${
+                          resultIsPass ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+                        }`}>{r.percentage ?? 0}% {resultIsPass ? 'PASS ✅' : 'FAIL ❌'}</span>
+                      </button>
+
+                      {isOpen && (
+                        <div className="border-t border-white/70 bg-white px-4 py-3">
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                            {[
+                              ['Test Name', r.testName || 'Weekly Test'],
+                              ['Subject', r.subject || '—'],
+                              ['Result', r.result || '—'],
+                              ['Date', r.testDate || '—'],
+                              ['Obtained Marks', r.obtainedMarks ?? r.marks ?? 0],
+                              ['Total Marks', r.totalMarks ?? '—'],
+                              ['Percentage', `${r.percentage ?? 0}%`],
+                              ['Remarks', r.remarks || '—'],
+                            ].map(([label, value]) => (
+                              <div key={label} className="rounded-lg border border-slate-100 bg-slate-50 px-2 py-1.5">
+                                <p className="text-[8px] font-black text-slate-400 uppercase">{label}</p>
+                                <p className="text-[10px] font-bold text-slate-800 mt-0.5 break-words">{String(value)}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg flex-shrink-0 ${
-                      r.result === 'Pass' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
-                    }`}>{r.percentage}%</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )
           )}
