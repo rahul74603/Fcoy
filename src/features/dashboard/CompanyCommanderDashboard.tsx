@@ -1,6 +1,6 @@
 // D:\ALL PROJECTS\BSF COYs\frontend\src\features\dashboard\CompanyCommanderDashboard.tsx
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Users, Shield, AlertTriangle, Wallet, RefreshCw,
@@ -1312,6 +1312,7 @@ const [staffLoading, setStaffLoading] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [autoRefreshCountdown, setAutoRefreshCountdown] = useState(AUTO_REFRESH_INTERVAL / 1000);
   const [platoonFilter, setPlatoonFilter] = useState<string>('ALL');
+  const rosterSectionRef = useRef<HTMLDivElement>(null);
 
   // ── Fund Detail Modal ──
   const [selectedFund, setSelectedFund] = useState<FundInfo | null>(null);
@@ -1556,17 +1557,28 @@ const [staffLoading, setStaffLoading] = useState(false);
   useEffect(() => { fetchAllData(); }, [fetchAllData]);
 
   // ── COMPUTED ──
-  // ── FIX: Correct attendance counts from trainee.attn field ──
-  const totalTrainees = trainees.length;
-  const presentToday = trainees.filter(t => t.attn === 'P').length;
-  const absentCount = trainees.filter(t => t.attn === 'A').length;
- const sickCount = trainees.filter(t => t.attn === 'S' || t.attn === 'Sick').length;
-const leaveCount = trainees.filter(t => t.attn === 'L' || t.attn === 'Leave' || t.attn === 'Away').length;
-const restCount = trainees.filter(t => t.attn === 'R' || t.attn === 'Rest').length;
-const hospitalCount = trainees.filter(t => t.attn === 'H' || t.attn === 'Hospital').length;
-const medApptCount = trainees.filter(t => t.attn === 'M').length;
+  // Single status source: summary cards, away table and roster filters all use this normalized code.
+  const getTraineeAttnCode = (attnValue?: string): 'P' | 'A' | 'S' | 'H' | 'L' | 'R' | 'M' => {
+    const v = String(attnValue || 'P').toLowerCase();
+    if (v === 'a' || v.includes('absent')) return 'A';
+    if (v === 's' || v.includes('sick')) return 'S';
+    if (v === 'h' || v.includes('hospital')) return 'H';
+    if (v === 'l' || v.includes('leave') || v.includes('away')) return 'L';
+    if (v === 'r' || v.includes('rest')) return 'R';
+    if (v === 'm' || v.includes('medical')) return 'M';
+    return 'P';
+  };
 
-  // ── FIX: notPresent = everyone who is NOT 'P' ──
+  const totalTrainees = trainees.length;
+  const presentToday = trainees.filter(t => getTraineeAttnCode(t.attn) === 'P').length;
+  const absentCount = trainees.filter(t => getTraineeAttnCode(t.attn) === 'A').length;
+  const sickCount = trainees.filter(t => getTraineeAttnCode(t.attn) === 'S').length;
+  const leaveCount = trainees.filter(t => getTraineeAttnCode(t.attn) === 'L').length;
+  const restCount = trainees.filter(t => getTraineeAttnCode(t.attn) === 'R').length;
+  const hospitalCount = trainees.filter(t => getTraineeAttnCode(t.attn) === 'H').length;
+  const medApptCount = trainees.filter(t => getTraineeAttnCode(t.attn) === 'M').length;
+
+  // ── notPresent = everyone who is NOT present ──
   const notPresent = absentCount + sickCount + leaveCount + restCount + hospitalCount + medApptCount;
   const onField = presentToday;
   const attendancePct = totalTrainees > 0 ? Math.round((presentToday / totalTrainees) * 100) : 0;
@@ -1677,12 +1689,14 @@ const medApptCount = trainees.filter(t => t.attn === 'M').length;
       if (!t.name.toLowerCase().includes(q) && !t.chestNo.toLowerCase().includes(q) && !(t.regNo || '').toLowerCase().includes(q)) return false;
     }
     if (platoonFilter !== 'ALL' && t.platoon !== platoonFilter) return false;
+    const attnCode = getTraineeAttnCode(t.attn);
     if (rosterFilter === 'ALL') return true;
-    if (rosterFilter === 'ABSENT') return t.attn === 'A';
-    if (rosterFilter === 'SICK') return t.attn === 'S' || t.attn === 'H';
-    if (rosterFilter === 'REST') return t.attn === 'R';
-    if (rosterFilter === 'LEAVE') return t.attn === 'L';
-    if (rosterFilter === 'MED_APPT') return t.attn === 'M';
+    if (rosterFilter === 'PRESENT') return attnCode === 'P';
+    if (rosterFilter === 'ABSENT') return attnCode === 'A';
+    if (rosterFilter === 'SICK') return attnCode === 'S' || attnCode === 'H';
+    if (rosterFilter === 'REST') return attnCode === 'R';
+    if (rosterFilter === 'LEAVE') return attnCode === 'L';
+    if (rosterFilter === 'MED_APPT') return attnCode === 'M';
     if (rosterFilter === 'NO_KIT') return !t.issuedKitItems || t.issuedKitItems.length < allTrainingItems.length;
     if (rosterFilter === 'DOCS_PENDING') return !t.docsComplete;
     if (rosterFilter === 'FPT_FAIL') return fptNeverPassed.some(([id]) => id === t.id);
@@ -1715,10 +1729,16 @@ const medApptCount = trainees.filter(t => t.attn === 'M').length;
     setAbsentModalTrainee(trainee);
   };
 
+  const focusRoster = (filter: string) => {
+    setRosterFilter(filter);
+    setSearchQuery('');
+    setTimeout(() => rosterSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
+  };
+
   // ═══════════════════════════════════════
   // AWAY PANEL — full detail of all non-present trainees
   // ═══════════════════════════════════════
-  const awayTrainees = trainees.filter(t => t.attn !== 'P');
+  const awayTrainees = trainees.filter(t => getTraineeAttnCode(t.attn) !== 'P');
 
   // ══════════════════════════════════════════════════════════
   // RENDER
@@ -1880,22 +1900,24 @@ const medApptCount = trainees.filter(t => t.attn === 'M').length;
                 <div className="lg:col-span-2">
                   <div className="grid grid-cols-4 md:grid-cols-8 gap-2">
                     {[
-                      { label: 'Total', value: totalTrainees, color: 'bg-military-50 border-military-200 text-military-800', dot: 'bg-military-500' },
-                      { label: 'Present', value: onField, color: 'bg-green-50 border-green-200 text-green-700', dot: 'bg-green-500' },
-                      { label: 'Absent', value: absentCount, color: absentCount > 0 ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-600', dot: absentCount > 0 ? 'bg-red-500' : 'bg-green-500' },
-                      { label: 'Sick', value: sickCount, color: sickCount > 0 ? 'bg-orange-50 border-orange-200 text-orange-700' : 'bg-green-50 border-green-200 text-green-600', dot: sickCount > 0 ? 'bg-orange-500' : 'bg-green-500' },
-                      { label: 'Hospital', value: hospitalCount, color: hospitalCount > 0 ? 'bg-purple-50 border-purple-200 text-purple-700' : 'bg-green-50 border-green-200 text-green-600', dot: hospitalCount > 0 ? 'bg-purple-500' : 'bg-green-500' },
-                      { label: 'Leave', value: leaveCount, color: 'bg-blue-50 border-blue-200 text-blue-700', dot: 'bg-blue-500' },
-                      { label: 'B/C Rest', value: restCount, color: 'bg-indigo-50 border-indigo-200 text-indigo-700', dot: 'bg-indigo-500' },
-                      { label: 'Med Appt', value: medApptCount, color: 'bg-teal-50 border-teal-200 text-teal-700', dot: 'bg-teal-500' },
+                      { label: 'Total', value: totalTrainees, filter: 'ALL', color: 'bg-military-50 border-military-200 text-military-800', dot: 'bg-military-500' },
+                      { label: 'Present', value: onField, filter: 'PRESENT', color: 'bg-green-50 border-green-200 text-green-700', dot: 'bg-green-500' },
+                      { label: 'Absent', value: absentCount, filter: 'ABSENT', color: absentCount > 0 ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-600', dot: absentCount > 0 ? 'bg-red-500' : 'bg-green-500' },
+                      { label: 'Sick', value: sickCount, filter: 'SICK', color: sickCount > 0 ? 'bg-orange-50 border-orange-200 text-orange-700' : 'bg-green-50 border-green-200 text-green-600', dot: sickCount > 0 ? 'bg-orange-500' : 'bg-green-500' },
+                      { label: 'Hospital', value: hospitalCount, filter: 'SICK', color: hospitalCount > 0 ? 'bg-purple-50 border-purple-200 text-purple-700' : 'bg-green-50 border-green-200 text-green-600', dot: hospitalCount > 0 ? 'bg-purple-500' : 'bg-green-500' },
+                      { label: 'Leave', value: leaveCount, filter: 'LEAVE', color: 'bg-blue-50 border-blue-200 text-blue-700', dot: 'bg-blue-500' },
+                      { label: 'B/C Rest', value: restCount, filter: 'REST', color: 'bg-indigo-50 border-indigo-200 text-indigo-700', dot: 'bg-indigo-500' },
+                      { label: 'Med Appt', value: medApptCount, filter: 'MED_APPT', color: 'bg-teal-50 border-teal-200 text-teal-700', dot: 'bg-teal-500' },
                     ].map(c => (
-                      <div key={c.label} className={`p-3 border rounded-xl ${c.color} text-center`}>
+                      <button key={c.label} type="button" onClick={(e) => { e.stopPropagation(); focusRoster(c.filter); }}
+                        className={`p-3 border rounded-xl ${c.color} text-center hover:shadow-sm hover:scale-[1.01] transition-all cursor-pointer`}
+                        title={`Show ${c.label} trainees in Full Trainee Roster`}>
                         <div className="flex items-center justify-center gap-1 mb-1">
                           <div className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
                           <p className="text-[8px] font-bold uppercase">{c.label}</p>
                         </div>
                         <p className="text-lg font-black">{c.value}</p>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -1950,7 +1972,7 @@ const medApptCount = trainees.filter(t => t.attn === 'M').length;
                         </thead>
                         <tbody className="divide-y divide-slate-50">
                           {awayTrainees.map((t, idx) => {
-                            const typeInfo = getAbsentTypeInfo(t.attn);
+                            const typeInfo = getAbsentTypeInfo(getTraineeAttnCode(t.attn));
                             // Get the active absent record for this trainee
                             const traineeAbsRecs = absentRecordsByTrainee[t.id] || [];
                             const activeRec = traineeAbsRecs.find(r => r.status === 'Active') || null;
@@ -2044,6 +2066,7 @@ const medApptCount = trainees.filter(t => t.attn === 'M').length;
           </CollapsibleSection>
 
           {/* ═══ TRAINEE ROSTER — moved UP ═══ */}
+          <div ref={rosterSectionRef}>
           <CollapsibleSection
             title="Full Trainee Roster"
             subtitle="Click any trainee to view full profile · Non-present rows clickable for absence details"
@@ -2087,6 +2110,7 @@ const medApptCount = trainees.filter(t => t.attn === 'M').length;
             <div className="flex gap-1.5 mb-3 overflow-x-auto flex-wrap">
               {([
                 { key: 'ALL', label: `All (${totalTrainees})`, color: 'bg-military-700' },
+                { key: 'PRESENT', label: `Present (${presentToday})`, color: 'bg-green-600' },
                 { key: 'ABSENT', label: `Absent (${absentCount})`, color: 'bg-red-600' },
                 { key: 'SICK', label: `Sick/Hosp (${sickCount + hospitalCount})`, color: 'bg-amber-600' },
                 { key: 'REST', label: `Rest (${restCount})`, color: 'bg-purple-600' },
@@ -2118,14 +2142,15 @@ const medApptCount = trainees.filter(t => t.attn === 'M').length;
                   <tbody className="divide-y divide-slate-50">
                     {filteredTrainees.slice(0, 100).map((t, idx) => {
                       const hs = getTraineeHealthScore(t);
-                      const isAway = t.attn !== 'P';
-                      const typeInfo = getAbsentTypeInfo(t.attn);
-                      const attnCls = t.attn === 'P' ? 'bg-green-100 text-green-700'
-                        : t.attn === 'A' ? 'bg-red-100 text-red-700'
-                        : t.attn === 'S' ? 'bg-orange-100 text-orange-700'
-                        : t.attn === 'H' ? 'bg-purple-100 text-purple-700'
-                        : t.attn === 'L' ? 'bg-blue-100 text-blue-700'
-                        : t.attn === 'R' ? 'bg-indigo-100 text-indigo-700'
+                      const attnCode = getTraineeAttnCode(t.attn);
+                      const isAway = attnCode !== 'P';
+                      const typeInfo = getAbsentTypeInfo(attnCode);
+                      const attnCls = attnCode === 'P' ? 'bg-green-100 text-green-700'
+                        : attnCode === 'A' ? 'bg-red-100 text-red-700'
+                        : attnCode === 'S' ? 'bg-orange-100 text-orange-700'
+                        : attnCode === 'H' ? 'bg-purple-100 text-purple-700'
+                        : attnCode === 'L' ? 'bg-blue-100 text-blue-700'
+                        : attnCode === 'R' ? 'bg-indigo-100 text-indigo-700'
                         : 'bg-teal-100 text-teal-700';
                       const recovery = pendingRecoveries.find(r => r.traineeId === t.id);
                       const hsColor = hs >= 80 ? 'text-green-600 bg-green-50' : hs >= 60 ? 'text-amber-600 bg-amber-50' : 'text-red-600 bg-red-50';
@@ -2154,7 +2179,7 @@ const medApptCount = trainees.filter(t => t.attn === 'M').length;
                           <td className="px-3 py-2.5 text-slate-500 text-[10px]">{t.platoon || '—'}</td>
                           <td className="px-3 py-2.5">
                             <span className={`text-[9px] font-black px-2 py-0.5 rounded-lg ${attnCls}`}>
-                              {isAway ? `${typeInfo.icon} ${t.attn}` : '✓ P'}
+                              {isAway ? `${typeInfo.icon} ${attnCode}` : '✓ P'}
                             </span>
                           </td>
                           <td className="px-3 py-2.5">
@@ -2250,6 +2275,7 @@ const medApptCount = trainees.filter(t => t.attn === 'M').length;
               </div>
             </div>
           </CollapsibleSection>
+          </div>
 
           {/* ═══ FUNDS ═══ */}
           <CollapsibleSection
