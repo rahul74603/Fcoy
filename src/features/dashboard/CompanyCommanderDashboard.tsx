@@ -1569,14 +1569,27 @@ const [staffLoading, setStaffLoading] = useState(false);
     return 'P';
   };
 
+  const getMedicalAttnCode = (category?: string): 'S' | 'H' | 'R' | 'M' => {
+    if (category === 'Hospital Admit') return 'H';
+    if (category === 'B-Rest' || category === 'C-Rest') return 'R';
+    if (category === 'Medical Board') return 'M';
+    return 'S';
+  };
+
+  const getDashboardAttnCode = (trainee: TraineeInfo): 'P' | 'A' | 'S' | 'H' | 'L' | 'R' | 'M' => {
+    const activeMed = allMedical.find((m: any) => m.traineeId === trainee.id && m.status === 'Active');
+    if (activeMed) return getMedicalAttnCode(activeMed.category);
+    return getTraineeAttnCode(trainee.attn);
+  };
+
   const totalTrainees = trainees.length;
-  const presentToday = trainees.filter(t => getTraineeAttnCode(t.attn) === 'P').length;
-  const absentCount = trainees.filter(t => getTraineeAttnCode(t.attn) === 'A').length;
-  const sickCount = trainees.filter(t => getTraineeAttnCode(t.attn) === 'S').length;
-  const leaveCount = trainees.filter(t => getTraineeAttnCode(t.attn) === 'L').length;
-  const restCount = trainees.filter(t => getTraineeAttnCode(t.attn) === 'R').length;
-  const hospitalCount = trainees.filter(t => getTraineeAttnCode(t.attn) === 'H').length;
-  const medApptCount = trainees.filter(t => getTraineeAttnCode(t.attn) === 'M').length;
+  const presentToday = trainees.filter(t => getDashboardAttnCode(t) === 'P').length;
+  const absentCount = trainees.filter(t => getDashboardAttnCode(t) === 'A').length;
+  const sickCount = trainees.filter(t => getDashboardAttnCode(t) === 'S').length;
+  const leaveCount = trainees.filter(t => getDashboardAttnCode(t) === 'L').length;
+  const restCount = trainees.filter(t => getDashboardAttnCode(t) === 'R').length;
+  const hospitalCount = trainees.filter(t => getDashboardAttnCode(t) === 'H').length;
+  const medApptCount = trainees.filter(t => getDashboardAttnCode(t) === 'M').length;
 
   // ── notPresent = everyone who is NOT present ──
   const notPresent = absentCount + sickCount + leaveCount + restCount + hospitalCount + medApptCount;
@@ -1682,6 +1695,15 @@ const [staffLoading, setStaffLoading] = useState(false);
     return map;
   }, [absentRecords]);
 
+  const activeMedicalByTrainee = useMemo(() => {
+    const map: Record<string, any> = {};
+    allMedical.forEach((m: any) => {
+      if (m.status !== 'Active') return;
+      if (!map[m.traineeId]) map[m.traineeId] = m;
+    });
+    return map;
+  }, [allMedical]);
+
   // Roster filter
   const filteredTrainees = trainees.filter(t => {
     if (searchQuery.trim()) {
@@ -1689,7 +1711,7 @@ const [staffLoading, setStaffLoading] = useState(false);
       if (!t.name.toLowerCase().includes(q) && !t.chestNo.toLowerCase().includes(q) && !(t.regNo || '').toLowerCase().includes(q)) return false;
     }
     if (platoonFilter !== 'ALL' && t.platoon !== platoonFilter) return false;
-    const attnCode = getTraineeAttnCode(t.attn);
+    const attnCode = getDashboardAttnCode(t);
     if (rosterFilter === 'ALL') return true;
     if (rosterFilter === 'PRESENT') return attnCode === 'P';
     if (rosterFilter === 'ABSENT') return attnCode === 'A';
@@ -1738,7 +1760,7 @@ const [staffLoading, setStaffLoading] = useState(false);
   // ═══════════════════════════════════════
   // AWAY PANEL — full detail of all non-present trainees
   // ═══════════════════════════════════════
-  const awayTrainees = trainees.filter(t => getTraineeAttnCode(t.attn) !== 'P');
+  const awayTrainees = trainees.filter(t => getDashboardAttnCode(t) !== 'P');
 
   // ══════════════════════════════════════════════════════════
   // RENDER
@@ -1972,10 +1994,19 @@ const [staffLoading, setStaffLoading] = useState(false);
                         </thead>
                         <tbody className="divide-y divide-slate-50">
                           {awayTrainees.map((t, idx) => {
-                            const typeInfo = getAbsentTypeInfo(getTraineeAttnCode(t.attn));
+                            const typeInfo = getAbsentTypeInfo(getDashboardAttnCode(t));
                             // Get the active absent record for this trainee
                             const traineeAbsRecs = absentRecordsByTrainee[t.id] || [];
                             const activeRec = traineeAbsRecs.find(r => r.status === 'Active') || null;
+                            const activeMed = activeMedicalByTrainee[t.id] || null;
+                            const displayRec = activeRec || (activeMed ? {
+                              type: getMedicalAttnCode(activeMed.category),
+                              reason: activeMed.diagnosis || activeMed.category,
+                              fromDate: activeMed.date,
+                              toDate: activeMed.date,
+                              totalDays: activeMed.recommendedDays || 1,
+                              remarks: activeMed.remarks || activeMed.wardNo || '',
+                            } : null);
                             const histCount = traineeAbsRecs.filter(r => r.status !== 'Active').length;
 
                             return (
@@ -2003,41 +2034,41 @@ const [staffLoading, setStaffLoading] = useState(false);
                                   </span>
                                 </td>
                                 <td className="px-3 py-3 text-slate-600 text-[10px]">
-                                  {activeRec?.type ? (
-                                    <span className="font-bold text-slate-700">{getAbsentTypeInfo(activeRec.type).label}</span>
+                                  {displayRec?.type ? (
+                                    <span className="font-bold text-slate-700">{getAbsentTypeInfo(displayRec.type).label}</span>
                                   ) : (
                                     <span className="text-slate-300">—</span>
                                   )}
                                 </td>
                                 <td className="px-3 py-3 max-w-[180px]">
-                                  {activeRec?.reason ? (
-                                    <p className="text-[10px] font-bold text-slate-700 truncate" title={activeRec.reason}>
-                                      {activeRec.reason}
+                                  {displayRec?.reason ? (
+                                    <p className="text-[10px] font-bold text-slate-700 truncate" title={displayRec.reason}>
+                                      {displayRec.reason}
                                     </p>
                                   ) : (
                                     <span className="text-[9px] text-red-400 font-bold">⚠ Not Recorded</span>
                                   )}
                                 </td>
                                 <td className="px-3 py-3 font-mono text-[10px] text-slate-500">
-                                  {activeRec?.fromDate ? fmtDateStr(activeRec.fromDate) : <span className="text-slate-300">—</span>}
+                                  {displayRec?.fromDate ? fmtDateStr(displayRec.fromDate) : <span className="text-slate-300">—</span>}
                                 </td>
                                 <td className="px-3 py-3 font-mono text-[10px]">
-                                  {activeRec?.toDate ? (
-                                    <span className="font-bold text-blue-600">{fmtDateStr(activeRec.toDate)}</span>
+                                  {displayRec?.toDate ? (
+                                    <span className="font-bold text-blue-600">{fmtDateStr(displayRec.toDate)}</span>
                                   ) : (
                                     <span className="text-slate-300">—</span>
                                   )}
                                 </td>
                                 <td className="px-3 py-3">
-                                  {activeRec?.totalDays ? (
-                                    <span className="font-black text-red-600 text-[11px]">{activeRec.totalDays}d</span>
+                                  {displayRec?.totalDays ? (
+                                    <span className="font-black text-red-600 text-[11px]">{displayRec.totalDays}d</span>
                                   ) : (
                                     <span className="text-slate-300">—</span>
                                   )}
                                 </td>
                                 <td className="px-3 py-3 max-w-[120px]">
-                                  {activeRec?.remarks ? (
-                                    <p className="text-[9px] text-slate-500 truncate" title={activeRec.remarks}>{activeRec.remarks}</p>
+                                  {displayRec?.remarks ? (
+                                    <p className="text-[9px] text-slate-500 truncate" title={displayRec.remarks}>{displayRec.remarks}</p>
                                   ) : (
                                     <span className="text-slate-200 text-[9px]">—</span>
                                   )}
@@ -2142,7 +2173,7 @@ const [staffLoading, setStaffLoading] = useState(false);
                   <tbody className="divide-y divide-slate-50">
                     {filteredTrainees.slice(0, 100).map((t, idx) => {
                       const hs = getTraineeHealthScore(t);
-                      const attnCode = getTraineeAttnCode(t.attn);
+                      const attnCode = getDashboardAttnCode(t);
                       const isAway = attnCode !== 'P';
                       const typeInfo = getAbsentTypeInfo(attnCode);
                       const attnCls = attnCode === 'P' ? 'bg-green-100 text-green-700'
@@ -2158,6 +2189,12 @@ const [staffLoading, setStaffLoading] = useState(false);
                       // Absent record for this trainee
                       const traineeAbsRecs = absentRecordsByTrainee[t.id] || [];
                       const activeAbsRec = traineeAbsRecs.find(r => r.status === 'Active') || null;
+                      const activeMedRec = activeMedicalByTrainee[t.id] || null;
+                      const displayAbsRec = activeAbsRec || (activeMedRec ? {
+                        reason: activeMedRec.diagnosis || activeMedRec.category,
+                        fromDate: activeMedRec.date,
+                        toDate: activeMedRec.date,
+                      } : null);
 
                       return (
                         <tr
@@ -2235,13 +2272,13 @@ const [staffLoading, setStaffLoading] = useState(false);
                           {/* ── NEW: Absence Info column ── */}
                           <td className="px-3 py-2.5 max-w-[160px]">
                             {isAway ? (
-                              activeAbsRec ? (
+                              displayAbsRec ? (
                                 <div>
-                                  <p className="text-[9px] font-bold text-slate-700 truncate" title={activeAbsRec.reason}>
-                                    {activeAbsRec.reason || '—'}
+                                  <p className="text-[9px] font-bold text-slate-700 truncate" title={displayAbsRec.reason}>
+                                    {displayAbsRec.reason || '—'}
                                   </p>
                                   <p className="text-[8px] text-slate-400 font-mono">
-                                    {fmtDateStr(activeAbsRec.fromDate)} → {fmtDateStr(activeAbsRec.toDate)}
+                                    {fmtDateStr(displayAbsRec.fromDate)} → {fmtDateStr(displayAbsRec.toDate)}
                                   </p>
                                 </div>
                               ) : (

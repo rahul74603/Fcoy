@@ -6,7 +6,7 @@ import {
   AlertCircle, Layers, CheckCircle2, X, Loader2, Activity,
   Stethoscope, BedDouble
 } from 'lucide-react';
-import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, query, where, orderBy } from 'firebase/firestore';
+import { collection, addDoc, getDocs, getDoc, updateDoc, deleteDoc, doc, query, where, orderBy } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { useBatch } from '../../contexts/BatchContext';
 
@@ -30,6 +30,21 @@ interface MedicalRecord {
 }
 
 const CATEGORIES = ['Sick Report', 'Hospital Admit', 'B-Rest', 'C-Rest', 'Medical Board'];
+
+
+const categoryToAttendance = (category: MedicalRecord['category']): 'S' | 'H' | 'R' | 'M' => {
+  if (category === 'Hospital Admit') return 'H';
+  if (category === 'B-Rest' || category === 'C-Rest') return 'R';
+  if (category === 'Medical Board') return 'M';
+  return 'S';
+};
+
+const categoryToMedStat = (category: MedicalRecord['category']): string => {
+  if (category === 'Hospital Admit') return 'Hospital';
+  if (category === 'B-Rest' || category === 'C-Rest') return category;
+  if (category === 'Medical Board') return 'Medical Board';
+  return 'Sick';
+};
 
 // ═══════════════════════════════════════════════════════════
 // MAIN COMPONENT
@@ -95,7 +110,13 @@ export const MedicalRegisterScreen = () => {
     setMessage('');
     try {
       await addDoc(collection(db, 'medicalRecords'), { ...form, batchId: activeBatch.id });
-      setMessage('SUCCESS: Medical record save ho gaya!');
+      await updateDoc(doc(db, 'trainees', form.traineeId), {
+        attn: categoryToAttendance(form.category),
+        medStat: categoryToMedStat(form.category),
+        medicalStatus: form.category,
+        lastMedicalUpdate: new Date().toISOString(),
+      });
+      setMessage('SUCCESS: Medical record save ho gaya aur trainee status sync ho gaya!');
       setShowForm(false);
       setForm(getEmptyForm());
       fetchData();
@@ -110,7 +131,29 @@ export const MedicalRegisterScreen = () => {
   // ── Mark as Fit ──
   const markAsFit = async (id: string) => {
     try {
+      const record = records.find(r => r.id === id);
       await updateDoc(doc(db, 'medicalRecords', id), { status: 'Fit / Discharged' });
+
+      if (record?.traineeId) {
+        const activeMedicalLeft = records.some(r =>
+          r.id !== id && r.traineeId === record.traineeId && r.status === 'Active'
+        );
+
+        const activeAbsentSnap = await getDocs(query(
+          collection(db, 'absentRecords'),
+          where('traineeId', '==', record.traineeId),
+          where('status', '==', 'Active')
+        ));
+
+        if (!activeMedicalLeft && activeAbsentSnap.empty) {
+          await updateDoc(doc(db, 'trainees', record.traineeId), {
+            attn: 'P',
+            medStat: 'SHAPE-1',
+            medicalStatus: 'Fit / Discharged',
+            lastMedicalUpdate: new Date().toISOString(),
+          });
+        }
+      }
       fetchData();
     } catch (err) {
       alert("Status update failed");
@@ -120,7 +163,28 @@ export const MedicalRegisterScreen = () => {
   const deleteRecord = async (id: string) => {
     if (!window.confirm("Kya aap sure hain?")) return;
     try {
+      const recordSnap = await getDoc(doc(db, 'medicalRecords', id));
+      const record = recordSnap.exists() ? ({ id, ...recordSnap.data() } as MedicalRecord) : null;
       await deleteDoc(doc(db, 'medicalRecords', id));
+
+      if (record?.traineeId && record.status === 'Active') {
+        const activeMedicalLeft = records.some(r =>
+          r.id !== id && r.traineeId === record.traineeId && r.status === 'Active'
+        );
+        const activeAbsentSnap = await getDocs(query(
+          collection(db, 'absentRecords'),
+          where('traineeId', '==', record.traineeId),
+          where('status', '==', 'Active')
+        ));
+        if (!activeMedicalLeft && activeAbsentSnap.empty) {
+          await updateDoc(doc(db, 'trainees', record.traineeId), {
+            attn: 'P',
+            medStat: 'SHAPE-1',
+            medicalStatus: 'Fit / Discharged',
+            lastMedicalUpdate: new Date().toISOString(),
+          });
+        }
+      }
       fetchData();
     } catch { alert('Delete failed'); }
   };
