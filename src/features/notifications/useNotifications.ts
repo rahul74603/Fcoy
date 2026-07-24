@@ -68,7 +68,7 @@ export const useNotifications = (): UseNotificationsReturn => {
             message: `${data.rank} ${data.staffName} applied for ${data.numberOfDays} days ${data.leaveTypeName}`,
             timestamp: appliedAt,
             read: readIds.has(`leave_pending_${d.id}`),
-            link: '/staff-leave',
+            link: `/staff-leave?tab=pending&leaveId=${d.id}`,
           });
         });
       } catch (err) {
