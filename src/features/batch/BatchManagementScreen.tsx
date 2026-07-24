@@ -68,6 +68,12 @@ export const BatchManagementScreen: React.FC = () => {
 
   // ── Handle Create New Batch ──
   const handleCreateBatch = async () => {
+    if (!isCommander) {
+      setError('Only Company Commander can create or activate a new batch');
+      setShowConfirm(false);
+      return;
+    }
+
     if (!form.batchNumber.trim() || !form.batchName.trim() || !form.startDate) {
       setError('Batch Number, Name aur Start Date required hain');
       return;
