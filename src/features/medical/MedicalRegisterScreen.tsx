@@ -15,6 +15,8 @@ import { useBatch } from '../../contexts/BatchContext';
 // ─────────────────────────────────────────────
 interface MedicalRecord {
   id?: string;
+  source?: 'medical' | 'absent';
+  linkedAbsentId?: string;
   batchId: string;
   traineeId: string;
   chestNo: string;
@@ -30,6 +32,14 @@ interface MedicalRecord {
 }
 
 const CATEGORIES = ['Sick Report', 'Hospital Admit', 'B-Rest', 'C-Rest', 'Medical Board'];
+
+
+const absentTypeToMedicalCategory = (type: string): MedicalRecord['category'] => {
+  if (type === 'H') return 'Hospital Admit';
+  if (type === 'R') return 'B-Rest';
+  if (type === 'M') return 'Medical Board';
+  return 'Sick Report';
+};
 
 
 const categoryToAttendance = (category: MedicalRecord['category']): 'S' | 'H' | 'R' | 'M' => {
@@ -86,7 +96,42 @@ export const MedicalRegisterScreen = () => {
       const mq = query(collection(db, 'medicalRecords'), where('batchId', '==', activeBatch.id), orderBy('date', 'desc'));
       const mSnap = await getDocs(mq);
       const mList: MedicalRecord[] = [];
-      mSnap.forEach(d => mList.push({ id: d.id, ...d.data() } as MedicalRecord));
+      mSnap.forEach(d => mList.push({ id: d.id, source: 'medical', ...d.data() } as MedicalRecord));
+
+      // Daily Tracking ke medical-type absent records ko bhi yahin show karo.
+      const absentSnap = await getDocs(query(
+        collection(db, 'absentRecords'),
+        where('batchId', '==', activeBatch.id)
+      ));
+      absentSnap.forEach(d => {
+        const data = d.data();
+        if (!['S', 'H', 'R', 'M'].includes(data.type)) return;
+        const category = absentTypeToMedicalCategory(data.type);
+        const exists = mList.some(r =>
+          r.traineeId === data.traineeId &&
+          r.date === data.fromDate &&
+          r.category === category
+        );
+        if (exists) return;
+        mList.push({
+          id: `absent_${d.id}`,
+          source: 'absent',
+          linkedAbsentId: d.id,
+          batchId: activeBatch.id,
+          traineeId: data.traineeId ?? '',
+          chestNo: data.chestNo ?? '',
+          name: data.traineeName ?? '',
+          platoon: data.platoon ?? '',
+          date: data.fromDate ?? '',
+          category,
+          diagnosis: data.reason ?? category,
+          wardNo: data.remarks ?? '',
+          recommendedDays: Number(data.totalDays ?? 1),
+          remarks: data.remarks ?? '',
+          status: data.status === 'Returned' ? 'Fit / Discharged' : 'Active',
+        });
+      });
+      mList.sort((a, b) => String(b.date).localeCompare(String(a.date)));
       setRecords(mList);
     } catch (err) {
       console.error(err);
@@ -132,7 +177,11 @@ export const MedicalRegisterScreen = () => {
   const markAsFit = async (id: string) => {
     try {
       const record = records.find(r => r.id === id);
-      await updateDoc(doc(db, 'medicalRecords', id), { status: 'Fit / Discharged' });
+      if (record?.source === 'absent' && record.linkedAbsentId) {
+        await updateDoc(doc(db, 'absentRecords', record.linkedAbsentId), { status: 'Returned', toDate: new Date().toISOString().split('T')[0] });
+      } else {
+        await updateDoc(doc(db, 'medicalRecords', id), { status: 'Fit / Discharged' });
+      }
 
       if (record?.traineeId) {
         const activeMedicalLeft = records.some(r =>
@@ -163,9 +212,15 @@ export const MedicalRegisterScreen = () => {
   const deleteRecord = async (id: string) => {
     if (!window.confirm("Kya aap sure hain?")) return;
     try {
-      const recordSnap = await getDoc(doc(db, 'medicalRecords', id));
-      const record = recordSnap.exists() ? ({ id, ...recordSnap.data() } as MedicalRecord) : null;
-      await deleteDoc(doc(db, 'medicalRecords', id));
+      const currentRecord = records.find(r => r.id === id);
+      let record: MedicalRecord | null = currentRecord ?? null;
+      if (currentRecord?.source === 'absent' && currentRecord.linkedAbsentId) {
+        await deleteDoc(doc(db, 'absentRecords', currentRecord.linkedAbsentId));
+      } else {
+        const recordSnap = await getDoc(doc(db, 'medicalRecords', id));
+        record = recordSnap.exists() ? ({ id, ...recordSnap.data() } as MedicalRecord) : null;
+        await deleteDoc(doc(db, 'medicalRecords', id));
+      }
 
       if (record?.traineeId && record.status === 'Active') {
         const activeMedicalLeft = records.some(r =>
