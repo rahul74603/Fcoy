@@ -49,6 +49,61 @@ let stats = {
   totalTime: 0,
 };
 
+function detectLocalIntent(message: string): AIResponse | null {
+  const text = message.toLowerCase().trim();
+  const hasAny = (...words: string[]) => words.some(w => text.includes(w));
+  const chestMatch = text.match(/(?:chest|chest no|chest number|सीना|चेस्ट)\s*#?\s*(\d+)/i) || text.match(/\b(?:no|number)\s*(\d+)\b/i);
+
+  if (chestMatch && hasAny('detail', 'details', 'profile', 'dikhao', 'batao', 'search', 'find', 'kaun')) {
+    return { action: 'search', chestNo: chestMatch[1] };
+  }
+
+  if (hasAny('vendor due', 'vendor dues', 'vender due', 'vendors due', 'payment pending', 'vendor pending')) {
+    return { action: 'get_summary', listType: 'vendor_due', filters: {} } as AIResponse;
+  }
+
+  if (hasAny('fund', 'balance', 'mess fund', 'training fund', 'general fund', 'company assets')) {
+    const fundKey = text.includes('mess') ? 'mess_fund'
+      : text.includes('training') ? 'training_fund'
+      : text.includes('asset') ? 'company_assets_fund'
+      : text.includes('general') ? 'general_fund'
+      : undefined;
+    return { action: 'get_summary', listType: 'finance', filters: { category: fundKey } } as AIResponse;
+  }
+
+  if (hasAny('fpt', 'physical', 'fitness')) {
+    const status = hasAny('fail', 'failed', 'not pass', 'नापास') ? 'fail' : hasAny('pass', 'passed') ? 'pass' : undefined;
+    return { action: 'get_list', listType: 'fpt', filters: { status } };
+  }
+
+  if (hasAny('weekly test', 'weapon test', 'test fail', 'test pass', 'wt ', 'exam')) {
+    const status = hasAny('fail', 'failed', 'नापास') ? 'fail' : hasAny('pass', 'passed') ? 'pass' : undefined;
+    return { action: 'get_list', listType: 'weekly', filters: { status } };
+  }
+
+  if (hasAny('hospital', 'admit')) {
+    return { action: 'get_summary', listType: 'attendance', filters: { status: 'H' } } as AIResponse;
+  }
+  if (hasAny('sick', 'mi room', 'medical case')) {
+    return { action: 'get_summary', listType: 'attendance', filters: { status: 'S' } } as AIResponse;
+  }
+  if (hasAny('rest', 'b rest', 'c rest', 'light duty')) {
+    return { action: 'get_summary', listType: 'attendance', filters: { status: 'R' } } as AIResponse;
+  }
+  if (hasAny('absent', 'away', 'not on field', 'field par nahi')) {
+    return { action: 'get_summary', listType: 'attendance', filters: { status: 'not_present' } } as AIResponse;
+  }
+  if (hasAny('present', 'strength', 'attendance')) {
+    return { action: 'get_summary', listType: 'attendance', filters: {} } as AIResponse;
+  }
+
+  if (hasAny('trainee list', 'trainees list', 'all trainees', 'list dikhao', 'sare trainee')) {
+    return { action: 'get_list', listType: 'trainees', filters: {} };
+  }
+
+  return null;
+}
+
 // ═══════════════════════════════════════════════════════════
 // MAIN FUNCTION - smart routing logic
 // ═══════════════════════════════════════════════════════════
@@ -87,6 +142,23 @@ export async function smartRoute(userMessage: string): Promise<RouteResult> {
         fallbackUsed: false,
       };
     }
+  }
+
+  // ═══════════════════════════════════════════════
+  // LAYER 1.5: LOCAL ERP INTENT (exact Firebase queries, no API needed)
+  // ═══════════════════════════════════════════════
+  const localIntent = detectLocalIntent(userMessage);
+  if (localIntent) {
+    const responseTime = Date.now() - startTime;
+    stats.quick++;
+    stats.totalTime += responseTime;
+    if (CONFIG.LOG_DETAILS) console.log(`✅ LAYER 1.5 HIT: Local ERP Intent (${responseTime}ms)`, localIntent);
+    return {
+      response: localIntent,
+      source: "quick",
+      responseTime,
+      fallbackUsed: false,
+    };
   }
 
   // ═══════════════════════════════════════════════
