@@ -169,7 +169,7 @@ function App() {
               <Route
                 path="/reports"
                 element={
-                  <ProtectedRoute allowedRoles={['Company Commander', 'Quarter Master']}>
+                  <ProtectedRoute allowedRoles={['Company Commander']}>
                     <EnterpriseLayout><ReportsScreen /></EnterpriseLayout>
                   </ProtectedRoute>
                 }

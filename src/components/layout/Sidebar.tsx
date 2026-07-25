@@ -4,13 +4,12 @@ import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Activity, Target,
-  Users, Archive, FileText, Settings,
+  Users, Archive, Settings,
   ChevronDown, ChevronRight, ChevronLeft,
   Layers, CalendarDays, BarChart3,
   PieChart, Menu,
   Bot, Sparkles,
   UserCog, ClipboardList,
-  ArrowRightLeft,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBatch } from '../../contexts/BatchContext';
@@ -334,198 +333,85 @@ export const Sidebar = () => {
           <div className="flex-1 overflow-y-auto py-3 space-y-1 custom-scrollbar">
 
             {/* ═══════════════════════════════════════════════
-                ⭐ COMPANY COMMANDER SECTION
-                Sirf Commander ke liye
+                ⭐ COMPANY COMMANDER — FIRST
             ═══════════════════════════════════════════════ */}
             {hasAccess([]) && user?.role === 'Company Commander' && (
               <>
                 <RoleSectionHeader
                   icon="⭐"
                   title="Company Commander"
-                  subtitle="Full Access - All Modules"
+                  subtitle="Full Command Authority"
                   color="border-amber-500"
                   bgColor="bg-amber-900/30"
                 />
-
-                {/* CC Dashboard */}
                 <NavItem title="Commander Dashboard" icon={LayoutDashboard} path="/commander" />
-
-                {/* AI Agent - CC Only */}
                 <AINavItem />
-
-                {/* CC System - Admin Tools */}
                 <NavGroup
-                  title="System Administration"
-                  icon={Settings}
-                  menuKey="ccSystem"
-                >
-                  <SubItem title="Reports Center" path="/reports" dot="bg-blue-400" />
-                  <SubItem title="Settings" path="/settings" dot="bg-slate-400" />
-                  <SubItem title="User Management" path="/users" dot="bg-purple-400" />
-                  <SubItem title="🌱 Seed Staff Data" path="/seed-staff" dot="bg-green-400" />
-                </NavGroup>
-
-                <div className="mx-4 my-2 h-px bg-military-800" />
-              </>
-            )}
-
-            {/* ═══════════════════════════════════════════════
-                📦 QUARTER MASTER SECTION
-                QM aur Commander ke liye
-            ═══════════════════════════════════════════════ */}
-            {hasAccess(['Quarter Master']) && (
-              <>
-                <RoleSectionHeader
-                  icon="📦"
-                  title="Quarter Master"
-                  subtitle="Inventory & Finance"
-                  color="border-orange-500"
-                  bgColor="bg-orange-900/30"
-                />
-
-                {/* QM Dashboard */}
-                <NavItem title="QM Dashboard" icon={LayoutDashboard} path="/quartermaster" />
-
-                {/* Inventory */}
-                <NavGroup
-                  title="Inventory Management"
-                  icon={Archive}
-                  menuKey="qmInventory"
-                >
-                  <SubItem title="Kit Issue" path="/issue-kit" dot="bg-blue-400" />
-                </NavGroup>
-
-                {/* Company Funds */}
-                <NavGroup
-                  title="Company Funds"
-                  icon={PieChart}
-                  menuKey="qmFunds"
-                  badge={<FundBadge />}
-                >
-                  <SubItem title="📊 Funds Dashboard" path="/funds" dot="bg-white" />
-                  <GroupDivider label="Fund-wise" />
-                  <SubItem title="🍽️ Mess Fund" path="/mess-fund" dot="bg-orange-500" />
-                  <SubItem title="🎓 Training Essentials" path="/training-fund" dot="bg-blue-500" />
-                  <SubItem title="🏛️ Company Assets" path="/company-assets-fund" dot="bg-green-500" />
-                  <GroupDivider label="Central Reserve" />
-                  <SubItem title="💰 General Fund" path="/general-fund" dot="bg-slate-300" />
-                  <GroupDivider label="Salary & Bills" />
-                  <SubItem title="👨‍🍳 Mess Boy Salary" path="/mess-boy-salary" dot="bg-purple-400" />
-                  <GroupDivider label="Vendors" />
-                  <SubItem title="🏪 Vendor Management" path="/vendors" dot="bg-indigo-400" />
-                  <SubItem title="💳 Vendor Payments" path="/vendor-payments" dot="bg-red-400" />
-                </NavGroup>
-
-                {/* QM Reports */}
-                <NavItem title="Reports & Export" icon={FileText} path="/reports" />
-
-                <div className="mx-4 my-2 h-px bg-military-800" />
-              </>
-            )}
-
-            {/* ═══════════════════════════════════════════════
-                🎖️ USTAD / INSTRUCTOR SECTION
-                Sirf Ustad ke liye - apna profile & duties
-            ═══════════════════════════════════════════════ */}
-            {hasAccess(['Ustad']) && user?.role === 'Ustad' && (
-              <>
-                <RoleSectionHeader
-                  icon="🎖️"
-                  title="Instructor Panel"
-                  subtitle="Your Profile & Duties"
-                  color="border-blue-500"
-                  bgColor="bg-blue-900/30"
-                />
-
-                <NavItem title="My Dashboard" icon={Target} path="/ustad" />
-
-                <NavGroup
-                  title="My Details"
-                  icon={UserCog}
-                  menuKey="ustadOwn"
-                >
-                  <SubItem title="My Profile" path="/staff" dot="bg-blue-400" />
-                  <SubItem title="My Attendance" path="/staff-attendance" dot="bg-green-400" />
-                  <SubItem title="Apply Leave" path="/staff-leave" dot="bg-yellow-400" />
-                  <SubItem title="My Duties" path="/duty-management" dot="bg-amber-400" />
-                  <SubItem title="My Schedule" path="/training-schedule" dot="bg-purple-400" />
-                </NavGroup>
-
-                <div className="mx-4 my-2 h-px bg-military-800" />
-              </>
-            )}
-
-            {/* ═══════════════════════════════════════════════
-                📋 CLERK SECTION
-                Clerk aur Commander ke liye
-                Sabse bada section - Trainee + Staff sab handle
-            ═══════════════════════════════════════════════ */}
-            {hasAccess(['Clerk']) && (
-              <>
-                <RoleSectionHeader
-                  icon="📋"
-                  title="Clerk / Administration"
-                  subtitle="Trainee + Staff Management"
-                  color="border-cyan-500"
-                  bgColor="bg-cyan-900/30"
-                />
-
-                {/* Clerk Dashboard */}
-                <NavItem title="Clerk Dashboard" icon={Activity} path="/clerk" />
-
-                {/* ═════ BATCH MANAGEMENT ═════ */}
-                <NavGroup
-                  title="Batch Management"
+                  title="Batch Command"
                   icon={Layers}
                   menuKey="clerkBatch"
                   badge={<ActiveBatchBadge />}
                 >
                   <SubItem title="All Batches" path="/batches" dot="bg-green-400" />
                 </NavGroup>
+                <div className="mx-4 my-2 h-px bg-military-800" />
+              </>
+            )}
 
-                {/* ═════ TRAINEE MANAGEMENT ═════ */}
+            {/* ═══════════════════════════════════════════════
+                📦 QUARTER MASTER — SECOND
+            ═══════════════════════════════════════════════ */}
+            {hasAccess(['Quarter Master']) && (
+              <>
+                <RoleSectionHeader
+                  icon="📦"
+                  title="Quarter Master"
+                  subtitle="Fund · Stock · Bills · Vendors"
+                  color="border-orange-500"
+                  bgColor="bg-orange-900/30"
+                />
+                <NavItem title="QM Dashboard" icon={LayoutDashboard} path="/quartermaster" />
                 <NavGroup
-                  title="Trainee Management"
-                  icon={Users}
-                  menuKey="clerkTrainee"
+                  title="Stock Management"
+                  icon={Archive}
+                  menuKey="qmInventory"
                 >
-                  <SubItem title="Search & Profile" path="/profile" dot="bg-blue-400" />
-                  <SubItem title="Document Cell" path="/documents" dot="bg-purple-400" />
-                  <SubItem title="MI Room & Medical" path="/medical-register" dot="bg-red-400" />
+                  <SubItem title="Inventory / Kit Issue" path="/issue-kit" dot="bg-blue-400" />
                 </NavGroup>
-
-                {/* ═════ TRAINING & DUTY ═════ */}
                 <NavGroup
-                  title="Training Program"
-                  icon={CalendarDays}
-                  menuKey="clerkTraining"
+                  title="Fund Manager"
+                  icon={PieChart}
+                  menuKey="qmFunds"
+                  badge={<FundBadge />}
                 >
-                  <SubItem title="Weekly Program" path="/weekly-program" dot="bg-green-400" />
+                  <SubItem title="📊 Funds Dashboard" path="/funds" dot="bg-white" />
+                  <GroupDivider label="Funds" />
+                  <SubItem title="🍽️ Mess Fund" path="/mess-fund" dot="bg-orange-500" />
+                  <SubItem title="🎓 Training Fund" path="/training-fund" dot="bg-blue-500" />
+                  <SubItem title="🏛️ Company Assets" path="/company-assets-fund" dot="bg-green-500" />
+                  <SubItem title="💰 General Fund" path="/general-fund" dot="bg-slate-300" />
+                  <GroupDivider label="Bills & Vendors" />
+                  <SubItem title="🏪 Vendor Management" path="/vendors" dot="bg-indigo-400" />
+                  <SubItem title="💳 Vendor Payments" path="/vendor-payments" dot="bg-red-400" />
+                  <SubItem title="👨‍🍳 Mess Boy Salary" path="/mess-boy-salary" dot="bg-purple-400" />
                 </NavGroup>
+                <div className="mx-4 my-2 h-px bg-military-800" />
+              </>
+            )}
 
-                {/* ═════ TRAINING RECORDS ═════ */}
-                                <NavGroup
-                  title="Training Records"
-                  icon={BarChart3}
-                  menuKey="clerkRecords"
-                >
-                  <GroupDivider label="Daily Tracking" />
-                  <SubItem title="Absent / Leave / Medical" path="/absent-management" dot="bg-red-500" />
-                  <GroupDivider label="Exam Records" />
-                  <SubItem title="🆕 All Tests (Unified)" path="/test-records" dot="bg-purple-500" />
-                </NavGroup>
-
-                {/* ═════════════════════════════════
-                    STAFF MANAGEMENT SUBSECTION
-                    (Clerk manages instructors/staff)
-                ═════════════════════════════════ */}
-                <div className="mx-4 mt-3 mb-2 px-3 py-1.5 bg-indigo-900/40 rounded-lg border-l-2 border-indigo-500">
-                  <p className="text-[10px] font-black text-indigo-300 uppercase tracking-wider">
-                    🎖️ Staff / Instructor Management
-                  </p>
-                </div>
-
-                {/* Instructor Profiles */}
+            {/* ═══════════════════════════════════════════════
+                🎖️ USTAD / INSTRUCTOR — THIRD
+            ═══════════════════════════════════════════════ */}
+            {hasAccess(['Ustad']) && (
+              <>
+                <RoleSectionHeader
+                  icon="🎖️"
+                  title="Ustad / Instructor"
+                  subtitle={user?.role === 'Ustad' ? 'Your Duties & Schedule' : 'Instructor Management'}
+                  color="border-blue-500"
+                  bgColor="bg-blue-900/30"
+                />
+                {user?.role === 'Ustad' && <NavItem title="My Dashboard" icon={Target} path="/ustad" />}
                 <NavGroup
                   title="Instructor Profiles"
                   icon={UserCog}
@@ -536,29 +422,98 @@ export const Sidebar = () => {
                   <SubItem title="Subject Master" path="/subjects" dot="bg-purple-400" />
                   <SubItem title="Subject Assignment" path="/subject-assignment" dot="bg-indigo-400" />
                 </NavGroup>
-
-                {/* Daily Operations */}
                 <NavGroup
                   title="Daily Operations"
                   icon={ClipboardList}
                   menuKey="clerkStaffOps"
                 >
                   <SubItem title="📊 Batch Progress" path="/batch-progress" dot="bg-purple-500" />
-                  <SubItem title="🆕 Training Schedule" path="/training-schedule" dot="bg-blue-400" />
+                  <SubItem title="Training Schedule" path="/training-schedule" dot="bg-blue-400" />
                   <SubItem title="Mark Attendance" path="/staff-attendance" dot="bg-green-400" />
                   <SubItem title="Leave Management" path="/staff-leave" dot="bg-yellow-400" />
                   <SubItem title="Duty Management" path="/duty-management" dot="bg-amber-400" />
-                </NavGroup>
-                                {/* Advanced Features */}
-                <NavGroup
-                  title="Advanced Features"
-                  icon={ArrowRightLeft}
-                  menuKey="clerkStaffAdv"
-                >
                   <SubItem title="Deputation Register" path="/deputation" dot="bg-purple-500" />
                 </NavGroup>
-
                 <div className="mx-4 my-2 h-px bg-military-800" />
+              </>
+            )}
+
+            {/* ═══════════════════════════════════════════════
+                📋 CLERK / TRAINING RECORDS — FOURTH
+            ═══════════════════════════════════════════════ */}
+            {hasAccess(['Clerk']) && (
+              <>
+                <RoleSectionHeader
+                  icon="📋"
+                  title="Clerk / Training"
+                  subtitle="Trainee Details · Program · Tests"
+                  color="border-cyan-500"
+                  bgColor="bg-cyan-900/30"
+                />
+                <NavItem title="Clerk Dashboard" icon={Activity} path="/clerk" />
+                {user?.role !== 'Company Commander' && (
+                  <NavGroup
+                    title="Batch View"
+                    icon={Layers}
+                    menuKey="clerkBatch"
+                    badge={<ActiveBatchBadge />}
+                  >
+                    <SubItem title="All Batches" path="/batches" dot="bg-green-400" />
+                  </NavGroup>
+                )}
+                <NavGroup
+                  title="Trainee Management"
+                  icon={Users}
+                  menuKey="clerkTrainee"
+                >
+                  <SubItem title="Trainee Details / Profile" path="/profile" dot="bg-blue-400" />
+                  <SubItem title="Document Cell" path="/documents" dot="bg-purple-400" />
+                  <SubItem title="MI Room & Medical" path="/medical-register" dot="bg-red-400" />
+                </NavGroup>
+                <NavGroup
+                  title="Program & Duty Planning"
+                  icon={CalendarDays}
+                  menuKey="clerkTraining"
+                >
+                  <SubItem title="Weekly Program" path="/weekly-program" dot="bg-green-400" />
+                  <SubItem title="Ustad Schedule / Duty" path="/training-schedule" dot="bg-blue-400" />
+                </NavGroup>
+                <NavGroup
+                  title="Training Records"
+                  icon={BarChart3}
+                  menuKey="clerkRecords"
+                >
+                  <GroupDivider label="Daily Tracking" />
+                  <SubItem title="Absent / Leave / Medical" path="/absent-management" dot="bg-red-500" />
+                  <GroupDivider label="Exam Records" />
+                  <SubItem title="FPT / Weekly Test Records" path="/test-records" dot="bg-purple-500" />
+                </NavGroup>
+                <div className="mx-4 my-2 h-px bg-military-800" />
+              </>
+            )}
+
+            {/* ═══════════════════════════════════════════════
+                🛡️ REPORTS & SETTINGS — CC ONLY, LAST
+            ═══════════════════════════════════════════════ */}
+            {user?.role === 'Company Commander' && (
+              <>
+                <RoleSectionHeader
+                  icon="🛡️"
+                  title="Reports & Settings"
+                  subtitle="Commander Only"
+                  color="border-slate-400"
+                  bgColor="bg-slate-800/40"
+                />
+                <NavGroup
+                  title="System Administration"
+                  icon={Settings}
+                  menuKey="ccSystem"
+                >
+                  <SubItem title="Reports Center" path="/reports" dot="bg-blue-400" />
+                  <SubItem title="Settings" path="/settings" dot="bg-slate-400" />
+                  <SubItem title="User Management" path="/users" dot="bg-purple-400" />
+                  <SubItem title="🌱 Seed Staff Data" path="/seed-staff" dot="bg-green-400" />
+                </NavGroup>
               </>
             )}
 
