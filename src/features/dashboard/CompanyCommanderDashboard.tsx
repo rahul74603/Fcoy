@@ -163,17 +163,6 @@ interface AbsentRecordDash {
   remarks: string;
 }
 
-interface UstadInfo {
-  id: string;
-  name: string;
-  rank: string;
-  irla: string;
-  designation: string;
-  platoon: string;
-  phone: string;
-  status: string;
-}
-
 interface ProgramSession {
   time: string;
   subject: string;
@@ -1276,7 +1265,6 @@ export const CompanyCommanderDashboard: React.FC = () => {
 
   // ── State ──
   const [trainees, setTrainees] = useState<TraineeInfo[]>([]);
-  const [ustads, setUstads] = useState<UstadInfo[]>([]);
   const [fptRecords, setFptRecords] = useState<any[]>([]);
   const [weeklyTests, setWeeklyTests] = useState<any[]>([]);
   const [allMedical, setAllMedical] = useState<any[]>([]);
@@ -1340,7 +1328,7 @@ const [staffLoading, setStaffLoading] = useState(false);
     try {
       const [
         traineesSnap, absentSnap, medicalSnap,
-        fptSnap, testSnap, programSnap, ustadSnap,
+        fptSnap, testSnap, programSnap,
       ] = await Promise.all([
         getDocs(query(collection(db, 'trainees'), where('batchId', '==', activeBatch.id))),
         // ── FIX: fetch ALL absent records (not just Active) for dashboard ──
@@ -1349,7 +1337,6 @@ const [staffLoading, setStaffLoading] = useState(false);
         getDocs(query(collection(db, 'fptRecords'), where('batchId', '==', activeBatch.id))),
         getDocs(query(collection(db, 'weeklyTestRecords'), where('batchId', '==', activeBatch.id))),
         getDocs(query(collection(db, 'weeklyPrograms'), where('batchId', '==', activeBatch.id))),
-        getDocs(query(collection(db, 'ustads'), where('batchId', '==', activeBatch.id))),
       ]);
 
       const [
@@ -1426,19 +1413,6 @@ const [staffLoading, setStaffLoading] = useState(false);
       programSnap.forEach(d => progList.push({ id: d.id, ...d.data() }));
       progList.sort((a, b) => new Date(b.fromDate || 0).getTime() - new Date(a.fromDate || 0).getTime());
       setPrograms(progList);
-
-      const ustadList: UstadInfo[] = [];
-      ustadSnap.forEach(d => {
-        const data = d.data();
-        ustadList.push({
-          id: d.id, name: data.name ?? '', rank: data.rank ?? '',
-          irla: data.irla ?? '', designation: data.designation ?? '',
-          platoon: data.platoon ?? '', phone: data.phone ?? '',
-          status: data.status ?? 'Active',
-        });
-      });
-      ustadList.sort((a, b) => a.name.localeCompare(b.name));
-      setUstads(ustadList);
 
       const recList: any[] = [];
       recoverySnap.forEach(d => recList.push({ id: d.id, ...d.data() }));
@@ -1644,6 +1618,24 @@ const [staffLoading, setStaffLoading] = useState(false);
     if (todayDayData) todaySchedule.push(...todayDayData.sessions);
     if (tomorrowDayData) tomorrowSchedule.push(...tomorrowDayData.sessions);
   }
+
+  const todayInstructorAssignments = todaySchedule.flatMap((session, sessionIndex) =>
+    (session.assignedPersons || [])
+      .filter(person => person.name?.trim())
+      .map(person => ({
+        id: `${sessionIndex}_${person.rank}_${person.name}_${session.time}`,
+        rank: person.rank || 'Instructor',
+        name: person.name,
+        time: session.time,
+        subject: getSubjectDisplay(session),
+        platoon: session.platoon || 'All Platoons',
+        location: session.location || 'Training Area',
+      }))
+  );
+
+  const unassignedTodaySessions = todaySchedule.filter(session =>
+    !(session.assignedPersons || []).some(person => person.name?.trim())
+  );
 
   // Alerts
   const fptFailAlerts: AlertItem[] = fptNeverPassed.map(([id, d]) => ({
@@ -2739,43 +2731,94 @@ const [staffLoading, setStaffLoading] = useState(false);
             )}
           </CollapsibleSection>
 
-          {/* ═══ USTADS + VENDOR DUES ═══ */}
+          {/* ═══ TODAY INSTRUCTORS + VENDOR DUES ═══ */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <CollapsibleSection title={`Ustads / Staff (${ustads.length})`} subtitle="Training staff"
-              icon={<Shield size={14} />} accentColor="border-l-indigo-500">
-              {ustads.length === 0 ? (
-                <div className="p-6 text-center bg-slate-50 rounded-xl">
-                  <Shield size={28} className="mx-auto text-slate-200 mb-2" />
-                  <p className="text-[10px] text-slate-400 font-bold">No ustads added</p>
+            <CollapsibleSection
+              title={`Today's Ustad / Staff Duties (${todayInstructorAssignments.length})`}
+              subtitle="Aaj kis instructor ki kaunsi class hai — Weekly Program se live"
+              icon={<Shield size={14} />}
+              action={{ label: 'Training Schedule', onClick: () => go('/weekly-program') }}
+              accentColor="border-l-indigo-500"
+            >
+              {todaySchedule.length === 0 ? (
+                <div className="p-5 bg-blue-50 border border-blue-200 rounded-xl">
+                  <div className="flex items-start gap-3">
+                    <Calendar size={22} className="text-blue-500 flex-shrink-0" />
+                    <div>
+                      <p className="text-xs font-black text-blue-800 uppercase">Aaj ka weekly program blank hai</p>
+                      <p className="text-[10px] text-blue-700 mt-1">
+                        Weekly Program me aaj ki classes add karo, yahan instructor-wise duty automatically dikhegi.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); go('/weekly-program'); }}
+                        className="mt-3 px-3 py-1.5 bg-blue-600 text-white text-[10px] font-bold rounded-lg hover:bg-blue-700"
+                      >
+                        Open Weekly Program →
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : todayInstructorAssignments.length === 0 ? (
+                <div className="space-y-3">
+                  <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                    <p className="text-xs font-black text-amber-800 uppercase">Classes hain, par ustad assigned nahi</p>
+                    <p className="text-[10px] text-amber-700 mt-1">
+                      {unassignedTodaySessions.length} session(s) me instructor/ustad missing hai. Weekly Program me assigned persons भरो.
+                    </p>
+                  </div>
+                  <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden bg-white max-h-64 overflow-y-auto">
+                    {todaySchedule.map((session, idx) => (
+                      <div key={`${session.time}_${idx}`} className="px-4 py-3 flex items-center justify-between hover:bg-slate-50">
+                        <div>
+                          <p className="text-[11px] font-black text-slate-800">{getSubjectDisplay(session)}</p>
+                          <p className="text-[9px] text-slate-500">{session.time} · {session.platoon || 'All Platoons'} · {session.location || 'Training Area'}</p>
+                        </div>
+                        <span className="text-[9px] font-black text-red-600 bg-red-50 border border-red-200 px-2 py-1 rounded-lg">No Ustad</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ) : (
-                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-                  <div className="overflow-auto max-h-64">
-                    <table className="w-full text-xs">
-                      <thead className="sticky top-0 bg-slate-50">
-                        <tr className="border-b border-slate-200">
-                          {['Name', 'Rank', 'IRLA', 'Designation', 'Platoon', 'Status'].map(h => (
-                            <th key={h} className="px-3 py-2 text-[9px] font-bold text-slate-400 uppercase text-left">{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-50">
-                        {ustads.map(u => (
-                          <tr key={u.id} className="hover:bg-slate-50 transition-colors">
-                            <td className="px-3 py-2.5 font-bold text-slate-700">{u.name}</td>
-                            <td className="px-3 py-2.5 text-slate-500">{u.rank}</td>
-                            <td className="px-3 py-2.5 font-mono text-slate-400 text-[10px]">{u.irla || '—'}</td>
-                            <td className="px-3 py-2.5 text-slate-500">{u.designation || '—'}</td>
-                            <td className="px-3 py-2.5 text-slate-500">{u.platoon || '—'}</td>
-                            <td className="px-3 py-2.5">
-                              <span className={`text-[9px] font-bold px-2 py-0.5 rounded-lg ${u.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
-                                {u.status || 'Active'}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 text-center">
+                      <p className="text-lg font-black text-indigo-700">{todaySchedule.length}</p>
+                      <p className="text-[9px] font-bold text-indigo-600 uppercase">Classes</p>
+                    </div>
+                    <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-center">
+                      <p className="text-lg font-black text-green-700">{todayInstructorAssignments.length}</p>
+                      <p className="text-[9px] font-bold text-green-600 uppercase">Assignments</p>
+                    </div>
+                    <div className={`${unassignedTodaySessions.length > 0 ? 'bg-red-50 border-red-200' : 'bg-slate-50 border-slate-200'} border rounded-xl p-3 text-center`}>
+                      <p className={`text-lg font-black ${unassignedTodaySessions.length > 0 ? 'text-red-700' : 'text-slate-600'}`}>{unassignedTodaySessions.length}</p>
+                      <p className="text-[9px] font-bold text-slate-500 uppercase">Unassigned</p>
+                    </div>
+                  </div>
+                  <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                    <div className="divide-y divide-slate-50 max-h-72 overflow-y-auto">
+                      {todayInstructorAssignments.map(item => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); go('/weekly-program'); }}
+                          className="w-full px-4 py-3 flex items-center justify-between gap-3 hover:bg-indigo-50/60 transition-colors text-left"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className="w-9 h-9 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm font-black">👤</span>
+                            <div className="min-w-0">
+                              <p className="text-xs font-black text-slate-800 truncate">{item.rank} {item.name}</p>
+                              <p className="text-[10px] text-slate-500 truncate">{item.subject}</p>
+                              <p className="text-[9px] text-slate-400">{item.location}</p>
+                            </div>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <p className="text-[10px] font-mono font-black text-military-700 bg-military-50 border border-military-100 px-2 py-1 rounded-lg">{item.time}</p>
+                            <p className="text-[9px] text-slate-500 mt-1">{item.platoon}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}
