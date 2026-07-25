@@ -10,7 +10,6 @@ import AIAgentScreen from './features/aiAgent/components/AIAgentScreen';
 import { AuthProvider }       from './contexts/AuthContext';
 import { UnitConfigProvider } from './contexts/UnitConfigContext';
 import { BatchProvider }      from './contexts/BatchContext';
-import { ThemeProvider }      from './contexts/ThemeContext';
 import { LoginScreen }        from './features/auth/LoginScreen';
 import { ProtectedRoute }     from './components/ProtectedRoute';
 
@@ -82,11 +81,10 @@ const STAFF_VIEW_ROLES   = ['Company Commander', 'Clerk', 'Ustad'];
 
 function App() {
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <UnitConfigProvider>
-          <BatchProvider>
-            <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <AuthProvider>
+      <UnitConfigProvider>
+        <BatchProvider>
+          <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
             <Routes>
 
               {/* ── Public ── */}
@@ -433,11 +431,10 @@ function App() {
               <Route path="*" element={<Navigate to="/login" replace />} />
 
             </Routes>
-            </Router>
-          </BatchProvider>
-        </UnitConfigProvider>
-      </AuthProvider>
-    </ThemeProvider>
+          </Router>
+        </BatchProvider>
+      </UnitConfigProvider>
+    </AuthProvider>
   );
 }
 

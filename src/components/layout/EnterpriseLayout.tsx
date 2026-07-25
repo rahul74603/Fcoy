@@ -2,10 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from './Sidebar';
-import { User, Shield, LogOut, Loader2, MapPin, Palette } from 'lucide-react';
+import { User, Shield, LogOut, Loader2, MapPin } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useUnitConfig } from '../../contexts/UnitConfigContext';
-import { useTheme } from '../../contexts/ThemeContext';
 
 // 🆕 Notification System Import
 import NotificationBell from '../../features/notifications/NotificationBell';
@@ -22,7 +21,6 @@ export const EnterpriseLayout: React.FC<EnterpriseLayoutProps> = ({ children }) 
 
   // 🔥 Unit Config Context se DYNAMIC data
   const { unitConfig, loading: configLoading } = useUnitConfig();
-  const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
@@ -89,17 +87,6 @@ export const EnterpriseLayout: React.FC<EnterpriseLayoutProps> = ({ children }) 
                 {time.toLocaleTimeString('en-GB')} IST
               </span>
             </div>
-
-
-            {/* Theme Switch */}
-            <button
-              onClick={toggleTheme}
-              className="theme-toggle-btn flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-600 transition-all"
-              title={theme === 'command' ? 'Switch to Classic Theme' : 'Switch to Command Theme'}
-            >
-              <Palette size={14} />
-              <span>{theme === 'command' ? 'Command UI' : 'Classic'}</span>
-            </button>
 
             {/* 🆕 LIVE NOTIFICATION BELL (Was static before) */}
             <NotificationBell />
