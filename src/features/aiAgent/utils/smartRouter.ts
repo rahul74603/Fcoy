@@ -14,6 +14,7 @@ import { askGroq } from "../api/groqAgent.api";
 import { askAI as askGemini } from "../api/aiAgent.api";
 import type { AIResponse } from "../api/aiAgent.api";
 import { searchPinecone } from "../scripts/syncToPinecone";
+import { AI_CONFIG } from "../config/ai.config";
 
 // ─────────────────────────────────────────────────────────
 // ROUTE RESULT - kahan se aaya response
@@ -29,10 +30,12 @@ export interface RouteResult {
 // CONFIG
 // ─────────────────────────────────────────────────────────
 const CONFIG = {
-  ENABLE_CACHE: true,
+  ENABLE_CACHE: AI_CONFIG.enableCache,
   ENABLE_QUICK_MATCH: true,
-  ENABLE_GROQ: true,
-  ENABLE_GEMINI_FALLBACK: true,
+  ENABLE_LOCAL_ERP: AI_CONFIG.enableLocalERP,
+  ENABLE_GROQ: AI_CONFIG.enableGroq,
+  ENABLE_GEMINI_FALLBACK: AI_CONFIG.enableGemini,
+  ENABLE_PINECONE: AI_CONFIG.enablePinecone,
   LOG_DETAILS: true,
 };
 
@@ -147,7 +150,7 @@ export async function smartRoute(userMessage: string): Promise<RouteResult> {
   // ═══════════════════════════════════════════════
   // LAYER 1.5: LOCAL ERP INTENT (exact Firebase queries, no API needed)
   // ═══════════════════════════════════════════════
-  const localIntent = detectLocalIntent(userMessage);
+  const localIntent = CONFIG.ENABLE_LOCAL_ERP ? detectLocalIntent(userMessage) : null;
   if (localIntent) {
     const responseTime = Date.now() - startTime;
     stats.quick++;
@@ -188,14 +191,14 @@ export async function smartRoute(userMessage: string): Promise<RouteResult> {
  // ═══════════════════════════════════════════════
   // LAYER 3: GROQ AI (Primary)
   // ═══════════════════════════════════════════════
-  if (CONFIG.ENABLE_GROQ) {
+  if (CONFIG.ENABLE_GROQ && AI_CONFIG.groqKeys.length > 0) {
     try {
       if (CONFIG.LOG_DETAILS) {
         console.log(`🧠 LAYER 3: Trying Groq...`);
       }
       
-      // ✅ FINAL RAG SETUP: User ke sawaal ke hisaab se sirf zaroori data Pinecone se nikalo
-      const relevantData = await searchPinecone(userMessage);
+      // Optional RAG: Pinecone configured ho to relevant data lao, warna direct Groq chalao
+      const relevantData = CONFIG.ENABLE_PINECONE ? await searchPinecone(userMessage) : "";
       if (CONFIG.LOG_DETAILS) {
         console.log("🔍 Pinecone se ye data mila:", relevantData);
       }
@@ -237,7 +240,7 @@ export async function smartRoute(userMessage: string): Promise<RouteResult> {
   // ═══════════════════════════════════════════════
   // LAYER 4: GEMINI AI (Fallback)
   // ═══════════════════════════════════════════════
-  if (CONFIG.ENABLE_GEMINI_FALLBACK) {
+  if (CONFIG.ENABLE_GEMINI_FALLBACK && AI_CONFIG.geminiKeys.length > 0) {
     try {
       if (CONFIG.LOG_DETAILS) {
         console.log(`🔄 LAYER 4: Trying Gemini fallback...`);

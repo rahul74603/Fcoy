@@ -8,6 +8,7 @@ import { ChatInput } from "./ChatInput";
 import { ChatMessage, type Message } from "./ChatMessage";
 import { extractWeeklyProgramFromImage } from "../api/aiAgent.api";
 import { smartRoute, printStats, getRouterStats } from "../utils/smartRouter";
+import { getAIHealth, hasAnyCloudAI } from "../config/ai.config";
 import { executeAction, saveWeeklyProgramFromAI } from "../utils/actionHandler";
 import { useAuth } from "../../../contexts/AuthContext";
 import { syncFirebaseToPinecone } from "../scripts/syncToPinecone"; // ✅ NAYA IMPORT
@@ -45,8 +46,9 @@ const AIAgentScreen: React.FC = () => {
   // Image upload chal raha hai?
   const [imageLoading, setImageLoading] = useState(false);
   
-  // API key hai ya nahi
-  const [apiKeyMissing, setApiKeyMissing] = useState(false);
+  // Cloud AI key hai ya nahi (local ERP commands still work)
+  const [cloudAIMissing, setCloudAIMissing] = useState(false);
+  const [aiHealth, setAIHealth] = useState(getAIHealth());
 
   // Current logged in user
   const { user } = useAuth();
@@ -60,13 +62,10 @@ const AIAgentScreen: React.FC = () => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // API key check karo (Gemini ya Groq - dono mein se ek bhi ho)
+  // AI config check karo. Local ERP layer works even without cloud keys.
   useEffect(() => {
-    const hasGemini = !!import.meta.env.VITE_GEMINI_API_KEY;
-    const hasGroq = !!import.meta.env.VITE_GROQ_API_KEY;
-    if (!hasGemini && !hasGroq) {
-      setApiKeyMissing(true);
-    }
+    setAIHealth(getAIHealth());
+    setCloudAIMissing(!hasAnyCloudAI());
   }, []);
 
   // Naya message add karo list mein
@@ -273,7 +272,7 @@ Total Queries: ${stats.total}
               type="file"
               accept="image/*"
               className="hidden"
-              disabled={imageLoading || isLoading || apiKeyMissing}
+              disabled={imageLoading || isLoading || cloudAIMissing}
               onChange={handleImageUpload}
             />
           </label>
@@ -289,13 +288,18 @@ Total Queries: ${stats.total}
         </div>
       </div>
 
-      {/* ── API Key Warning ── */}
-      {apiKeyMissing && (
-        <div className="bg-red-50 border-b border-red-200 px-4 py-2 flex items-center gap-2 text-red-700 text-xs flex-shrink-0">
+      {/* ── AI Status / API Key Warning ── */}
+      {cloudAIMissing && (
+        <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-center gap-2 text-amber-800 text-xs flex-shrink-0">
           <AlertCircle size={14} />
           <span>
-            Koi API key nahi mili. .env mein VITE_GROQ_API_KEY ya VITE_GEMINI_API_KEY add karo.
+            Local ERP AI active hai. Natural language fallback ke liye .env mein VITE_GROQ_API_KEY ya VITE_GEMINI_API_KEY add karo.
           </span>
+        </div>
+      )}
+      {!cloudAIMissing && (
+        <div className="bg-green-50 border-b border-green-200 px-4 py-1.5 text-[10px] text-green-800 font-bold flex-shrink-0">
+          AI Ready: Local ERP ✅ · Groq keys {aiHealth.groqKeys} · Gemini keys {aiHealth.geminiKeys} · Pinecone {aiHealth.pinecone ? '✅' : 'off'}
         </div>
       )}
 
@@ -330,7 +334,7 @@ Total Queries: ${stats.total}
 
       {/* ── Input Area ── */}
       <div className="flex-shrink-0">
-        <ChatInput onSend={handleSend} disabled={isLoading || imageLoading || apiKeyMissing} />
+        <ChatInput onSend={handleSend} disabled={isLoading || imageLoading} />
       </div>
     </div>
   );
