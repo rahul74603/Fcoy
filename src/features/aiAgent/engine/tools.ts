@@ -37,36 +37,38 @@ export interface ToolResult {
 // ═══════════════════════════════════════════════════════════
 // TOOL SCHEMAS (OpenAI/Groq function-calling format)
 // ═══════════════════════════════════════════════════════════
+// NOTE: Descriptions jaan-boojh kar CHHOTI rakhi hain.
+// Har API call me ye poora schema jaata hai — lamba likhne se
+// Groq ka free TPM (12,000/min) 3-4 call me hi khatam ho jaata tha.
+// Detailed guidance system prompt me hai, yahan nahi.
 export const TOOL_SCHEMAS = [
   {
     type: 'function',
     function: {
       name: 'query_data',
-      description:
-        'Kisi bhi Firestore collection se data padho. Filter, group-by, aggregate (sum/avg/count), sort sab kar sakte ho. ' +
-        'Ye SABSE ZYADA use hone wala tool hai. Counting, listing, totals — sab isi se.',
+      description: 'Read any collection: filter, groupBy, aggregate (sum/avg/count), sort. Main tool.',
       parameters: {
         type: 'object',
         properties: {
-          collection: { type: 'string', enum: ALL_COLLECTION_NAMES, description: 'Collection ka naam' },
+          collection: { type: 'string', enum: ALL_COLLECTION_NAMES },
           filters: {
             type: 'array',
-            description: 'Filters. Sab AND me lagte hain.',
+            description: 'AND-ed filters',
             items: {
               type: 'object',
               properties: {
-                field: { type: 'string', description: 'Field name (nested ke liye dot: documents.aadhar.status)' },
+                field: { type: 'string' },
                 op: {
                   type: 'string',
                   enum: ['eq','ne','gt','gte','lt','lte','contains','startsWith','in','notIn','exists','empty','between'],
                 },
-                value:  { description: 'Compare value. "in"/"notIn" ke liye array.' },
-                value2: { description: 'Sirf "between" ke liye upper bound.' },
+                value:  { type: 'string', description: 'value (array for in/notIn)' },
+                value2: { type: 'string', description: 'upper bound for between' },
               },
               required: ['field', 'op'],
             },
           },
-          groupBy:   { type: 'string', description: 'Is field par group karke counts do (e.g. "state", "religion", "platoon")' },
+          groupBy:   { type: 'string', description: 'group + count by this field' },
           aggregate: {
             type: 'object',
             properties: {
@@ -77,9 +79,9 @@ export const TOOL_SCHEMAS = [
           },
           sortBy:  { type: 'string' },
           sortDir: { type: 'string', enum: ['asc','desc'] },
-          limit:   { type: 'number', description: 'Default 40, max 200' },
-          select:  { type: 'array', items: { type: 'string' }, description: 'Sirf ye fields chahiye' },
-          useActiveBatch: { type: 'boolean', description: 'false karo agar saare batches ka data chahiye' },
+          limit:   { type: 'number' },
+          select:  { type: 'array', items: { type: 'string' } },
+          useActiveBatch: { type: 'boolean', description: 'false = all batches' },
         },
         required: ['collection'],
       },
@@ -89,16 +91,13 @@ export const TOOL_SCHEMAS = [
     type: 'function',
     function: {
       name: 'join_data',
-      description:
-        'Do collections ko chestNo (ya kisi aur field) se jodo. ' +
-        'Jab sawaal me DO cheezein ho — jaise "Bengal ke trainees jo FPT me fail hue" ' +
-        '(trainees.state=West Bengal + fptRecords.status=Fail).',
+      description: 'Join 2 collections on chestNo. Use when question has 2 conditions across collections.',
       parameters: {
         type: 'object',
         properties: {
-          left:  { type: 'object', description: 'Pehla query spec (same shape as query_data)' },
-          right: { type: 'object', description: 'Dusra query spec' },
-          on:    { type: 'string', description: 'Join field, default "chestNo"' },
+          left:  { type: 'object', description: 'query_data spec' },
+          right: { type: 'object', description: 'query_data spec' },
+          on:    { type: 'string', description: 'default chestNo' },
           limit: { type: 'number' },
         },
         required: ['left','right'],
@@ -109,14 +108,12 @@ export const TOOL_SCHEMAS = [
     type: 'function',
     function: {
       name: 'find_entity',
-      description:
-        'Naam, chest number, reg number ya mobile se koi trainee/staff/vendor dhoondo. ' +
-        'Jab user kisi vyakti ka naam le — "Rahul ka detail batao".',
+      description: 'Find person by name/chest/reg/mobile across trainees, staff, vendors.',
       parameters: {
         type: 'object',
         properties: {
-          term: { type: 'string', description: 'Naam ya number' },
-          collections: { type: 'array', items: { type: 'string' }, description: 'Default: trainees, staff, vendors' },
+          term: { type: 'string' },
+          collections: { type: 'array', items: { type: 'string' } },
         },
         required: ['term'],
       },
@@ -126,14 +123,10 @@ export const TOOL_SCHEMAS = [
     type: 'function',
     function: {
       name: 'describe_schema',
-      description:
-        'Kisi collection ke saare fields aur unke possible values dekho. ' +
-        'Jab pata na ho ki field ka naam kya hai ya value kaisi dikhti hai, TAB PEHLE ye call karo.',
+      description: 'Get fields + possible values of a collection. Empty arg = list all collections.',
       parameters: {
         type: 'object',
-        properties: {
-          collection: { type: 'string', description: 'Collection name. Khaali chhodo to saari collections ki list milegi.' },
-        },
+        properties: { collection: { type: 'string' } },
       },
     },
   },
@@ -141,9 +134,7 @@ export const TOOL_SCHEMAS = [
     type: 'function',
     function: {
       name: 'sample_values',
-      description:
-        'Kisi field me asal me kaunsi values padi hain, ye dekho (distinct values + counts). ' +
-        'Filter lagane se PEHLE ye check karo taaki spelling galat na ho.',
+      description: 'See actual distinct values in a field. Use before filtering to avoid spelling mismatch.',
       parameters: {
         type: 'object',
         properties: {
@@ -158,7 +149,7 @@ export const TOOL_SCHEMAS = [
     type: 'function',
     function: {
       name: 'system_overview',
-      description: 'Active batch, total trainees/staff/vendors ka quick snapshot. Aam sawaalon ke liye.',
+      description: 'Active batch + total trainees/staff/vendors snapshot.',
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -166,12 +157,10 @@ export const TOOL_SCHEMAS = [
     type: 'function',
     function: {
       name: 'add_trainee',
-      description: 'Naya trainee add karo. Sirf tab jab user SAAF taur par add karne bole.',
+      description: 'Add new trainee(s). Only on explicit add command.',
       parameters: {
         type: 'object',
-        properties: {
-          names: { type: 'array', items: { type: 'string' }, description: 'Ek ya zyada naam' },
-        },
+        properties: { names: { type: 'array', items: { type: 'string' } } },
         required: ['names'],
       },
     },
@@ -180,12 +169,12 @@ export const TOOL_SCHEMAS = [
     type: 'function',
     function: {
       name: 'update_trainee',
-      description: 'Kisi trainee ka data update karo (chest number se). Sirf saaf update command par.',
+      description: 'Update a trainee by chest number. Only on explicit update command.',
       parameters: {
         type: 'object',
         properties: {
           chestNo: { type: 'string' },
-          updates: { type: 'object', description: 'Field:value pairs' },
+          updates: { type: 'object', description: 'field:value pairs' },
         },
         required: ['chestNo','updates'],
       },

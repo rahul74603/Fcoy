@@ -12,7 +12,7 @@
 
 import { AI_CONFIG } from '../config/ai.config';
 import { TOOL_SCHEMAS, executeTool, type ToolContext } from './tools';
-import { buildSchemaDigest } from '../knowledge/collectionRegistry';
+import { buildFocusedDigest } from '../knowledge/collectionRegistry';
 import { clearQueryCache } from './queryEngine';
 
 export interface AgentStep {
@@ -38,83 +38,39 @@ const MAX_ITERATIONS = 6;
 // ─────────────────────────────────────────────
 // SYSTEM PROMPT
 // ─────────────────────────────────────────────
-function buildSystemPrompt(ctx: ToolContext): string {
+function buildSystemPrompt(ctx: ToolContext, userMessage: string): string {
   const today = new Date();
+  // Focused digest = sirf sawaal se jude collections ke poore fields.
+  // Isse har call ~1,270 → ~500 token ho jaata hai (Groq TPM bachta hai).
   return `Tu "F Coy ERP Assistant" hai — BSF Training Company ka data analyst.
 
-AAJ KI TAREEKH: ${today.toISOString().split('T')[0]} (${today.toLocaleDateString('en-IN', { weekday: 'long' })})
-USER: ${ctx.userEmail} | ROLE: ${ctx.userRole}
-MODE: ${ctx.allowWrites ? 'READ + WRITE' : 'READ-ONLY (add/update mat karo)'}
+DATE: ${today.toISOString().split('T')[0]} | USER: ${ctx.userRole}
+MODE: ${ctx.allowWrites ? 'READ+WRITE' : 'READ-ONLY (add/update mat karo)'}
 
-═══════════════════════════════════════════
-DATABASE MAP
-═══════════════════════════════════════════
-${buildSchemaDigest()}
+${buildFocusedDigest(userMessage)}
 
-═══════════════════════════════════════════
-KAAM KARNE KA TAREEKA
-═══════════════════════════════════════════
-1. Tere paas TOOLS hain. Data ka koi bhi sawaal ho — TOOL CHALA.
-   Kabhi bhi apne mann se number mat banana. Har aankda tool se aana chahiye.
+RULES:
+1. Har aankda TOOL se aana chahiye. Apne mann se number mat banana.
+2. Field/value pakka na ho → pehle describe_schema ya sample_values chala.
+3. Text filter me "contains" use kar, "eq" nahi (spelling alag ho sakti hai).
+   "West Bengal" = "Bengal"/"WB"/"bangal" bhi ho sakta hai.
+4. attn: P=Present A=Absent L=Leave S=Sick H=Hospital R=Rest M=Medical
+5. Ginti → aggregate{fn:"count"} | Paisa → aggregate{fn:"sum",field:"amount"}
+   2 collection wala sawaal → join_data | Vyakti → find_entity
+6. Finance collections batch-scoped NAHI hain → useActiveBatch:false bhej.
+7. Data na mile → saaf bol "record nahi mila". Jhooth mat bol.
+8. General baat-cheet → seedha jawab, tool mat chala.
+9. EFFICIENT rah: ek hi call me groupBy+aggregate kar lo. Faltu tool call mat kar.
 
-2. Agar field ka naam ya value pakka nahi pata:
-   → pehle "describe_schema" ya "sample_values" chala
-   → phir sahi filter ke saath "query_data" chala
-   Ye 2-3 step lena BILKUL THEEK hai. Galat jawab dene se behtar hai.
+JAWAB: Hinglish, chhota aur saaf. Asli number. 3+ rows ho to list/table. Thoda emoji.
 
-3. Ginti ke sawaal → query_data + aggregate:{fn:"count"} ya groupBy
-   Paise ke sawaal → query_data + aggregate:{fn:"sum", field:"amount"}
-   Do shart wale sawaal → join_data
-   Kisi vyakti ka sawaal → find_entity
-
-4. Filter lagate waqt dhyan rakh:
-   - Text match ke liye "contains" behtar hai "eq" se (spelling farq ho sakta hai)
-   - "West Bengal" ko log "Bengal", "WB", "bangal" bhi likhte hain →
-     pehle sample_values se dekh ki asal me kya likha hai
-   - attn field: P=Present, A=Absent, L=Leave, S=Sick, H=Hospital, R=Rest, M=Medical
-
-5. Jab data mil jaye, JAWAB DE:
-   - Hinglish me, saaf aur seedha
-   - ASLI NUMBER de jo tool se aaya
-   - Chhoti list ho to naam/chest number bhi likh de
-   - Table jaisa format use kar jab 3+ rows ho
-   - Emoji thoda use kar, par overload mat kar
-
-6. Agar data hi nahi mila → saaf bol "record nahi mila", jhooth mat bol.
-   Agar collection khaali hai → bata ki kahan se data bharna hai.
-
-7. Agar sawaal data se related NAHI hai (general baat-cheet) → seedha jawab de, tool mat chala.
-
-═══════════════════════════════════════════
-UDAHARAN
-═══════════════════════════════════════════
-Q: "kitne trainees hain"
-→ query_data{collection:"trainees", aggregate:{field:"chestNo", fn:"count"}}
-
-Q: "state wise trainees batao"
-→ query_data{collection:"trainees", groupBy:"state"}
-
-Q: "Bengal ke kitne trainees hain"
-→ query_data{collection:"trainees", filters:[{field:"state", op:"contains", value:"bengal"}], aggregate:{field:"chestNo", fn:"count"}}
-
-Q: "aaj kitne absent hain"
-→ query_data{collection:"trainees", filters:[{field:"attn", op:"in", value:["A","L","S","H"]}], groupBy:"attn"}
-
-Q: "mess fund me kitna kharcha hua"
-→ query_data{collection:"mess_fund_expenses", aggregate:{field:"amount", fn:"sum"}, useActiveBatch:false}
-
-Q: "vendor ka kitna baaki hai"
-→ query_data{collection:"vendor_entries", aggregate:{field:"dueAmount", fn:"sum"}, useActiveBatch:false}
-
-Q: "Bihar ke trainees jo FPT me fail hue"
-→ join_data{left:{collection:"trainees", filters:[{field:"state", op:"contains", value:"bihar"}]},
-            right:{collection:"fptRecords", filters:[{field:"overallStatus", op:"contains", value:"fail"}]},
-            on:"chestNo"}
-
-Q: "Rahul ka detail"
-→ find_entity{term:"Rahul"}
-
-YAAD RAKH: Tool se data lo, phir INSAAN ki tarah jawab do. 🎯`;
+EXAMPLES:
+"kitne trainees" → query_data{collection:"trainees",aggregate:{field:"chestNo",fn:"count"}}
+"state wise" → query_data{collection:"trainees",groupBy:"state"}
+"rajasthan ke kitne" → query_data{collection:"trainees",filters:[{field:"state",op:"contains",value:"rajasthan"}],aggregate:{field:"chestNo",fn:"count"}}
+"mess kharcha" → query_data{collection:"mess_fund_expenses",aggregate:{field:"amount",fn:"sum"},useActiveBatch:false}
+"M size t-shirt stock" → sample_values{collection:"item_master",field:"name"} phir query_data
+"Bihar ke jo FPT fail" → join_data{left:{collection:"trainees",filters:[{field:"state",op:"contains",value:"bihar"}]},right:{collection:"fptRecords",filters:[{field:"overallStatus",op:"contains",value:"fail"}]}}`;
 }
 
 // ─────────────────────────────────────────────
@@ -122,47 +78,82 @@ YAAD RAKH: Tool se data lo, phir INSAAN ki tarah jawab do. 🎯`;
 // ─────────────────────────────────────────────
 let groqKeyIdx = 0;
 
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+/** Rate-limit ki jaankari UI tak pahunchane ke liye */
+export class RateLimitError extends Error {
+  constructor(public waitSeconds: number, msg: string) { super(msg); }
+}
+
 async function callGroq(messages: any[], useTools: boolean): Promise<any> {
   const keys = AI_CONFIG.groqKeys;
   if (!keys.length) throw new Error('Koi Groq key nahi hai');
 
   let lastErr: any = null;
+  let rateLimitWait = 0;
 
-  for (let attempt = 0; attempt < keys.length; attempt++) {
-    const key = keys[groqKeyIdx % keys.length];
-    groqKeyIdx++;
+  // Har key try karo; agar SAARI keys rate-limited hain to
+  // ek baar thoda ruk kar dobara try karo (Groq ka limit rolling window hai).
+  for (let round = 0; round < 2; round++) {
+    for (let attempt = 0; attempt < keys.length; attempt++) {
+      const key = keys[groqKeyIdx % keys.length];
+      groqKeyIdx++;
 
-    try {
-      const body: any = {
-        model: AI_CONFIG.groqModel,
-        messages,
-        temperature: 0.1,
-        max_tokens: 2000,
-      };
-      if (useTools) {
-        body.tools = TOOL_SCHEMAS;
-        body.tool_choice = 'auto';
+      try {
+        const body: any = {
+          model: AI_CONFIG.groqModel,
+          messages,
+          temperature: 0.1,
+          max_tokens: 1200,          // 2000 → 1200: TPM bachta hai
+        };
+        if (useTools) {
+          body.tools = TOOL_SCHEMAS;
+          body.tool_choice = 'auto';
+        }
+
+        const res = await fetch(GROQ_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+          body: JSON.stringify(body),
+        });
+
+        if (res.status === 429) {
+          // Groq batata hai kitni der rukna hai — usko padho
+          const retryAfter = parseFloat(res.headers.get('retry-after') ?? '0');
+          const txt = await res.text().catch(() => '');
+          const m = txt.match(/try again in ([\d.]+)([ms])/i);
+          const parsed = m ? (m[2] === 'm' ? parseFloat(m[1]) * 60 : parseFloat(m[1])) : 0;
+          const wait = retryAfter || parsed || 8;
+          rateLimitWait = Math.max(rateLimitWait, wait);
+          lastErr = new RateLimitError(wait, `Rate limit — ${Math.ceil(wait)}s`);
+          console.warn(`⏳ Groq key #${attempt + 1} rate limited (${wait}s)`);
+          continue;
+        }
+        if (res.status === 401) {
+          lastErr = new Error('Groq key invalid');
+          continue;
+        }
+        if (!res.ok) {
+          const txt = await res.text().catch(() => '');
+          lastErr = new Error(`Groq ${res.status}: ${txt.slice(0, 160)}`);
+          continue;
+        }
+
+        return await res.json();
+      } catch (e: any) {
+        lastErr = e;
       }
-
-      const res = await fetch(GROQ_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-        body: JSON.stringify(body),
-      });
-
-      if (res.status === 429) { lastErr = new Error('rate limited'); continue; }
-      if (res.status === 401) { lastErr = new Error('invalid key'); continue; }
-      if (!res.ok) {
-        const txt = await res.text().catch(() => '');
-        lastErr = new Error(`Groq ${res.status}: ${txt.slice(0, 200)}`);
-        continue;
-      }
-
-      return await res.json();
-    } catch (e: any) {
-      lastErr = e;
     }
+
+    // Saari keys rate-limited — chhota wait karke ek aur round
+    if (round === 0 && lastErr instanceof RateLimitError && rateLimitWait <= 12) {
+      console.warn(`⏳ Saari keys busy, ${Math.ceil(rateLimitWait)}s wait...`);
+      await sleep(Math.min(rateLimitWait * 1000 + 500, 12000));
+      continue;
+    }
+    break;
   }
+
   throw lastErr ?? new Error('Groq fail');
 }
 
@@ -202,33 +193,126 @@ function sanitizeForGemini(schema: any): any {
   return out;
 }
 
+/**
+ * Gemini models retire hote rehte hain (gemini-2.0-flash June 2026 me band ho gaya,
+ * 2.5-flash-lite naye users ko nahi milta). Isliye ek fallback ladder rakhi hai —
+ * 404/400 aane par apne aap agla model try hota hai.
+ */
+const GEMINI_FALLBACKS = [
+  'gemini-flash-latest',
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+  'gemini-2.5-pro',
+];
+
+/** Jo model chal gaya usko yaad rakho — baar baar 404 na kha'ein */
+let workingGeminiModel: string | null = null;
+
 async function callGemini(contents: any[], systemPrompt: string): Promise<any> {
   const keys = AI_CONFIG.geminiKeys;
   if (!keys.length) throw new Error('Koi Gemini key nahi hai');
 
+  const models = workingGeminiModel
+    ? [workingGeminiModel]
+    : [AI_CONFIG.geminiModel, ...GEMINI_FALLBACKS.filter(m => m !== AI_CONFIG.geminiModel)];
+
   let lastErr: any = null;
-  for (const key of keys) {
-    try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${AI_CONFIG.geminiModel}:generateContent?key=${key}`;
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents,
-          systemInstruction: { parts: [{ text: systemPrompt }] },
-          tools: toGeminiTools(),
-          generationConfig: { temperature: 0.1, maxOutputTokens: 2000 },
-        }),
-      });
-      if (!res.ok) {
-        const txt = await res.text().catch(() => '');
-        lastErr = new Error(`Gemini ${res.status}: ${txt.slice(0, 200)}`);
-        continue;
-      }
-      return await res.json();
-    } catch (e: any) { lastErr = e; }
+
+  for (const model of models) {
+    for (const key of keys) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents,
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            tools: toGeminiTools(),
+            generationConfig: { temperature: 0.1, maxOutputTokens: 1200 },
+          }),
+        });
+
+        if (res.status === 404 || res.status === 400) {
+          const txt = await res.text().catch(() => '');
+          lastErr = new Error(`Gemini ${res.status} (${model}): ${txt.slice(0, 140)}`);
+          console.warn(`⚠️ Gemini model "${model}" nahi chala, agla try...`);
+          break;                     // is model ko chhodo, agla model
+        }
+        if (res.status === 429) {
+          lastErr = new RateLimitError(20, 'Gemini rate limit');
+          continue;                  // agli key
+        }
+        if (!res.ok) {
+          const txt = await res.text().catch(() => '');
+          lastErr = new Error(`Gemini ${res.status}: ${txt.slice(0, 140)}`);
+          continue;
+        }
+
+        if (workingGeminiModel !== model) {
+          workingGeminiModel = model;
+          console.log(`✅ Gemini model locked: ${model}`);
+        }
+        return await res.json();
+      } catch (e: any) { lastErr = e; }
+    }
   }
   throw lastErr ?? new Error('Gemini fail');
+}
+
+// ─────────────────────────────────────────────
+// FRIENDLY ERROR — user ko technical dump nahi,
+// saaf batao kya hua aur kya karna hai
+// ─────────────────────────────────────────────
+function friendlyError(groqErr: any, gemErr: any): string {
+  const isRL = (e: any) =>
+    e instanceof RateLimitError ||
+    /rate.?limit|429|too many/i.test(String(e?.message ?? ''));
+
+  if (isRL(groqErr) || isRL(gemErr)) {
+    const wait = groqErr instanceof RateLimitError ? Math.ceil(groqErr.waitSeconds) : 30;
+    return (
+      `⏳ **AI ka free quota abhi bhar gaya hai**\n\n` +
+      `Groq free tier: 12,000 token/minute. Aapne jaldi-jaldi sawaal poochhe ` +
+      `isliye limit lag gayi.\n\n` +
+      `**Kya karein:**\n` +
+      `• ~${wait} second ruk kar dobara poochein\n` +
+      `• Ya sawaal thoda simple rakhein (kam data = kam token)\n\n` +
+      `💡 Permanent hal: Groq console me **alag-alag account** ki keys lagayein ` +
+      `(ek hi account ki 3 keys ek hi limit share karti hain), ya Dev tier lein.`
+    );
+  }
+
+  const msg = String(gemErr?.message ?? groqErr?.message ?? '');
+
+  if (/404|no longer available|not found/i.test(msg)) {
+    return (
+      `❌ **AI model ab available nahi hai**\n\n` +
+      `Google/Groq ne purana model band kar diya hai.\n\n` +
+      `**Fix:** \`.env\` me ye daalein aur dev server restart karein:\n` +
+      `\`\`\`\nVITE_GEMINI_MODEL=gemini-flash-latest\n\`\`\`\n\n` +
+      `_Technical: ${msg.slice(0, 120)}_`
+    );
+  }
+
+  if (/401|invalid|api key/i.test(msg)) {
+    return (
+      `🔑 **API key galat hai ya expire ho gayi**\n\n` +
+      `\`.env\` me VITE_GROQ_API_KEY aur VITE_GEMINI_API_KEY check karein.\n` +
+      `Key badalne ke baad dev server **restart** zaroori hai.\n\n` +
+      `_Technical: ${msg.slice(0, 120)}_`
+    );
+  }
+
+  if (/failed to fetch|network|econn/i.test(msg)) {
+    return `🌐 **Internet connection ka issue lag raha hai**\n\nConnection check karke dobara try karein.`;
+  }
+
+  return (
+    `❌ AI abhi jawab nahi de paa raha.\n\n` +
+    `_${msg.slice(0, 200)}_\n\n` +
+    `💡 Thodi der baad try karein, ya sawaal simple karke poochein.`
+  );
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -240,10 +324,12 @@ export async function runAgent(
   history: { role: 'user' | 'assistant'; content: string }[] = [],
 ): Promise<AgentAnswer> {
   const started = Date.now();
+  /** Groq ki error yaad rakho — Gemini bhi fail ho to dono ka context chahiye */
+  let groqError: any = null;
   const steps: AgentStep[] = [];
   clearQueryCache();                      // har naye sawaal par fresh data
 
-  const systemPrompt = buildSystemPrompt(ctx);
+  const systemPrompt = buildSystemPrompt(ctx, userMessage);
 
   // ══════════ GROQ PATH (primary) ══════════
   if (AI_CONFIG.enableGroq && AI_CONFIG.groqKeys.length) {
@@ -303,8 +389,9 @@ export async function runAgent(
         iterations: MAX_ITERATIONS, elapsedMs: Date.now() - started,
       };
 
-    } catch (groqErr: any) {
-      console.warn('Groq agent fail, Gemini try kar raha hoon:', groqErr?.message);
+    } catch (err: any) {
+      groqError = err;
+      console.warn('Groq agent fail, Gemini try kar raha hoon:', err?.message);
     }
   }
 
@@ -357,12 +444,20 @@ export async function runAgent(
 
     } catch (gemErr: any) {
       return {
-        reply: `❌ AI abhi jawab nahi de paa raha.\n\n${gemErr?.message ?? ''}\n\n` +
-               `💡 Thodi der baad try karein, ya sawaal simple karke poochein.`,
+        reply: friendlyError(groqError, gemErr),
         steps, provider: 'none', model: '-', iterations: 0,
         elapsedMs: Date.now() - started, error: gemErr?.message,
       };
     }
+  }
+
+  // Groq fail hua aur Gemini configured hi nahi hai
+  if (groqError) {
+    return {
+      reply: friendlyError(groqError, null),
+      steps, provider: 'none', model: '-', iterations: 0,
+      elapsedMs: Date.now() - started, error: groqError?.message,
+    };
   }
 
   return {

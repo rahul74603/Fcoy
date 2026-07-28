@@ -592,7 +592,7 @@ export const COLLECTION_MAP: Record<string, CollectionDef> =
 
 export const ALL_COLLECTION_NAMES = COLLECTIONS.map(c => c.name);
 
-/** AI prompt ke liye compact schema text */
+/** AI prompt ke liye compact schema text (full — sirf reference/testing) */
 export function buildSchemaDigest(): string {
   const byDomain = COLLECTIONS.reduce((acc, c) => {
     (acc[c.domain] ??= []).push(c);
@@ -606,6 +606,48 @@ export function buildSchemaDigest(): string {
     }).join('\n');
     return `${domain.toUpperCase()}:\n${lines}`;
   }).join('\n\n');
+}
+
+/**
+ * TOKEN-EFFICIENT DIGEST 🪶
+ * ─────────────────────────
+ * Poora schema bhejne se har call ~1,270 token kha jaata tha aur
+ * Groq ka free TPM (12,000/min) 3-4 call me hi khatam ho jaata tha.
+ *
+ * Ab: sawaal se related top collections ke POORE fields bhejte hain,
+ * baaki sabke sirf naam. Agar AI ko kisi aur ka detail chahiye to
+ * wo `describe_schema` tool khud call kar lega.
+ */
+export function buildFocusedDigest(userMessage: string, topN = 6): string {
+  const matched = matchCollections(userMessage).slice(0, topN);
+
+  // Trainees hamesha rakho — zyadatar sawaal isi se jude hote hain
+  if (!matched.find(c => c.name === 'trainees')) {
+    const tr = COLLECTION_MAP['trainees'];
+    if (tr) matched.unshift(tr);
+  }
+
+  const detailed = matched.slice(0, topN).map(c => {
+    const f = c.fields.map(x => {
+      const vals = x.values?.length ? `(${x.values.slice(0, 8).join('|')})` : '';
+      return `${x.name}${vals}`;
+    }).join(', ');
+    return `• ${c.name}${c.batchScoped ? '[b]' : ''} — ${c.description}\n  ${f}`;
+  }).join('\n');
+
+  const detailedNames = new Set(matched.slice(0, topN).map(c => c.name));
+  const others = COLLECTIONS
+    .filter(c => !detailedNames.has(c.name))
+    .map(c => c.name)
+    .join(', ');
+
+  return `RELEVANT COLLECTIONS (poore fields):
+${detailed}
+
+BAAKI COLLECTIONS (naam only — detail ke liye describe_schema chalao):
+${others}
+
+[b] = batch-scoped`;
 }
 
 /** User ke shabdon se collection dhoondo (local planner ke liye) */

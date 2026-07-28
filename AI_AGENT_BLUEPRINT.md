@@ -237,12 +237,107 @@ VITE_GROQ_MODEL=llama-3.3-70b-versatile
 
 VITE_GEMINI_API_KEY=
 VITE_GEMINI_API_KEY_2=
-VITE_GEMINI_MODEL=gemini-2.5-flash-lite
+VITE_GEMINI_MODEL=gemini-flash-latest
 ```
 
 ⚠ Model tool-calling support karta ho — `llama-3.3-70b-versatile` karta hai.
 
+⚠ Gemini me **`-latest` alias** use karein. Pinned naam (`gemini-2.0-flash`,
+`gemini-2.5-flash-lite`) retire ho jaate hain ya naye users ko nahi milte.
+
 Pinecone ki ab **zaroorat nahi** — agent live data padhta hai.
+
+---
+
+## Rate Limit Management ⚡
+
+### Problem
+
+Groq free tier: **12,000 token/minute**, aur limit **organization level** par
+lagti hai — ek hi account ki 3 keys ek hi limit share karti hain.
+
+Shuruaat me har call ~2,882 token kha raha tha → **4 call/min** → 2-3 sawaal
+poochhte hi 429.
+
+### Solution (3 layer)
+
+**1. Fast Path — 0 token**
+
+`engine/fastPath.ts` aam sawaal seedhe DB se banata hai, AI ko bheje bina:
+
+```
+"kitne trainees hain"
+"state wise / religion wise / platoon wise breakdown"
+"rajasthan ke kitne trainees"
+"kitne absent hain" / "hospital me kaun"
+"mess fund me kitna kharcha"
+"vendor ka kitna baaki"
+"trainee list dikhao"
+```
+
+Pattern match na ho → poora AI agent chalta hai. Ye sirf **shortcut** hai,
+limit nahi — "sirf 4 sawaal" wali purani problem wapas nahi aayegi.
+
+---
+
+**2. Focused Schema — 1,270 → ~400 token**
+
+Pehle har call me saari 41 collections ka schema jaata tha.
+
+Ab: sawaal se jude **top 6** collections ke poore fields, baaki sirf naam.
+AI ko kisi aur ka detail chahiye to `describe_schema` khud call kar leta hai.
+
+---
+
+**3. Compact Tool Schemas — 1,212 → 960 token**
+
+Tool descriptions chhoti ki gayi. Detailed guidance system prompt me hai
+(jo focused digest ki wajah se waise hi chhota ho gaya).
+
+---
+
+### Result
+
+| | Before | After |
+|---|---|---|
+| Token/call | 2,882 | ~1,600 |
+| AI calls/min | 4 | 7 |
+| Aam sawaal | AI call | **0 token** |
+
+---
+
+### 429 Handling
+
+Groq ka `retry-after` header aur `"try again in 9m38s"` message parse hota hai
+
+Saari keys busy → chhota wait (max 12s) → ek aur round
+
+Phir bhi fail → **friendly message**: kitni der rukna hai + permanent fix
+
+---
+
+### Permanent Fix (agar abhi bhi limit lage)
+
+**Option A** — alag-alag Google account se Groq keys banayein
+(ek account ki multiple keys ek hi limit share karti hain)
+
+**Option B** — Groq Dev tier (~$20/mo) → 500+ RPM
+
+**Option C** — `VITE_GROQ_MODEL=llama-3.1-8b-instant`
+(30,000 TPM, thoda kam smart par 2.5x zyada quota)
+
+---
+
+## Error Messages
+
+Raw JSON dump ke bajaye saaf hidayat:
+
+| Situation | Message |
+|---|---|
+| 429 | "Quota bhar gaya, ~Xs ruko" + permanent fix |
+| 404 model | Exact `.env` line + restart reminder |
+| 401 | "Key galat hai" + kahan check karein |
+| Network | "Internet check karein" |
 
 ---
 

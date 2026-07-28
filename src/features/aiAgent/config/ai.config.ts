@@ -14,7 +14,11 @@ export const AI_CONFIG = {
   pineconeKey: import.meta.env.VITE_PINECONE_API_KEY || '',
   pineconeHost: import.meta.env.VITE_PINECONE_HOST || '',
   groqModel: import.meta.env.VITE_GROQ_MODEL || 'llama-3.3-70b-versatile',
-  geminiModel: import.meta.env.VITE_GEMINI_MODEL || 'gemini-2.5-flash-lite',
+  // 'gemini-flash-latest' hamesha current stable flash model par point karta hai.
+  // Purane pinned naam (2.0-flash, 2.5-flash-lite) retire ho chuke hain /
+  // naye users ko nahi milte — isliye "latest" alias safest hai.
+  // agentLoop me fallback ladder bhi hai agar ye bhi na chale.
+  geminiModel: import.meta.env.VITE_GEMINI_MODEL || 'gemini-flash-latest',
   enableLocalERP: import.meta.env.VITE_AI_ENABLE_LOCAL_ERP !== 'false',
   enableCache: import.meta.env.VITE_AI_ENABLE_CACHE !== 'false',
   enableGroq: import.meta.env.VITE_AI_ENABLE_GROQ !== 'false',

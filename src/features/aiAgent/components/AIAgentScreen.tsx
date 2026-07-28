@@ -13,6 +13,7 @@ import { useAuth } from "../../../contexts/AuthContext";
 import { checkQuickResponse } from "../utils/commandPatterns";
 // 🆕 NAYA AGENT ENGINE — tool calling + live Firebase reads
 import { runAgent, type AgentStep } from "../engine/agentLoop";
+import { tryFastPath } from "../engine/fastPath";
 import { COLLECTIONS } from "../knowledge/collectionRegistry";
 
 // Unique ID banane ka simple function
@@ -111,7 +112,25 @@ const handleSend = async (userText: string) => {
       return;
     }
 
-    // ── Layer 2: Asli AI Agent — tools ke saath live database ──
+    // ── Layer 2: Fast path — aam sawaal bina AI ke (0 token, instant) ──
+    // Agar pattern match na ho to null aata hai aur poora AI agent chalta hai.
+    try {
+      const fast = await tryFastPath(userText);
+      if (fast) {
+        addMessage({
+          type: "ai",
+          text: fast.reply,
+          details: `✅ ${fast.toolSummary}\n\n━━━━━━━━━━\n⚡ Direct DB query • 0 AI tokens used`,
+          status: "success",
+        });
+        setIsLoading(false);
+        return;
+      }
+    } catch (e) {
+      console.warn("Fast path fail, AI agent chala rahe hain:", e);
+    }
+
+    // ── Layer 3: Asli AI Agent — tools ke saath live database ──
     const answer = await runAgent(
       userText,
       {
