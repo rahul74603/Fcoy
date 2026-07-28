@@ -1619,6 +1619,13 @@ const [staffLoading, setStaffLoading] = useState(false);
     if (tomorrowDayData) tomorrowSchedule.push(...tomorrowDayData.sessions);
   }
 
+  // NOTE: ye helper yahan (upar) define hona zaroori hai —
+  // todayInstructorAssignments isko turant use karta hai.
+  // `const` arrow function hoist nahi hoti, warna
+  // "Cannot access 'getSubjectDisplay' before initialization" crash aata hai.
+  const getSubjectDisplay = (s: ProgramSession) =>
+    s.subject === 'Other (Manual)' && s.customSubject ? s.customSubject : s.subject;
+
   const todayInstructorAssignments = todaySchedule.flatMap((session, sessionIndex) =>
     (session.assignedPersons || [])
       .filter(person => person.name?.trim())
@@ -1724,9 +1731,6 @@ const [staffLoading, setStaffLoading] = useState(false);
   const avgHealthScore = totalTrainees > 0
     ? Math.round(trainees.reduce((s, t) => s + getTraineeHealthScore(t), 0) / totalTrainees)
     : 0;
-
-  const getSubjectDisplay = (s: ProgramSession) =>
-    s.subject === 'Other (Manual)' && s.customSubject ? s.customSubject : s.subject;
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
