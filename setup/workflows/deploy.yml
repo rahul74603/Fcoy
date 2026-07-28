@@ -1,0 +1,133 @@
+# ═══════════════════════════════════════════════════════════
+# AUTO DEPLOY → Firebase Hosting
+# ───────────────────────────────────────────────────────────
+# Kab chalta hai:
+#   1. `main` branch par koi bhi push ho (GitHub web editor se bhi)
+#   2. Manually — Actions tab → "Deploy to Firebase" → Run workflow
+#
+# PC ki zaroorat NAHI. Phone se GitHub app me file edit karo,
+# commit karo — 2-3 minute me site live ho jayegi.
+# ═══════════════════════════════════════════════════════════
+
+name: Deploy to Firebase
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:            # ye badle to build karne ka fayda nahi
+      - '**.md'
+      - '.gitignore'
+      - 'docs/**'
+  workflow_dispatch:         # ← phone/browser se manual trigger
+    inputs:
+      skip_typecheck:
+        description: 'TypeScript check skip karein? (urgent deploy ke liye)'
+        type: boolean
+        default: false
+
+# Ek waqt me ek hi deploy — do push saath aayein to purana cancel
+concurrency:
+  group: firebase-deploy
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      # ── 1. Code lao ──
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ── 2. Node setup (npm cache ke saath — fast) ──
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # ── 3. Dependencies ──
+      - name: Install dependencies
+        run: npm ci
+
+      # ── 4. TypeScript check (safety net) ──
+      # Vite build TS errors ignore kar deta hai, isliye alag check.
+      # Toota code live na chala jaye.
+      - name: TypeScript check
+        if: ${{ !inputs.skip_typecheck }}
+        run: npx tsc --noEmit -p tsconfig.json
+
+      # ── 5. Production build ──
+      # Saare VITE_ vars yahan inject hote hain. Jo secret set nahi
+      # hoga wo khaali reh jayega (app usko gracefully handle karta hai).
+      - name: Build
+        env:
+          # Firebase (zaroori)
+          VITE_FIREBASE_API_KEY:             ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN:         ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID:          ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET:      ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID:              ${{ secrets.VITE_FIREBASE_APP_ID }}
+
+          # AI — Groq (3 keys tak rotate hoti hain)
+          VITE_GROQ_API_KEY:    ${{ secrets.VITE_GROQ_API_KEY }}
+          VITE_GROQ_API_KEY_2:  ${{ secrets.VITE_GROQ_API_KEY_2 }}
+          VITE_GROQ_API_KEY_3:  ${{ secrets.VITE_GROQ_API_KEY_3 }}
+          VITE_GROQ_MODEL:      ${{ secrets.VITE_GROQ_MODEL }}
+
+          # AI — Gemini (fallback)
+          VITE_GEMINI_API_KEY:   ${{ secrets.VITE_GEMINI_API_KEY }}
+          VITE_GEMINI_API_KEY_2: ${{ secrets.VITE_GEMINI_API_KEY_2 }}
+          VITE_GEMINI_MODEL:     ${{ secrets.VITE_GEMINI_MODEL }}
+
+          # Optional — Pinecone (default off)
+          VITE_PINECONE_API_KEY: ${{ secrets.VITE_PINECONE_API_KEY }}
+          VITE_PINECONE_HOST:    ${{ secrets.VITE_PINECONE_HOST }}
+
+          # Feature flags
+          VITE_AI_ENABLE_LOCAL_ERP: ${{ vars.VITE_AI_ENABLE_LOCAL_ERP || 'true' }}
+          VITE_AI_ENABLE_CACHE:     ${{ vars.VITE_AI_ENABLE_CACHE     || 'true' }}
+          VITE_AI_ENABLE_GROQ:      ${{ vars.VITE_AI_ENABLE_GROQ      || 'true' }}
+          VITE_AI_ENABLE_GEMINI:    ${{ vars.VITE_AI_ENABLE_GEMINI    || 'true' }}
+          VITE_AI_ENABLE_PINECONE:  ${{ vars.VITE_AI_ENABLE_PINECONE  || 'false' }}
+        run: npm run build
+
+      # ── 6. Sanity check — build khaali to nahi? ──
+      - name: Verify build output
+        run: |
+          if [ ! -f dist/index.html ]; then
+            echo "::error::dist/index.html nahi bana — build fail hui"
+            exit 1
+          fi
+          SIZE=$(du -sk dist | cut -f1)
+          echo "✅ Build ready — ${SIZE} KB"
+          if [ "$SIZE" -lt 100 ]; then
+            echo "::warning::Build bahut chhoti hai (${SIZE} KB) — check karein"
+          fi
+
+      # ── 7. Firebase par deploy ──
+      - name: Deploy to Firebase Hosting
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          projectId: training-command-erp
+          channelId: live
+
+      # ── 8. Summary (Actions page par dikhega) ──
+      - name: Deploy summary
+        if: always()
+        run: |
+          {
+            echo "## 🚀 Deploy ${{ job.status }}"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| **Live URL** | https://training-command-erp.web.app |"
+            echo "| **Commit** | \`${{ github.sha }}\` |"
+            echo "| **Trigger** | ${{ github.event_name }} |"
+            echo "| **By** | @${{ github.actor }} |"
+          } >> $GITHUB_STEP_SUMMARY

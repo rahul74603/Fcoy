@@ -43,3 +43,7 @@ bower_components
 
 # Firebase project config note:
 # .firebaserc is intentionally tracked in this repo unless you choose otherwise.
+
+# Build output — ab GitHub Actions khud build karta hai (.github/workflows/deploy.yml)
+# Isliye git me rakhne ki zaroorat nahi. Har push par CI fresh build karke deploy karega.
+dist/
