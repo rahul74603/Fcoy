@@ -1,11 +1,17 @@
 // ═══════════════════════════════════════════════════════════
-// SMART ROUTER - The Brain of AI System 🧠
-// ═══════════════════════════════════════════════════════════
-// Ye decide karta hai ki user ke command ko kaha bhejna hai:
-// 1. Quick Match (greetings) - 0ms
-// 2. Cache (repeat queries) - 0ms
-// 3. Groq AI (primary) - 500ms
-// 4. Gemini AI (fallback) - 1500ms
+// ⚠️ DEPRECATED — ab use nahi hota
+// ───────────────────────────────────────────────────────────
+// Ye purana single-shot router tha: 1 API call → ek JSON intent
+// → actionHandler ke hardcoded if-else. Isi wajah se agent sirf
+// gine-chune sawaalon ka jawab de paata tha.
+//
+// NAYA SYSTEM:  src/features/aiAgent/engine/agentLoop.ts
+//   • AI ke paas asli TOOLS hain (query/join/schema/sample)
+//   • Multi-step: soch → data padho → phir socho → jawab
+//   • Poora database (41 collections) live padhta hai
+//
+// Ye file sirf reference/rollback ke liye rakhi hai.
+// Naya code likhte waqt agentLoop use karein.
 // ═══════════════════════════════════════════════════════════
 
 import { checkQuickResponse } from "./commandPatterns";
