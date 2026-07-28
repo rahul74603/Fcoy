@@ -37,6 +37,7 @@ import { VendorPaymentScreen }    from './features/finance/vendors/VendorPayment
 // --- Clerk / Operations ---
 import { TraineeProfileScreen }       from './features/students/TraineeProfileScreen';
 import { DocumentVerificationScreen } from './features/students/DocumentVerificationScreen';
+import { WelfareDemographicsScreen }  from './features/welfare/WelfareDemographicsScreen';
 import { WeeklyProgramScreen }        from './features/weekly/WeeklyProgramScreen';
 import { MedicalRegisterScreen }      from './features/medical/MedicalRegisterScreen';
 import { DeputationScreen } from './features/ustad/screens';
@@ -72,6 +73,9 @@ import {
 // ─────────────────────────────────────────────
 const QM_ROLES    = ['Company Commander', 'Quarter Master'];
 const CLERK_ROLES = ['Company Commander', 'Clerk'];
+
+// Welfare cell — CC + Clerk plan karte hain, QM ration/budget ke liye dekh sakta hai
+const WELFARE_ROLES = ['Company Commander', 'Clerk', 'Quarter Master'];
 
 
 // Staff module access — CC + Clerk can manage, Ustad can view own
@@ -266,6 +270,20 @@ function App() {
                 element={
                   <ProtectedRoute allowedRoles={CLERK_ROLES}>
                     <EnterpriseLayout><MedicalRegisterScreen /></EnterpriseLayout>
+                  </ProtectedRoute>
+                }
+              />
+
+              {/* ════════════════════════════════
+                  WELFARE & DEMOGRAPHICS
+                  Trainee registration data se state/religion/
+                  language wise counts + festival welfare planning
+              ════════════════════════════════ */}
+              <Route
+                path="/welfare-demographics"
+                element={
+                  <ProtectedRoute allowedRoles={WELFARE_ROLES}>
+                    <EnterpriseLayout><WelfareDemographicsScreen /></EnterpriseLayout>
                   </ProtectedRoute>
                 }
               />

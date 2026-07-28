@@ -11,6 +11,7 @@ import {
   Bot, Sparkles,
   UserCog, ClipboardList,
   ArrowRightLeft, Database,
+  HeartHandshake,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBatch } from '../../contexts/BatchContext';
@@ -416,6 +417,14 @@ export const Sidebar = () => {
                   <SubItem title="💳 Vendor Payments" path="/vendor-payments" dot="bg-red-400" />
                 </NavGroup>
 
+                {/* Welfare — festival wise ration / mithai planning */}
+                <NavItem
+                  title="Festival Welfare Plan"
+                  icon={HeartHandshake}
+                  path="/welfare-demographics"
+                  badge={<NewBadge />}
+                />
+
                 {/* QM Reports */}
                 <NavItem title="Reports & Export" icon={FileText} path="/reports" />
 
@@ -492,6 +501,7 @@ export const Sidebar = () => {
                   <SubItem title="Search & Profile" path="/profile" dot="bg-blue-400" />
                   <SubItem title="Document Cell" path="/documents" dot="bg-purple-400" />
                   <SubItem title="MI Room & Medical" path="/medical-register" dot="bg-red-400" />
+                  <SubItem title="🤝 Welfare & Demographics" path="/welfare-demographics" dot="bg-rose-400" />
                 </NavGroup>
 
                 {/* ═════ TRAINING & DUTY ═════ */}
