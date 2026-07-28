@@ -3,6 +3,7 @@
 // ============================================
 
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useLeave } from '../hooks/useLeave';
 import { useStaff } from '../hooks/useStaff';
 import {
@@ -24,7 +25,158 @@ const TABS = [
   { key: 'types', label: 'Leave Types', icon: '⚙️' },
 ];
 
+const LeaveQuotaModal: React.FC<{
+  leave: StaffLeave;
+  allLeaves: StaffLeave[];
+  leaveTypes: { id: string; name: string; code: string; maxDaysPerYear: number }[];
+  onClose: () => void;
+}> = ({ leave, allLeaves, leaveTypes, onClose }) => {
+  const year = new Date().getFullYear();
+  const staffLeaves = allLeaves.filter(l => l.staffId === leave.staffId);
+  const approvedThisYear = staffLeaves.filter(l =>
+    l.status === 'approved' && l.fromDate?.getFullYear() === year
+  );
+  const pendingThisYear = staffLeaves.filter(l =>
+    l.status === 'pending' && l.fromDate?.getFullYear() === year
+  );
+  const lastApproved = approvedThisYear
+    .filter(l => l.id !== leave.id)
+    .sort((a, b) => (b.fromDate?.getTime() ?? 0) - (a.fromDate?.getTime() ?? 0))[0];
+
+  const currentType = leaveTypes.find(t => t.id === leave.leaveTypeId)
+    || { id: leave.leaveTypeId, name: leave.leaveTypeName, code: leave.leaveTypeCode, maxDaysPerYear: 0 };
+
+  const quotaRows = leaveTypes.map(type => {
+    const taken = approvedThisYear
+      .filter(l => l.leaveTypeId === type.id)
+      .reduce((sum, l) => sum + Number(l.numberOfDays || 0), 0);
+    const pending = pendingThisYear
+      .filter(l => l.leaveTypeId === type.id)
+      .reduce((sum, l) => sum + Number(l.numberOfDays || 0), 0);
+    const isCurrentType = type.id === leave.leaveTypeId;
+    const afterApproval = isCurrentType
+      ? type.maxDaysPerYear - taken - Number(leave.numberOfDays || 0)
+      : type.maxDaysPerYear - taken;
+    return {
+      ...type,
+      taken,
+      pending,
+      balance: type.maxDaysPerYear - taken,
+      afterApproval,
+      isCurrentType,
+    };
+  });
+
+  const currentTaken = approvedThisYear
+    .filter(l => l.leaveTypeId === leave.leaveTypeId)
+    .reduce((sum, l) => sum + Number(l.numberOfDays || 0), 0);
+  const currentBalance = Number(currentType.maxDaysPerYear || 0) - currentTaken;
+  const afterThisLeave = currentBalance - Number(leave.numberOfDays || 0);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-[80] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="bg-gradient-to-r from-blue-700 to-purple-700 text-white px-5 py-4 flex items-start justify-between">
+          <div>
+            <h3 className="text-sm font-black uppercase tracking-wider">Leave Quota & History</h3>
+            <p className="text-xs text-white/80 mt-1">
+              {leave.rank} {leave.staffName} · {leave.forceNumber} · Year {year}
+            </p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20">✕</button>
+        </div>
+
+        <div className="p-5 overflow-y-auto max-h-[calc(90vh-80px)] space-y-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
+              <p className="text-[10px] font-black text-blue-600 uppercase">Applied Leave</p>
+              <p className="text-lg font-black text-blue-900">{leave.leaveTypeName}</p>
+              <p className="text-xs text-blue-700">{leave.numberOfDays} days requested</p>
+            </div>
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+              <p className="text-[10px] font-black text-slate-500 uppercase">Quota</p>
+              <p className="text-lg font-black text-slate-900">{currentType.maxDaysPerYear || '—'}</p>
+              <p className="text-xs text-slate-500">days/year</p>
+            </div>
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+              <p className="text-[10px] font-black text-amber-600 uppercase">Taken This Year</p>
+              <p className="text-lg font-black text-amber-800">{currentTaken}</p>
+              <p className="text-xs text-amber-700">approved days</p>
+            </div>
+            <div className={`${afterThisLeave < 0 ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'} border rounded-xl p-3`}>
+              <p className={`text-[10px] font-black uppercase ${afterThisLeave < 0 ? 'text-red-600' : 'text-green-600'}`}>Balance After Approval</p>
+              <p className={`text-lg font-black ${afterThisLeave < 0 ? 'text-red-800' : 'text-green-800'}`}>{afterThisLeave}</p>
+              <p className="text-xs text-slate-500">remaining days</p>
+            </div>
+          </div>
+
+          {lastApproved ? (
+            <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3">
+              <p className="text-[10px] font-black text-indigo-600 uppercase mb-1">Last Approved Leave</p>
+              <p className="text-sm font-bold text-indigo-900">
+                {lastApproved.leaveTypeName} · {lastApproved.numberOfDays} days · {lastApproved.fromDate?.toLocaleDateString('en-IN')} to {lastApproved.toDate?.toLocaleDateString('en-IN')}
+              </p>
+              <p className="text-xs text-indigo-700 mt-0.5">Reason: {lastApproved.reason || '—'}</p>
+            </div>
+          ) : (
+            <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-sm font-bold text-green-800">
+              No approved leave found for this staff in {year} before this request.
+            </div>
+          )}
+
+          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+            <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <p className="text-xs font-black text-slate-700 uppercase">Leave Type Quota Ledger</p>
+              <p className="text-[10px] text-slate-500">Quota is fetched from Leave Type Master dynamically</p>
+            </div>
+            {quotaRows.length === 0 ? (
+              <div className="p-4 text-sm text-red-600 font-bold">
+                Leave types are not configured. Add CL/EL/Special etc. from Leave Types tab first.
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {quotaRows.map(row => (
+                  <div key={row.id} className={`px-4 py-3 grid grid-cols-5 gap-2 items-center ${row.isCurrentType ? 'bg-blue-50' : ''}`}>
+                    <div className="col-span-2">
+                      <p className="text-sm font-black text-slate-800">{row.name}</p>
+                      <p className="text-[10px] text-slate-500">{row.code}</p>
+                    </div>
+                    <div className="text-center"><p className="text-[9px] text-slate-400 uppercase">Quota</p><p className="font-black">{row.maxDaysPerYear}</p></div>
+                    <div className="text-center"><p className="text-[9px] text-slate-400 uppercase">Taken</p><p className="font-black text-amber-700">{row.taken}</p></div>
+                    <div className="text-center"><p className="text-[9px] text-slate-400 uppercase">Balance</p><p className={`font-black ${row.afterApproval < 0 ? 'text-red-700' : 'text-green-700'}`}>{row.isCurrentType ? row.afterApproval : row.balance}</p></div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+            <p className="text-xs font-black text-slate-700 uppercase mb-2">This Staff Leave History ({year})</p>
+            <div className="space-y-1.5 max-h-52 overflow-y-auto">
+              {staffLeaves.filter(l => l.fromDate?.getFullYear() === year).length === 0 ? (
+                <p className="text-xs text-slate-500">No leave history in this year.</p>
+              ) : staffLeaves
+                .filter(l => l.fromDate?.getFullYear() === year)
+                .sort((a, b) => (b.fromDate?.getTime() ?? 0) - (a.fromDate?.getTime() ?? 0))
+                .map(l => (
+                  <div key={l.id} className={`flex items-center justify-between rounded-lg border px-3 py-2 ${l.id === leave.id ? 'bg-blue-50 border-blue-200' : 'bg-white border-slate-100'}`}>
+                    <div>
+                      <p className="text-xs font-bold text-slate-800">{l.leaveTypeName} · {l.numberOfDays} days</p>
+                      <p className="text-[10px] text-slate-500">{l.fromDate?.toLocaleDateString('en-IN')} → {l.toDate?.toLocaleDateString('en-IN')} · {l.reason || '—'}</p>
+                    </div>
+                    <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${LEAVE_STATUS_COLORS[l.status]}`}>{LEAVE_STATUS_LABELS[l.status]}</span>
+                  </div>
+                ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const LeaveManagementScreen: React.FC = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const {
     allLeaves,
     pendingLeaves,
@@ -57,6 +209,7 @@ const LeaveManagementScreen: React.FC = () => {
   const [showApproveDialog, setShowApproveDialog] = useState(false);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [selectedLeave, setSelectedLeave] = useState<StaffLeave | null>(null);
+  const [quotaLeave, setQuotaLeave] = useState<StaffLeave | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<LeaveStatus | 'all'>('all');
 
@@ -82,6 +235,19 @@ const LeaveManagementScreen: React.FC = () => {
   useEffect(() => {
     fetchAllLeaves();
   }, [fetchAllLeaves]);
+
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    const leaveId = searchParams.get('leaveId');
+    if (tab) setActiveTab(tab);
+    if (leaveId && allLeaves.length > 0) {
+      const leave = allLeaves.find(l => l.id === leaveId);
+      if (leave) {
+        setQuotaLeave(leave);
+        setSelectedLeave(leave);
+      }
+    }
+  }, [searchParams, allLeaves]);
 
   // ─── Filtered Leaves ──────────────────────
   const getFilteredLeaves = (leaves: StaffLeave[]) => {
@@ -700,6 +866,12 @@ const LeaveManagementScreen: React.FC = () => {
 
                     {/* Action Buttons */}
                     <div className="flex flex-wrap gap-2 pt-3 border-t border-gray-100">
+                      <button
+                        onClick={() => setQuotaLeave(leave)}
+                        className="px-3 py-1.5 bg-blue-50 text-blue-700 border border-blue-200 text-xs font-bold rounded-lg hover:bg-blue-100 transition-colors"
+                      >
+                        👁 Leave Quota / History
+                      </button>
                       {/* Pending Actions */}
                       {leave.status === 'pending' && (
                         <>
@@ -1077,6 +1249,21 @@ const LeaveManagementScreen: React.FC = () => {
           </div>
         </div>
       </FormModal>
+
+      {quotaLeave && (
+        <LeaveQuotaModal
+          leave={quotaLeave}
+          allLeaves={allLeaves}
+          leaveTypes={leaveTypes}
+          onClose={() => {
+            setQuotaLeave(null);
+            if (searchParams.get('leaveId')) {
+              searchParams.delete('leaveId');
+              setSearchParams(searchParams, { replace: true });
+            }
+          }}
+        />
+      )}
 
       {/* Reject Modal */}
       <FormModal

@@ -2,11 +2,11 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  Users, UserX, AlertTriangle, FileText, Shield, Clock,
-  ChevronDown, ChevronUp, X, MapPin, Target, BookOpen,
-  CheckCircle2, XCircle, ArrowRightLeft, Activity, Layers,
+  Users, UserX, FileText, Shield, Clock,
+  X, MapPin, Target,
+  CheckCircle2, ArrowRightLeft, Activity, Layers,
   TrendingUp, TrendingDown, Loader2, RefreshCw, Calendar,
-  Heart, Award, Crosshair, AlertCircle, Eye
+  Award, Crosshair, AlertCircle, Eye
 } from 'lucide-react';
 import {
   collection, getDocs, query, where, orderBy
@@ -555,7 +555,7 @@ const navigate = useNavigate();
   color={failedExam.length > 0 ? 'text-amber-700' : 'text-green-700'}
   borderColor="border-t-amber-500"
   clickable
-  onClick={() => navigate('/weekly-test-tracker')}
+  onClick={() => navigate('/test-records')}
 />
 
          {/* 4. FPT Failed — Navigate to FPTTracker */}
@@ -567,7 +567,7 @@ const navigate = useNavigate();
   color={fptFailed.length > 0 ? 'text-orange-700' : 'text-green-700'}
   borderColor="border-t-orange-500"
   clickable
-  onClick={() => navigate('/fpt-tracker')}
+  onClick={() => navigate('/test-records')}
   badge={fptPassed.length > 0 ? `${fptPassed.length} Pass` : undefined}
   badgeColor="bg-green-100 text-green-700"
 />
@@ -595,7 +595,7 @@ const navigate = useNavigate();
   color={udhariRecords.length > 0 ? 'text-cyan-700' : 'text-slate-500'}
   borderColor="border-t-cyan-500"
   clickable
-  onClick={() => navigate('/deployment')}
+  onClick={() => setUdhariModal(true)}
 />
         </div>
       )}
@@ -851,7 +851,7 @@ const navigate = useNavigate();
           },
           {
             label: 'FPT Result',
-            render: t => (
+            render: () => (
               <span className="bg-red-600 text-white px-2 py-0.5 text-[9px] font-bold uppercase">FAIL</span>
             )
           },

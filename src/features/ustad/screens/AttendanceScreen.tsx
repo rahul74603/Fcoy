@@ -39,7 +39,6 @@ const AttendanceScreen: React.FC = () => {
     loading,
     submitting,
     error,
-    fetchDailyAttendance,
     fetchAllMonthly,
     handleMarkBulkAttendance,
     getTodaySummary,

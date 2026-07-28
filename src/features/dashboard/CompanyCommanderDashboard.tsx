@@ -1,6 +1,6 @@
 // D:\ALL PROJECTS\BSF COYs\frontend\src\features\dashboard\CompanyCommanderDashboard.tsx
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Users, Shield, AlertTriangle, Wallet, RefreshCw,
@@ -161,17 +161,6 @@ interface AbsentRecordDash {
   totalDays: number;
   status: string;
   remarks: string;
-}
-
-interface UstadInfo {
-  id: string;
-  name: string;
-  rank: string;
-  irla: string;
-  designation: string;
-  platoon: string;
-  phone: string;
-  status: string;
 }
 
 interface ProgramSession {
@@ -777,6 +766,8 @@ const TraineeProfileModal: React.FC<{
   onClose: () => void;
 }> = ({ trainee, fptRecords, weeklyTests, medicalRecords, recoveries, allTrainingItems, healthScore, onClose }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'documents' | 'kit' | 'fpt' | 'tests' | 'medical' | 'recovery'>('overview');
+  const [expandedFptId, setExpandedFptId] = useState<string | null>(null);
+  const [expandedTestId, setExpandedTestId] = useState<string | null>(null);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -1045,21 +1036,89 @@ const TraineeProfileModal: React.FC<{
                 <p className="text-[11px] text-slate-400 font-bold">No FPT records</p>
               </div>
             ) : (
-              <div className="space-y-1.5">
-                {fptList.map((r: any) => (
-                  <div key={r.id} className={`flex items-center justify-between px-4 py-3 rounded-xl border ${
-                    r.result === 'Pass' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
-                  }`}>
-                    <div className="flex items-center gap-3">
-                      <span className="text-[10px] font-black bg-blue-100 text-blue-700 px-2 py-1 rounded-lg">W{r.weekNumber}</span>
-                      <span className="text-[11px] font-bold text-slate-800">{r.obtainedMarks}/{r.totalMarks}</span>
-                      <span className="text-[9px] text-slate-400">{r.testDate}</span>
+              <div className="space-y-2">
+                {fptList.map((r: any, idx: number) => {
+                  const rowId = String(r.id || `fpt-${idx}`);
+                  const isOpen = expandedFptId === rowId;
+                  const resultIsPass = r.result === 'Pass';
+                  const events = Array.isArray(r.events) ? r.events : [];
+                  return (
+                    <div key={rowId} className={`rounded-xl border overflow-hidden ${
+                      resultIsPass ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
+                    }`}>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setExpandedFptId(isOpen ? null : rowId);
+                        }}
+                        className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-white/50 transition-colors"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          {isOpen ? <ChevronUp size={14} className="text-slate-500" /> : <ChevronDown size={14} className="text-slate-500" />}
+                          <span className="text-[10px] font-black bg-blue-100 text-blue-700 px-2 py-1 rounded-lg">W{r.weekNumber || '—'}</span>
+                          <div className="min-w-0">
+                            <p className="text-[11px] font-black text-slate-800 truncate">
+                              FPT Attempt · {r.obtainedMarks ?? r.marks ?? 0}/{r.totalMarks ?? '—'} marks
+                            </p>
+                            <p className="text-[9px] text-slate-500">
+                              Date: {r.testDate || r.date || '—'} · Events: {events.length || 'N/A'} · Click for details
+                            </p>
+                          </div>
+                        </div>
+                        <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg flex-shrink-0 ${
+                          resultIsPass ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+                        }`}>{r.percentage ?? 0}% {resultIsPass ? 'PASS ✅' : 'FAIL ❌'}</span>
+                      </button>
+
+                      {isOpen && (
+                        <div className="border-t border-white/70 bg-white px-4 py-3">
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+                            {[
+                              ['Result', r.result || '—'],
+                              ['Obtained', `${r.obtainedMarks ?? r.marks ?? 0}/${r.totalMarks ?? '—'}`],
+                              ['Percentage', `${r.percentage ?? 0}%`],
+                              ['Passing', r.totalPassingMarks ?? r.passingMarks ?? '—'],
+                              ['Events Passed', r.eventsPassed ?? '—'],
+                              ['Events Failed', r.eventsFailed ?? '—'],
+                              ['Overall Pass %', r.overallPassPercent ? `${r.overallPassPercent}%` : '—'],
+                              ['Remarks', r.remarks || '—'],
+                            ].map(([label, value]) => (
+                              <div key={label} className="rounded-lg border border-slate-100 bg-slate-50 px-2 py-1.5">
+                                <p className="text-[8px] font-black text-slate-400 uppercase">{label}</p>
+                                <p className="text-[10px] font-bold text-slate-800 mt-0.5 break-words">{String(value)}</p>
+                              </div>
+                            ))}
+                          </div>
+
+                          {events.length > 0 && (
+                            <div className="space-y-1.5">
+                              <p className="text-[9px] font-black text-slate-500 uppercase tracking-wider">Event-wise details</p>
+                              {events.map((ev: any, evIdx: number) => (
+                                <div key={`${rowId}-event-${evIdx}`} className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 ${
+                                  ev.passed ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
+                                }`}>
+                                  <div>
+                                    <p className="text-[10px] font-black text-slate-800">{ev.name || `Event ${evIdx + 1}`}</p>
+                                    <p className="text-[9px] text-slate-500">
+                                      Passing: {ev.passingMarks ?? '—'} · Max: {ev.maxMarks ?? '—'}
+                                      {ev.runningGrade ? ` · Grade: ${ev.runningGrade}` : ''}
+                                    </p>
+                                  </div>
+                                  <span className={`text-[10px] font-black px-2 py-1 rounded-lg ${
+                                    ev.passed ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+                                  }`}>
+                                    {ev.marks ?? 0}/{ev.maxMarks ?? '—'} {ev.passed ? 'PASS' : 'FAIL'}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg ${
-                      r.result === 'Pass' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
-                    }`}>{r.percentage}% {r.result === 'Pass' ? '✅' : '❌'}</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )
           )}
@@ -1071,23 +1130,62 @@ const TraineeProfileModal: React.FC<{
                 <p className="text-[11px] text-slate-400 font-bold">No test records</p>
               </div>
             ) : (
-              <div className="space-y-1.5">
-                {testList.map((r: any) => (
-                  <div key={r.id} className={`flex items-center justify-between px-4 py-3 rounded-xl border ${
-                    r.result === 'Pass' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
-                  }`}>
-                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                      <span className="text-[10px] font-black bg-blue-100 text-blue-700 px-2 py-1 rounded-lg flex-shrink-0">W{r.weekNumber}</span>
-                      <div className="min-w-0">
-                        <p className="text-[11px] font-bold text-slate-800 truncate">{r.testName}</p>
-                        <p className="text-[9px] text-slate-400">{r.subject} · {r.testDate}</p>
-                      </div>
+              <div className="space-y-2">
+                {testList.map((r: any, idx: number) => {
+                  const rowId = String(r.id || `test-${idx}`);
+                  const isOpen = expandedTestId === rowId;
+                  const resultIsPass = r.result === 'Pass';
+                  return (
+                    <div key={rowId} className={`rounded-xl border overflow-hidden ${
+                      resultIsPass ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
+                    }`}>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setExpandedTestId(isOpen ? null : rowId);
+                        }}
+                        className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-white/50 transition-colors"
+                      >
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          {isOpen ? <ChevronUp size={14} className="text-slate-500" /> : <ChevronDown size={14} className="text-slate-500" />}
+                          <span className="text-[10px] font-black bg-blue-100 text-blue-700 px-2 py-1 rounded-lg flex-shrink-0">W{r.weekNumber || '—'}</span>
+                          <div className="min-w-0">
+                            <p className="text-[11px] font-bold text-slate-800 truncate">{r.testName || 'Weekly Test'}</p>
+                            <p className="text-[9px] text-slate-500">
+                              {r.subject || '—'} · {r.testDate || '—'} · {r.obtainedMarks ?? r.marks ?? 0}/{r.totalMarks ?? '—'} marks
+                            </p>
+                          </div>
+                        </div>
+                        <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg flex-shrink-0 ${
+                          resultIsPass ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+                        }`}>{r.percentage ?? 0}% {resultIsPass ? 'PASS ✅' : 'FAIL ❌'}</span>
+                      </button>
+
+                      {isOpen && (
+                        <div className="border-t border-white/70 bg-white px-4 py-3">
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                            {[
+                              ['Test Name', r.testName || 'Weekly Test'],
+                              ['Subject', r.subject || '—'],
+                              ['Result', r.result || '—'],
+                              ['Date', r.testDate || '—'],
+                              ['Obtained Marks', r.obtainedMarks ?? r.marks ?? 0],
+                              ['Total Marks', r.totalMarks ?? '—'],
+                              ['Percentage', `${r.percentage ?? 0}%`],
+                              ['Remarks', r.remarks || '—'],
+                            ].map(([label, value]) => (
+                              <div key={label} className="rounded-lg border border-slate-100 bg-slate-50 px-2 py-1.5">
+                                <p className="text-[8px] font-black text-slate-400 uppercase">{label}</p>
+                                <p className="text-[10px] font-bold text-slate-800 mt-0.5 break-words">{String(value)}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg flex-shrink-0 ${
-                      r.result === 'Pass' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
-                    }`}>{r.percentage}%</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )
           )}
@@ -1167,7 +1265,6 @@ export const CompanyCommanderDashboard: React.FC = () => {
 
   // ── State ──
   const [trainees, setTrainees] = useState<TraineeInfo[]>([]);
-  const [ustads, setUstads] = useState<UstadInfo[]>([]);
   const [fptRecords, setFptRecords] = useState<any[]>([]);
   const [weeklyTests, setWeeklyTests] = useState<any[]>([]);
   const [allMedical, setAllMedical] = useState<any[]>([]);
@@ -1203,6 +1300,7 @@ const [staffLoading, setStaffLoading] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [autoRefreshCountdown, setAutoRefreshCountdown] = useState(AUTO_REFRESH_INTERVAL / 1000);
   const [platoonFilter, setPlatoonFilter] = useState<string>('ALL');
+  const rosterSectionRef = useRef<HTMLDivElement>(null);
 
   // ── Fund Detail Modal ──
   const [selectedFund, setSelectedFund] = useState<FundInfo | null>(null);
@@ -1230,7 +1328,7 @@ const [staffLoading, setStaffLoading] = useState(false);
     try {
       const [
         traineesSnap, absentSnap, medicalSnap,
-        fptSnap, testSnap, programSnap, ustadSnap,
+        fptSnap, testSnap, programSnap,
       ] = await Promise.all([
         getDocs(query(collection(db, 'trainees'), where('batchId', '==', activeBatch.id))),
         // ── FIX: fetch ALL absent records (not just Active) for dashboard ──
@@ -1239,7 +1337,6 @@ const [staffLoading, setStaffLoading] = useState(false);
         getDocs(query(collection(db, 'fptRecords'), where('batchId', '==', activeBatch.id))),
         getDocs(query(collection(db, 'weeklyTestRecords'), where('batchId', '==', activeBatch.id))),
         getDocs(query(collection(db, 'weeklyPrograms'), where('batchId', '==', activeBatch.id))),
-        getDocs(query(collection(db, 'ustads'), where('batchId', '==', activeBatch.id))),
       ]);
 
       const [
@@ -1316,19 +1413,6 @@ const [staffLoading, setStaffLoading] = useState(false);
       programSnap.forEach(d => progList.push({ id: d.id, ...d.data() }));
       progList.sort((a, b) => new Date(b.fromDate || 0).getTime() - new Date(a.fromDate || 0).getTime());
       setPrograms(progList);
-
-      const ustadList: UstadInfo[] = [];
-      ustadSnap.forEach(d => {
-        const data = d.data();
-        ustadList.push({
-          id: d.id, name: data.name ?? '', rank: data.rank ?? '',
-          irla: data.irla ?? '', designation: data.designation ?? '',
-          platoon: data.platoon ?? '', phone: data.phone ?? '',
-          status: data.status ?? 'Active',
-        });
-      });
-      ustadList.sort((a, b) => a.name.localeCompare(b.name));
-      setUstads(ustadList);
 
       const recList: any[] = [];
       recoverySnap.forEach(d => recList.push({ id: d.id, ...d.data() }));
@@ -1447,17 +1531,41 @@ const [staffLoading, setStaffLoading] = useState(false);
   useEffect(() => { fetchAllData(); }, [fetchAllData]);
 
   // ── COMPUTED ──
-  // ── FIX: Correct attendance counts from trainee.attn field ──
-  const totalTrainees = trainees.length;
-  const presentToday = trainees.filter(t => t.attn === 'P').length;
-  const absentCount = trainees.filter(t => t.attn === 'A').length;
- const sickCount = trainees.filter(t => t.attn === 'S' || t.attn === 'Sick').length;
-const leaveCount = trainees.filter(t => t.attn === 'L' || t.attn === 'Leave' || t.attn === 'Away').length;
-const restCount = trainees.filter(t => t.attn === 'R' || t.attn === 'Rest').length;
-const hospitalCount = trainees.filter(t => t.attn === 'H' || t.attn === 'Hospital').length;
-const medApptCount = trainees.filter(t => t.attn === 'M').length;
+  // Single status source: summary cards, away table and roster filters all use this normalized code.
+  const getTraineeAttnCode = (attnValue?: string): 'P' | 'A' | 'S' | 'H' | 'L' | 'R' | 'M' => {
+    const v = String(attnValue || 'P').toLowerCase();
+    if (v === 'a' || v.includes('absent')) return 'A';
+    if (v === 's' || v.includes('sick')) return 'S';
+    if (v === 'h' || v.includes('hospital')) return 'H';
+    if (v === 'l' || v.includes('leave') || v.includes('away')) return 'L';
+    if (v === 'r' || v.includes('rest')) return 'R';
+    if (v === 'm' || v.includes('medical')) return 'M';
+    return 'P';
+  };
 
-  // ── FIX: notPresent = everyone who is NOT 'P' ──
+  const getMedicalAttnCode = (category?: string): 'S' | 'H' | 'R' | 'M' => {
+    if (category === 'Hospital Admit') return 'H';
+    if (category === 'B-Rest' || category === 'C-Rest') return 'R';
+    if (category === 'Medical Board') return 'M';
+    return 'S';
+  };
+
+  const getDashboardAttnCode = (trainee: TraineeInfo): 'P' | 'A' | 'S' | 'H' | 'L' | 'R' | 'M' => {
+    const activeMed = allMedical.find((m: any) => m.traineeId === trainee.id && m.status === 'Active');
+    if (activeMed) return getMedicalAttnCode(activeMed.category);
+    return getTraineeAttnCode(trainee.attn);
+  };
+
+  const totalTrainees = trainees.length;
+  const presentToday = trainees.filter(t => getDashboardAttnCode(t) === 'P').length;
+  const absentCount = trainees.filter(t => getDashboardAttnCode(t) === 'A').length;
+  const sickCount = trainees.filter(t => getDashboardAttnCode(t) === 'S').length;
+  const leaveCount = trainees.filter(t => getDashboardAttnCode(t) === 'L').length;
+  const restCount = trainees.filter(t => getDashboardAttnCode(t) === 'R').length;
+  const hospitalCount = trainees.filter(t => getDashboardAttnCode(t) === 'H').length;
+  const medApptCount = trainees.filter(t => getDashboardAttnCode(t) === 'M').length;
+
+  // ── notPresent = everyone who is NOT present ──
   const notPresent = absentCount + sickCount + leaveCount + restCount + hospitalCount + medApptCount;
   const onField = presentToday;
   const attendancePct = totalTrainees > 0 ? Math.round((presentToday / totalTrainees) * 100) : 0;
@@ -1511,6 +1619,24 @@ const medApptCount = trainees.filter(t => t.attn === 'M').length;
     if (tomorrowDayData) tomorrowSchedule.push(...tomorrowDayData.sessions);
   }
 
+  const todayInstructorAssignments = todaySchedule.flatMap((session, sessionIndex) =>
+    (session.assignedPersons || [])
+      .filter(person => person.name?.trim())
+      .map(person => ({
+        id: `${sessionIndex}_${person.rank}_${person.name}_${session.time}`,
+        rank: person.rank || 'Instructor',
+        name: person.name,
+        time: session.time,
+        subject: getSubjectDisplay(session),
+        platoon: session.platoon || 'All Platoons',
+        location: session.location || 'Training Area',
+      }))
+  );
+
+  const unassignedTodaySessions = todaySchedule.filter(session =>
+    !(session.assignedPersons || []).some(person => person.name?.trim())
+  );
+
   // Alerts
   const fptFailAlerts: AlertItem[] = fptNeverPassed.map(([id, d]) => ({
     id, traineeId: id, traineeName: d.name, chestNo: d.chestNo, platoon: d.platoon,
@@ -1561,6 +1687,15 @@ const medApptCount = trainees.filter(t => t.attn === 'M').length;
     return map;
   }, [absentRecords]);
 
+  const activeMedicalByTrainee = useMemo(() => {
+    const map: Record<string, any> = {};
+    allMedical.forEach((m: any) => {
+      if (m.status !== 'Active') return;
+      if (!map[m.traineeId]) map[m.traineeId] = m;
+    });
+    return map;
+  }, [allMedical]);
+
   // Roster filter
   const filteredTrainees = trainees.filter(t => {
     if (searchQuery.trim()) {
@@ -1568,12 +1703,14 @@ const medApptCount = trainees.filter(t => t.attn === 'M').length;
       if (!t.name.toLowerCase().includes(q) && !t.chestNo.toLowerCase().includes(q) && !(t.regNo || '').toLowerCase().includes(q)) return false;
     }
     if (platoonFilter !== 'ALL' && t.platoon !== platoonFilter) return false;
+    const attnCode = getDashboardAttnCode(t);
     if (rosterFilter === 'ALL') return true;
-    if (rosterFilter === 'ABSENT') return t.attn === 'A';
-    if (rosterFilter === 'SICK') return t.attn === 'S' || t.attn === 'H';
-    if (rosterFilter === 'REST') return t.attn === 'R';
-    if (rosterFilter === 'LEAVE') return t.attn === 'L';
-    if (rosterFilter === 'MED_APPT') return t.attn === 'M';
+    if (rosterFilter === 'PRESENT') return attnCode === 'P';
+    if (rosterFilter === 'ABSENT') return attnCode === 'A';
+    if (rosterFilter === 'SICK') return attnCode === 'S' || attnCode === 'H';
+    if (rosterFilter === 'REST') return attnCode === 'R';
+    if (rosterFilter === 'LEAVE') return attnCode === 'L';
+    if (rosterFilter === 'MED_APPT') return attnCode === 'M';
     if (rosterFilter === 'NO_KIT') return !t.issuedKitItems || t.issuedKitItems.length < allTrainingItems.length;
     if (rosterFilter === 'DOCS_PENDING') return !t.docsComplete;
     if (rosterFilter === 'FPT_FAIL') return fptNeverPassed.some(([id]) => id === t.id);
@@ -1606,10 +1743,16 @@ const medApptCount = trainees.filter(t => t.attn === 'M').length;
     setAbsentModalTrainee(trainee);
   };
 
+  const focusRoster = (filter: string) => {
+    setRosterFilter(filter);
+    setSearchQuery('');
+    setTimeout(() => rosterSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
+  };
+
   // ═══════════════════════════════════════
   // AWAY PANEL — full detail of all non-present trainees
   // ═══════════════════════════════════════
-  const awayTrainees = trainees.filter(t => t.attn !== 'P');
+  const awayTrainees = trainees.filter(t => getDashboardAttnCode(t) !== 'P');
 
   // ══════════════════════════════════════════════════════════
   // RENDER
@@ -1771,22 +1914,24 @@ const medApptCount = trainees.filter(t => t.attn === 'M').length;
                 <div className="lg:col-span-2">
                   <div className="grid grid-cols-4 md:grid-cols-8 gap-2">
                     {[
-                      { label: 'Total', value: totalTrainees, color: 'bg-military-50 border-military-200 text-military-800', dot: 'bg-military-500' },
-                      { label: 'Present', value: onField, color: 'bg-green-50 border-green-200 text-green-700', dot: 'bg-green-500' },
-                      { label: 'Absent', value: absentCount, color: absentCount > 0 ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-600', dot: absentCount > 0 ? 'bg-red-500' : 'bg-green-500' },
-                      { label: 'Sick', value: sickCount, color: sickCount > 0 ? 'bg-orange-50 border-orange-200 text-orange-700' : 'bg-green-50 border-green-200 text-green-600', dot: sickCount > 0 ? 'bg-orange-500' : 'bg-green-500' },
-                      { label: 'Hospital', value: hospitalCount, color: hospitalCount > 0 ? 'bg-purple-50 border-purple-200 text-purple-700' : 'bg-green-50 border-green-200 text-green-600', dot: hospitalCount > 0 ? 'bg-purple-500' : 'bg-green-500' },
-                      { label: 'Leave', value: leaveCount, color: 'bg-blue-50 border-blue-200 text-blue-700', dot: 'bg-blue-500' },
-                      { label: 'B/C Rest', value: restCount, color: 'bg-indigo-50 border-indigo-200 text-indigo-700', dot: 'bg-indigo-500' },
-                      { label: 'Med Appt', value: medApptCount, color: 'bg-teal-50 border-teal-200 text-teal-700', dot: 'bg-teal-500' },
+                      { label: 'Total', value: totalTrainees, filter: 'ALL', color: 'bg-military-50 border-military-200 text-military-800', dot: 'bg-military-500' },
+                      { label: 'Present', value: onField, filter: 'PRESENT', color: 'bg-green-50 border-green-200 text-green-700', dot: 'bg-green-500' },
+                      { label: 'Absent', value: absentCount, filter: 'ABSENT', color: absentCount > 0 ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-600', dot: absentCount > 0 ? 'bg-red-500' : 'bg-green-500' },
+                      { label: 'Sick', value: sickCount, filter: 'SICK', color: sickCount > 0 ? 'bg-orange-50 border-orange-200 text-orange-700' : 'bg-green-50 border-green-200 text-green-600', dot: sickCount > 0 ? 'bg-orange-500' : 'bg-green-500' },
+                      { label: 'Hospital', value: hospitalCount, filter: 'SICK', color: hospitalCount > 0 ? 'bg-purple-50 border-purple-200 text-purple-700' : 'bg-green-50 border-green-200 text-green-600', dot: hospitalCount > 0 ? 'bg-purple-500' : 'bg-green-500' },
+                      { label: 'Leave', value: leaveCount, filter: 'LEAVE', color: 'bg-blue-50 border-blue-200 text-blue-700', dot: 'bg-blue-500' },
+                      { label: 'B/C Rest', value: restCount, filter: 'REST', color: 'bg-indigo-50 border-indigo-200 text-indigo-700', dot: 'bg-indigo-500' },
+                      { label: 'Med Appt', value: medApptCount, filter: 'MED_APPT', color: 'bg-teal-50 border-teal-200 text-teal-700', dot: 'bg-teal-500' },
                     ].map(c => (
-                      <div key={c.label} className={`p-3 border rounded-xl ${c.color} text-center`}>
+                      <button key={c.label} type="button" onClick={(e) => { e.stopPropagation(); focusRoster(c.filter); }}
+                        className={`p-3 border rounded-xl ${c.color} text-center hover:shadow-sm hover:scale-[1.01] transition-all cursor-pointer`}
+                        title={`Show ${c.label} trainees in Full Trainee Roster`}>
                         <div className="flex items-center justify-center gap-1 mb-1">
                           <div className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
                           <p className="text-[8px] font-bold uppercase">{c.label}</p>
                         </div>
                         <p className="text-lg font-black">{c.value}</p>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -1841,10 +1986,19 @@ const medApptCount = trainees.filter(t => t.attn === 'M').length;
                         </thead>
                         <tbody className="divide-y divide-slate-50">
                           {awayTrainees.map((t, idx) => {
-                            const typeInfo = getAbsentTypeInfo(t.attn);
+                            const typeInfo = getAbsentTypeInfo(getDashboardAttnCode(t));
                             // Get the active absent record for this trainee
                             const traineeAbsRecs = absentRecordsByTrainee[t.id] || [];
                             const activeRec = traineeAbsRecs.find(r => r.status === 'Active') || null;
+                            const activeMed = activeMedicalByTrainee[t.id] || null;
+                            const displayRec = activeRec || (activeMed ? {
+                              type: getMedicalAttnCode(activeMed.category),
+                              reason: activeMed.diagnosis || activeMed.category,
+                              fromDate: activeMed.date,
+                              toDate: activeMed.date,
+                              totalDays: activeMed.recommendedDays || 1,
+                              remarks: activeMed.remarks || activeMed.wardNo || '',
+                            } : null);
                             const histCount = traineeAbsRecs.filter(r => r.status !== 'Active').length;
 
                             return (
@@ -1872,41 +2026,41 @@ const medApptCount = trainees.filter(t => t.attn === 'M').length;
                                   </span>
                                 </td>
                                 <td className="px-3 py-3 text-slate-600 text-[10px]">
-                                  {activeRec?.type ? (
-                                    <span className="font-bold text-slate-700">{getAbsentTypeInfo(activeRec.type).label}</span>
+                                  {displayRec?.type ? (
+                                    <span className="font-bold text-slate-700">{getAbsentTypeInfo(displayRec.type).label}</span>
                                   ) : (
                                     <span className="text-slate-300">—</span>
                                   )}
                                 </td>
                                 <td className="px-3 py-3 max-w-[180px]">
-                                  {activeRec?.reason ? (
-                                    <p className="text-[10px] font-bold text-slate-700 truncate" title={activeRec.reason}>
-                                      {activeRec.reason}
+                                  {displayRec?.reason ? (
+                                    <p className="text-[10px] font-bold text-slate-700 truncate" title={displayRec.reason}>
+                                      {displayRec.reason}
                                     </p>
                                   ) : (
                                     <span className="text-[9px] text-red-400 font-bold">⚠ Not Recorded</span>
                                   )}
                                 </td>
                                 <td className="px-3 py-3 font-mono text-[10px] text-slate-500">
-                                  {activeRec?.fromDate ? fmtDateStr(activeRec.fromDate) : <span className="text-slate-300">—</span>}
+                                  {displayRec?.fromDate ? fmtDateStr(displayRec.fromDate) : <span className="text-slate-300">—</span>}
                                 </td>
                                 <td className="px-3 py-3 font-mono text-[10px]">
-                                  {activeRec?.toDate ? (
-                                    <span className="font-bold text-blue-600">{fmtDateStr(activeRec.toDate)}</span>
+                                  {displayRec?.toDate ? (
+                                    <span className="font-bold text-blue-600">{fmtDateStr(displayRec.toDate)}</span>
                                   ) : (
                                     <span className="text-slate-300">—</span>
                                   )}
                                 </td>
                                 <td className="px-3 py-3">
-                                  {activeRec?.totalDays ? (
-                                    <span className="font-black text-red-600 text-[11px]">{activeRec.totalDays}d</span>
+                                  {displayRec?.totalDays ? (
+                                    <span className="font-black text-red-600 text-[11px]">{displayRec.totalDays}d</span>
                                   ) : (
                                     <span className="text-slate-300">—</span>
                                   )}
                                 </td>
                                 <td className="px-3 py-3 max-w-[120px]">
-                                  {activeRec?.remarks ? (
-                                    <p className="text-[9px] text-slate-500 truncate" title={activeRec.remarks}>{activeRec.remarks}</p>
+                                  {displayRec?.remarks ? (
+                                    <p className="text-[9px] text-slate-500 truncate" title={displayRec.remarks}>{displayRec.remarks}</p>
                                   ) : (
                                     <span className="text-slate-200 text-[9px]">—</span>
                                   )}
@@ -1935,6 +2089,7 @@ const medApptCount = trainees.filter(t => t.attn === 'M').length;
           </CollapsibleSection>
 
           {/* ═══ TRAINEE ROSTER — moved UP ═══ */}
+          <div ref={rosterSectionRef}>
           <CollapsibleSection
             title="Full Trainee Roster"
             subtitle="Click any trainee to view full profile · Non-present rows clickable for absence details"
@@ -1978,6 +2133,7 @@ const medApptCount = trainees.filter(t => t.attn === 'M').length;
             <div className="flex gap-1.5 mb-3 overflow-x-auto flex-wrap">
               {([
                 { key: 'ALL', label: `All (${totalTrainees})`, color: 'bg-military-700' },
+                { key: 'PRESENT', label: `Present (${presentToday})`, color: 'bg-green-600' },
                 { key: 'ABSENT', label: `Absent (${absentCount})`, color: 'bg-red-600' },
                 { key: 'SICK', label: `Sick/Hosp (${sickCount + hospitalCount})`, color: 'bg-amber-600' },
                 { key: 'REST', label: `Rest (${restCount})`, color: 'bg-purple-600' },
@@ -2009,14 +2165,15 @@ const medApptCount = trainees.filter(t => t.attn === 'M').length;
                   <tbody className="divide-y divide-slate-50">
                     {filteredTrainees.slice(0, 100).map((t, idx) => {
                       const hs = getTraineeHealthScore(t);
-                      const isAway = t.attn !== 'P';
-                      const typeInfo = getAbsentTypeInfo(t.attn);
-                      const attnCls = t.attn === 'P' ? 'bg-green-100 text-green-700'
-                        : t.attn === 'A' ? 'bg-red-100 text-red-700'
-                        : t.attn === 'S' ? 'bg-orange-100 text-orange-700'
-                        : t.attn === 'H' ? 'bg-purple-100 text-purple-700'
-                        : t.attn === 'L' ? 'bg-blue-100 text-blue-700'
-                        : t.attn === 'R' ? 'bg-indigo-100 text-indigo-700'
+                      const attnCode = getDashboardAttnCode(t);
+                      const isAway = attnCode !== 'P';
+                      const typeInfo = getAbsentTypeInfo(attnCode);
+                      const attnCls = attnCode === 'P' ? 'bg-green-100 text-green-700'
+                        : attnCode === 'A' ? 'bg-red-100 text-red-700'
+                        : attnCode === 'S' ? 'bg-orange-100 text-orange-700'
+                        : attnCode === 'H' ? 'bg-purple-100 text-purple-700'
+                        : attnCode === 'L' ? 'bg-blue-100 text-blue-700'
+                        : attnCode === 'R' ? 'bg-indigo-100 text-indigo-700'
                         : 'bg-teal-100 text-teal-700';
                       const recovery = pendingRecoveries.find(r => r.traineeId === t.id);
                       const hsColor = hs >= 80 ? 'text-green-600 bg-green-50' : hs >= 60 ? 'text-amber-600 bg-amber-50' : 'text-red-600 bg-red-50';
@@ -2024,6 +2181,12 @@ const medApptCount = trainees.filter(t => t.attn === 'M').length;
                       // Absent record for this trainee
                       const traineeAbsRecs = absentRecordsByTrainee[t.id] || [];
                       const activeAbsRec = traineeAbsRecs.find(r => r.status === 'Active') || null;
+                      const activeMedRec = activeMedicalByTrainee[t.id] || null;
+                      const displayAbsRec = activeAbsRec || (activeMedRec ? {
+                        reason: activeMedRec.diagnosis || activeMedRec.category,
+                        fromDate: activeMedRec.date,
+                        toDate: activeMedRec.date,
+                      } : null);
 
                       return (
                         <tr
@@ -2045,7 +2208,7 @@ const medApptCount = trainees.filter(t => t.attn === 'M').length;
                           <td className="px-3 py-2.5 text-slate-500 text-[10px]">{t.platoon || '—'}</td>
                           <td className="px-3 py-2.5">
                             <span className={`text-[9px] font-black px-2 py-0.5 rounded-lg ${attnCls}`}>
-                              {isAway ? `${typeInfo.icon} ${t.attn}` : '✓ P'}
+                              {isAway ? `${typeInfo.icon} ${attnCode}` : '✓ P'}
                             </span>
                           </td>
                           <td className="px-3 py-2.5">
@@ -2101,13 +2264,13 @@ const medApptCount = trainees.filter(t => t.attn === 'M').length;
                           {/* ── NEW: Absence Info column ── */}
                           <td className="px-3 py-2.5 max-w-[160px]">
                             {isAway ? (
-                              activeAbsRec ? (
+                              displayAbsRec ? (
                                 <div>
-                                  <p className="text-[9px] font-bold text-slate-700 truncate" title={activeAbsRec.reason}>
-                                    {activeAbsRec.reason || '—'}
+                                  <p className="text-[9px] font-bold text-slate-700 truncate" title={displayAbsRec.reason}>
+                                    {displayAbsRec.reason || '—'}
                                   </p>
                                   <p className="text-[8px] text-slate-400 font-mono">
-                                    {fmtDateStr(activeAbsRec.fromDate)} → {fmtDateStr(activeAbsRec.toDate)}
+                                    {fmtDateStr(displayAbsRec.fromDate)} → {fmtDateStr(displayAbsRec.toDate)}
                                   </p>
                                 </div>
                               ) : (
@@ -2141,6 +2304,7 @@ const medApptCount = trainees.filter(t => t.attn === 'M').length;
               </div>
             </div>
           </CollapsibleSection>
+          </div>
 
           {/* ═══ FUNDS ═══ */}
           <CollapsibleSection
@@ -2567,43 +2731,94 @@ const medApptCount = trainees.filter(t => t.attn === 'M').length;
             )}
           </CollapsibleSection>
 
-          {/* ═══ USTADS + VENDOR DUES ═══ */}
+          {/* ═══ TODAY INSTRUCTORS + VENDOR DUES ═══ */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <CollapsibleSection title={`Ustads / Staff (${ustads.length})`} subtitle="Training staff"
-              icon={<Shield size={14} />} accentColor="border-l-indigo-500">
-              {ustads.length === 0 ? (
-                <div className="p-6 text-center bg-slate-50 rounded-xl">
-                  <Shield size={28} className="mx-auto text-slate-200 mb-2" />
-                  <p className="text-[10px] text-slate-400 font-bold">No ustads added</p>
+            <CollapsibleSection
+              title={`Today's Ustad / Staff Duties (${todayInstructorAssignments.length})`}
+              subtitle="Aaj kis instructor ki kaunsi class hai — Weekly Program se live"
+              icon={<Shield size={14} />}
+              action={{ label: 'Training Schedule', onClick: () => go('/weekly-program') }}
+              accentColor="border-l-indigo-500"
+            >
+              {todaySchedule.length === 0 ? (
+                <div className="p-5 bg-blue-50 border border-blue-200 rounded-xl">
+                  <div className="flex items-start gap-3">
+                    <Calendar size={22} className="text-blue-500 flex-shrink-0" />
+                    <div>
+                      <p className="text-xs font-black text-blue-800 uppercase">Aaj ka weekly program blank hai</p>
+                      <p className="text-[10px] text-blue-700 mt-1">
+                        Weekly Program me aaj ki classes add karo, yahan instructor-wise duty automatically dikhegi.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); go('/weekly-program'); }}
+                        className="mt-3 px-3 py-1.5 bg-blue-600 text-white text-[10px] font-bold rounded-lg hover:bg-blue-700"
+                      >
+                        Open Weekly Program →
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : todayInstructorAssignments.length === 0 ? (
+                <div className="space-y-3">
+                  <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                    <p className="text-xs font-black text-amber-800 uppercase">Classes hain, par ustad assigned nahi</p>
+                    <p className="text-[10px] text-amber-700 mt-1">
+                      {unassignedTodaySessions.length} session(s) me instructor/ustad missing hai. Weekly Program me assigned persons भरो.
+                    </p>
+                  </div>
+                  <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden bg-white max-h-64 overflow-y-auto">
+                    {todaySchedule.map((session, idx) => (
+                      <div key={`${session.time}_${idx}`} className="px-4 py-3 flex items-center justify-between hover:bg-slate-50">
+                        <div>
+                          <p className="text-[11px] font-black text-slate-800">{getSubjectDisplay(session)}</p>
+                          <p className="text-[9px] text-slate-500">{session.time} · {session.platoon || 'All Platoons'} · {session.location || 'Training Area'}</p>
+                        </div>
+                        <span className="text-[9px] font-black text-red-600 bg-red-50 border border-red-200 px-2 py-1 rounded-lg">No Ustad</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ) : (
-                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-                  <div className="overflow-auto max-h-64">
-                    <table className="w-full text-xs">
-                      <thead className="sticky top-0 bg-slate-50">
-                        <tr className="border-b border-slate-200">
-                          {['Name', 'Rank', 'IRLA', 'Designation', 'Platoon', 'Status'].map(h => (
-                            <th key={h} className="px-3 py-2 text-[9px] font-bold text-slate-400 uppercase text-left">{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-50">
-                        {ustads.map(u => (
-                          <tr key={u.id} className="hover:bg-slate-50 transition-colors">
-                            <td className="px-3 py-2.5 font-bold text-slate-700">{u.name}</td>
-                            <td className="px-3 py-2.5 text-slate-500">{u.rank}</td>
-                            <td className="px-3 py-2.5 font-mono text-slate-400 text-[10px]">{u.irla || '—'}</td>
-                            <td className="px-3 py-2.5 text-slate-500">{u.designation || '—'}</td>
-                            <td className="px-3 py-2.5 text-slate-500">{u.platoon || '—'}</td>
-                            <td className="px-3 py-2.5">
-                              <span className={`text-[9px] font-bold px-2 py-0.5 rounded-lg ${u.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
-                                {u.status || 'Active'}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 text-center">
+                      <p className="text-lg font-black text-indigo-700">{todaySchedule.length}</p>
+                      <p className="text-[9px] font-bold text-indigo-600 uppercase">Classes</p>
+                    </div>
+                    <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-center">
+                      <p className="text-lg font-black text-green-700">{todayInstructorAssignments.length}</p>
+                      <p className="text-[9px] font-bold text-green-600 uppercase">Assignments</p>
+                    </div>
+                    <div className={`${unassignedTodaySessions.length > 0 ? 'bg-red-50 border-red-200' : 'bg-slate-50 border-slate-200'} border rounded-xl p-3 text-center`}>
+                      <p className={`text-lg font-black ${unassignedTodaySessions.length > 0 ? 'text-red-700' : 'text-slate-600'}`}>{unassignedTodaySessions.length}</p>
+                      <p className="text-[9px] font-bold text-slate-500 uppercase">Unassigned</p>
+                    </div>
+                  </div>
+                  <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                    <div className="divide-y divide-slate-50 max-h-72 overflow-y-auto">
+                      {todayInstructorAssignments.map(item => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); go('/weekly-program'); }}
+                          className="w-full px-4 py-3 flex items-center justify-between gap-3 hover:bg-indigo-50/60 transition-colors text-left"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className="w-9 h-9 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm font-black">👤</span>
+                            <div className="min-w-0">
+                              <p className="text-xs font-black text-slate-800 truncate">{item.rank} {item.name}</p>
+                              <p className="text-[10px] text-slate-500 truncate">{item.subject}</p>
+                              <p className="text-[9px] text-slate-400">{item.location}</p>
+                            </div>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <p className="text-[10px] font-mono font-black text-military-700 bg-military-50 border border-military-100 px-2 py-1 rounded-lg">{item.time}</p>
+                            <p className="text-[9px] text-slate-500 mt-1">{item.platoon}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}

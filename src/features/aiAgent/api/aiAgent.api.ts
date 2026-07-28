@@ -7,6 +7,7 @@
 import { getSchemaForAI } from "../schemas/collections.schema";
 import { db } from "../../../config/firebase";
 import { collection, query, where, getDocs } from "firebase/firestore";
+import { AI_CONFIG } from "../config/ai.config";
 
 // ─────────────────────────────────────────
 // ACTION RESULT TYPE — har action ka result
@@ -59,15 +60,9 @@ export interface AIResponse {
 // VITE_GEMINI_API_KEY_4=key4
 // VITE_GEMINI_API_KEY_5=key5
 // ═══════════════════════════════════════════════════
-const API_KEYS: string[] = [
-  import.meta.env.VITE_GEMINI_API_KEY,
-  import.meta.env.VITE_GEMINI_API_KEY_2,
-  import.meta.env.VITE_GEMINI_API_KEY_3,
-  import.meta.env.VITE_GEMINI_API_KEY_4,
-  import.meta.env.VITE_GEMINI_API_KEY_5,
-].filter(Boolean);
+const API_KEYS: string[] = AI_CONFIG.geminiKeys;
 
-const MODEL = "gemini-2.5-flash-lite";
+const MODEL = AI_CONFIG.geminiModel;
 
 const buildUrl = (key: string) =>
   `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${key}`;

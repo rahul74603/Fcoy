@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { 
-  Search, Filter, Download, FileText, 
+  Search, Filter, FileText, 
   ChevronUp, ChevronDown, ChevronLeft, ChevronRight, 
   MoreVertical, FileSpreadsheet
 } from 'lucide-react';

@@ -2,10 +2,10 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  UserX, Plus, Save, X, Search, Calendar, Filter,
-  CheckCircle2, AlertCircle, Loader2, Users, RefreshCw,
-  ChevronDown, ChevronUp, BarChart3, Clock, Heart,
-  Layers, Eye, Trash2, Edit3
+  UserX, Plus, Save, X, Search,
+  CheckCircle2, AlertCircle, Loader2,
+  BarChart3,
+  Layers, Trash2, Edit3
 } from 'lucide-react';
 import {
   collection, addDoc, getDocs, updateDoc, deleteDoc,
@@ -17,6 +17,8 @@ import { useBatch } from '../../contexts/BatchContext';
 // ─── Types ───
 interface AbsentRecord {
   id?: string;
+  source?: 'absent' | 'medical';
+  linkedMedicalId?: string;
   batchId: string;
   traineeId: string;
   traineeName: string;
@@ -56,6 +58,14 @@ const ABSENT_TYPES = [
 
 const getTypeInfo = (type: string) =>
   ABSENT_TYPES.find(t => t.value === type) || ABSENT_TYPES[0];
+
+
+const medicalCategoryToAbsentType = (category: string): AbsentRecord['type'] => {
+  if (category === 'Hospital Admit') return 'H';
+  if (category === 'B-Rest' || category === 'C-Rest') return 'R';
+  if (category === 'Medical Board') return 'M';
+  return 'S';
+};
 
 // ═══════════════════════════════════════════
 // MAIN COMPONENT
@@ -116,7 +126,43 @@ export const AbsentManagement: React.FC = () => {
       );
       const aSnap = await getDocs(aq);
       const aList: AbsentRecord[] = [];
-      aSnap.forEach(d => aList.push({ id: d.id, ...d.data() } as AbsentRecord));
+      aSnap.forEach(d => aList.push({ id: d.id, source: 'absent', ...d.data() } as AbsentRecord));
+
+      // MI Room medical records ko same daily tracking list me virtual rows ke रूप me dikhाओ.
+      const medicalSnap = await getDocs(query(
+        collection(db, 'medicalRecords'),
+        where('batchId', '==', activeBatch.id)
+      ));
+      medicalSnap.forEach(d => {
+        const data = d.data();
+        const type = medicalCategoryToAbsentType(data.category ?? 'Sick Report');
+        const exists = aList.some(r =>
+          r.traineeId === data.traineeId &&
+          r.fromDate === data.date &&
+          r.type === type
+        );
+        if (exists) return;
+        aList.push({
+          id: `medical_${d.id}`,
+          source: 'medical',
+          linkedMedicalId: d.id,
+          batchId: activeBatch.id,
+          traineeId: data.traineeId ?? '',
+          traineeName: data.name ?? '',
+          chestNo: data.chestNo ?? '',
+          regNo: data.regNo ?? '',
+          platoon: data.platoon ?? '',
+          type,
+          reason: data.diagnosis ?? data.category ?? '',
+          fromDate: data.date ?? '',
+          toDate: data.date ?? '',
+          totalDays: Number(data.recommendedDays ?? 1),
+          status: data.status === 'Fit / Discharged' ? 'Returned' : 'Active',
+          remarks: data.remarks ?? data.wardNo ?? '',
+          createdAt: data.createdAt ?? data.date ?? '',
+        });
+      });
+      aList.sort((a, b) => String(b.fromDate).localeCompare(String(a.fromDate)));
       setRecords(aList);
     } catch (err) {
       console.error(err);
@@ -194,12 +240,16 @@ export const AbsentManagement: React.FC = () => {
   const handleReturn = async (record: AbsentRecord) => {
     if (!window.confirm(`${record.traineeName} wapas aa gaya?`)) return;
     try {
-      await updateDoc(doc(db, 'absentRecords', record.id!), {
-        status: 'Returned',
-        toDate: todayDate,
-        totalDays: calcDays(record.fromDate, todayDate),
-      });
-      await updateDoc(doc(db, 'trainees', record.traineeId), { attn: 'P' });
+      if (record.source === 'medical' && record.linkedMedicalId) {
+        await updateDoc(doc(db, 'medicalRecords', record.linkedMedicalId), { status: 'Fit / Discharged' });
+      } else {
+        await updateDoc(doc(db, 'absentRecords', record.id!), {
+          status: 'Returned',
+          toDate: todayDate,
+          totalDays: calcDays(record.fromDate, todayDate),
+        });
+      }
+      await updateDoc(doc(db, 'trainees', record.traineeId), { attn: 'P', medStat: 'SHAPE-1' });
       fetchData();
     } catch (err) {
       alert('Error updating!');
@@ -210,7 +260,11 @@ export const AbsentManagement: React.FC = () => {
   const handleDelete = async (id: string) => {
     if (!window.confirm('Delete karna hai?')) return;
     try {
-      await deleteDoc(doc(db, 'absentRecords', id));
+      if (id.startsWith('medical_')) {
+        await deleteDoc(doc(db, 'medicalRecords', id.replace('medical_', '')));
+      } else {
+        await deleteDoc(doc(db, 'absentRecords', id));
+      }
       fetchData();
     } catch { alert('Delete failed!'); }
   };
@@ -248,7 +302,6 @@ export const AbsentManagement: React.FC = () => {
 
   // ── Analytics ──
   const activeAbsent  = records.filter(r => r.status === 'Active');
-  const totalRecords  = records.length;
   const typeWiseCount = ABSENT_TYPES.map(t => ({
     ...t,
     active: records.filter(r => r.type === t.value && r.status === 'Active').length,
@@ -608,11 +661,13 @@ export const AbsentManagement: React.FC = () => {
                                 ✅
                               </button>
                             )}
-                            <button onClick={() => handleEdit(r)}
-                              className="bg-blue-50 text-blue-600 px-2 py-1 text-[9px] font-bold hover:bg-blue-100"
-                              title="Edit">
-                              <Edit3 size={10} />
-                            </button>
+                            {r.source !== 'medical' && (
+                              <button onClick={() => handleEdit(r)}
+                                className="bg-blue-50 text-blue-600 px-2 py-1 text-[9px] font-bold hover:bg-blue-100"
+                                title="Edit">
+                                <Edit3 size={10} />
+                              </button>
+                            )}
                             <button onClick={() => handleDelete(r.id!)}
                               className="bg-red-50 text-red-600 px-2 py-1 text-[9px] font-bold hover:bg-red-100"
                               title="Delete">

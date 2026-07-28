@@ -6,8 +6,8 @@ import {
   RefreshCw, TrendingUp, TrendingDown, Info, Trash2,
   Filter, ArrowDownToLine, ArrowUpFromLine, Calculator,
   Receipt, ChevronDown, ChevronUp, Lock, Calendar,
-  IndianRupee, Tag, Settings, Building2, Eye, Phone,
-  ShoppingCart, Upload, Package, ArrowRightLeft
+  Tag, Building2, Phone,
+  ShoppingCart, ArrowRightLeft
 } from 'lucide-react';
 import {
   collection, addDoc, getDocs, doc, deleteDoc,

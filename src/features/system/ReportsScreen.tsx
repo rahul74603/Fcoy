@@ -659,12 +659,16 @@ export const ReportsScreen: React.FC = () => {
         const data = d.data();
         return {
           id: d.id,
+          batchId: data.batchId ?? '',
+          batchNumber: data.batchNumber ?? '',
           forceNumber: data.forceNumber ?? '',
           name: data.name ?? '',
           rank: data.rank ?? '',
           mobile: data.mobile ?? '',
           email: data.email ?? '',
           company: data.company ?? '',
+          category: data.category ?? '',
+          battalion: data.battalion ?? '',
           dateOfJoining: data.dateOfJoining?.toDate() ?? null,
           dateOfPosting: data.dateOfPosting?.toDate() ?? null,
           experienceYears: Number(data.experienceYears ?? 0),

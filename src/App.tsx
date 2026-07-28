@@ -71,6 +71,7 @@ import {
 // ─────────────────────────────────────────────
 // ROLE GROUPS
 // ─────────────────────────────────────────────
+const ALL_ROLES   = ['Company Commander', 'Quarter Master', 'Clerk', 'Ustad'];
 const QM_ROLES    = ['Company Commander', 'Quarter Master'];
 const CLERK_ROLES = ['Company Commander', 'Clerk'];
 
@@ -144,7 +145,7 @@ function App() {
               <Route
                 path="/batches"
                 element={
-                  <ProtectedRoute allowedRoles={CLERK_ROLES}>
+                  <ProtectedRoute allowedRoles={ALL_ROLES}>
                     <EnterpriseLayout><BatchManagementScreen /></EnterpriseLayout>
                   </ProtectedRoute>
                 }
@@ -172,7 +173,7 @@ function App() {
               <Route
                 path="/reports"
                 element={
-                  <ProtectedRoute allowedRoles={['Company Commander', 'Quarter Master']}>
+                  <ProtectedRoute allowedRoles={['Company Commander']}>
                     <EnterpriseLayout><ReportsScreen /></EnterpriseLayout>
                   </ProtectedRoute>
                 }

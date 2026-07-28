@@ -3,6 +3,7 @@
 // ═══════════════════════════════════════════════════════════
 
 import { getSchemaForAI } from "../schemas/collections.schema";
+import { AI_CONFIG } from "../config/ai.config";
 
 export interface GroqResponse {
   action: string;
@@ -36,16 +37,10 @@ export interface GroqResponse {
 // ─────────────────────────────────────────────────────────
 // API KEYS
 // ─────────────────────────────────────────────────────────
-const API_KEYS: string[] = [
-  import.meta.env.VITE_GROQ_API_KEY,
-  import.meta.env.VITE_GROQ_API_KEY_2,
-  import.meta.env.VITE_GROQ_API_KEY_3,
-  import.meta.env.VITE_GROQ_API_KEY_4,
-  import.meta.env.VITE_GROQ_API_KEY_5,
-].filter(Boolean);
+const API_KEYS: string[] = AI_CONFIG.groqKeys;
 
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
-const MODEL = "llama-3.3-70b-versatile";
+const MODEL = AI_CONFIG.groqModel;
 
 let lastUsedKeyIndex = -1;
 
@@ -265,7 +260,7 @@ export async function checkGroqHealth() {
   }
   try {
     const start = Date.now();
-    const response = await askGroq("hello test");
+    await askGroq("hello test");
     return {
       status: "healthy" as const,
       message: `Working! ${Date.now() - start}ms`,

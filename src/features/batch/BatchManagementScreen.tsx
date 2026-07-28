@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import {
   Layers, Plus, CheckCircle2, AlertTriangle, X, Loader2,
-  Calendar, Users, Archive, ChevronRight, Shield,
+  Calendar, Users, Archive, Shield,
   Clock, Hash, FileText, Eye, ArrowRight, Star
 } from 'lucide-react';
 import { useBatch, CreateBatchForm } from '../../contexts/BatchContext';
@@ -13,7 +13,7 @@ import { db } from '../../config/firebase';
 
 export const BatchManagementScreen: React.FC = () => {
   const { user } = useAuth();
-  const { activeBatch, allBatches, loading, createNewBatch, completeBatch } = useBatch();
+  const { activeBatch, allBatches, loading, createNewBatch } = useBatch();
 
   const isCommander = user?.role === 'Company Commander';
 
@@ -60,7 +60,6 @@ export const BatchManagementScreen: React.FC = () => {
   const generateBatchNumber = () => {
     const now = new Date();
     const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
     const existing = allBatches.filter(b =>
       b.batchNumber.startsWith(`${year}-`)
     ).length;
@@ -69,6 +68,12 @@ export const BatchManagementScreen: React.FC = () => {
 
   // ── Handle Create New Batch ──
   const handleCreateBatch = async () => {
+    if (!isCommander) {
+      setError('Only Company Commander can create or activate a new batch');
+      setShowConfirm(false);
+      return;
+    }
+
     if (!form.batchNumber.trim() || !form.batchName.trim() || !form.startDate) {
       setError('Batch Number, Name aur Start Date required hain');
       return;
@@ -99,17 +104,6 @@ export const BatchManagementScreen: React.FC = () => {
       setError(`Batch create failed: ${err.message}`);
     } finally {
       setCreateLoading(false);
-    }
-  };
-
-  // ── Handle Complete Batch ──
-  const handleCompleteBatch = async (batchId: string) => {
-    try {
-      await completeBatch(batchId, user?.name ?? 'Unknown');
-      setSuccess('✓ Batch completed/archived ho gaya!');
-      setShowConfirm(false);
-    } catch (err: any) {
-      setError(`Batch complete failed: ${err.message}`);
     }
   };
 
