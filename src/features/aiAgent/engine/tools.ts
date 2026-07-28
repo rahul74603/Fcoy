@@ -10,13 +10,14 @@
 // ═══════════════════════════════════════════════════════════
 
 import {
-  collection, addDoc, updateDoc, doc, serverTimestamp,
+  collection, addDoc, updateDoc, deleteDoc, doc, getDoc, serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import {
   runQuery, runJoin, findEntity, getSystemOverview, getActiveBatchInfo,
-  type QuerySpec, type JoinSpec,
+  clearQueryCache, type QuerySpec, type JoinSpec,
 } from './queryEngine';
+import { findStock, clearStockCache } from './stockEngine';
 import {
   COLLECTIONS, COLLECTION_MAP, ALL_COLLECTION_NAMES,
 } from '../knowledge/collectionRegistry';
@@ -156,8 +157,74 @@ export const TOOL_SCHEMAS = [
   {
     type: 'function',
     function: {
+      name: 'get_stock',
+      description:
+        'Inventory/stock. ALWAYS use this for stock questions (item_master is empty legacy). ' +
+        'Computes purchased minus issued, with size breakdown.',
+      parameters: {
+        type: 'object',
+        properties: {
+          item: { type: 'string', description: 'item name, partial ok (e.g. "t-shirt", "shoes"). omit = all' },
+          size: { type: 'string', description: 'size filter (S/M/L/XL or shoe size)' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'add_record',
+      description:
+        'Create a document in ANY collection. Use only on explicit user command to add/create/save.',
+      parameters: {
+        type: 'object',
+        properties: {
+          collection: { type: 'string', enum: ALL_COLLECTION_NAMES },
+          data: { type: 'object', description: 'field:value pairs' },
+        },
+        required: ['collection', 'data'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'update_record',
+      description:
+        'Update a document in ANY collection. Find the doc first (query_data/find_entity) to get its id.',
+      parameters: {
+        type: 'object',
+        properties: {
+          collection: { type: 'string', enum: ALL_COLLECTION_NAMES },
+          docId: { type: 'string', description: 'document id' },
+          updates: { type: 'object', description: 'field:value pairs to change' },
+        },
+        required: ['collection', 'docId', 'updates'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'delete_record',
+      description:
+        'Delete a document. DESTRUCTIVE — only when user clearly says delete/hatao/remove. ' +
+        'Always confirm what will be deleted in your reply.',
+      parameters: {
+        type: 'object',
+        properties: {
+          collection: { type: 'string', enum: ALL_COLLECTION_NAMES },
+          docId: { type: 'string' },
+        },
+        required: ['collection', 'docId'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'add_trainee',
-      description: 'Add new trainee(s). Only on explicit add command.',
+      description: 'Add new trainee(s) with auto chest number. Only on explicit add command.',
       parameters: {
         type: 'object',
         properties: { names: { type: 'array', items: { type: 'string' } } },
@@ -274,6 +341,132 @@ export async function executeTool(
       case 'system_overview': {
         const o = await getSystemOverview();
         return { ok: true, data: o, summary: JSON.stringify(o) };
+      }
+
+      // ─────────── STOCK (asli inventory) ───────────
+      case 'get_stock': {
+        const r = await findStock(args?.item, args?.size);
+
+        // AI ko compact bhejo — poora object bahut bada ho jaata hai
+        const compact = r.items.slice(0, 40).map(i => ({
+          item: i.itemName,
+          category: i.category,
+          purchased: i.purchased,
+          issued: i.issued,
+          balance: i.balance,
+          ...(i.sizes.length
+            ? { sizes: i.sizes.map(s => `${s.size}: ${s.balance} left (${s.purchased} bought, ${s.issued} issued)`) }
+            : {}),
+          ...(i.totalValue ? { value: i.totalValue } : {}),
+        }));
+
+        return {
+          ok: true,
+          data: { items: compact, totals: r.totals, note: r.note, sources: r.sources },
+          summary: r.items.length
+            ? `${r.items.length} item(s): ${r.totals.totalBalance} balance ` +
+              `(${r.totals.totalPurchased} bought − ${r.totals.totalIssued} issued)`
+            : r.note,
+        };
+      }
+
+      // ─────────── WRITE: ANY COLLECTION ───────────
+      case 'add_record': {
+        if (!ctx.allowWrites) {
+          return { ok: false, data: null, summary: 'Write permission nahi hai (read-only role).' };
+        }
+        const def = COLLECTION_MAP[args.collection];
+        if (!def) {
+          return { ok: false, data: { available: ALL_COLLECTION_NAMES },
+                   summary: `"${args.collection}" registry me nahi hai.` };
+        }
+
+        const payload: Record<string, any> = { ...(args.data ?? {}) };
+
+        // Batch-scoped collection me batchId apne aap lag jaye
+        if (def.batchScoped && !payload.batchId) {
+          const b = await getActiveBatchInfo();
+          if (b?.id) {
+            payload.batchId = b.id;
+            payload.batchNumber ??= b.batchNumber ?? '';
+            payload.batchName   ??= b.batchName ?? '';
+          }
+        }
+        payload.source    = 'ai-agent';
+        payload.addedBy   = ctx.userEmail;
+        payload.createdAt = serverTimestamp();
+
+        const ref = await addDoc(collection(db, def.name), payload);
+        clearQueryCache(); clearStockCache();
+
+        return {
+          ok: true,
+          data: { id: ref.id, collection: def.name, saved: args.data },
+          summary: `${def.name} me naya record bana (id: ${ref.id})`,
+        };
+      }
+
+      case 'update_record': {
+        if (!ctx.allowWrites) {
+          return { ok: false, data: null, summary: 'Write permission nahi hai (read-only role).' };
+        }
+        const def = COLLECTION_MAP[args.collection];
+        if (!def) {
+          return { ok: false, data: null, summary: `"${args.collection}" registry me nahi hai.` };
+        }
+
+        const ref  = doc(db, def.name, args.docId);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) {
+          return { ok: false, data: null,
+                   summary: `${def.name} me id "${args.docId}" nahi mila. Pehle query_data se sahi id lo.` };
+        }
+
+        await updateDoc(ref, {
+          ...args.updates,
+          updatedAt: serverTimestamp(),
+          updatedBy: ctx.userEmail,
+        });
+        clearQueryCache(); clearStockCache();
+
+        const before = snap.data() as any;
+        return {
+          ok: true,
+          data: {
+            id: args.docId,
+            name: before?.name ?? before?.itemName ?? before?.traineeName ?? '',
+            changed: args.updates,
+          },
+          summary: `${def.name}/${args.docId} update ho gaya: ` +
+                   Object.entries(args.updates ?? {}).map(([k, v]) => `${k}=${v}`).join(', '),
+        };
+      }
+
+      case 'delete_record': {
+        if (!ctx.allowWrites) {
+          return { ok: false, data: null, summary: 'Write permission nahi hai (read-only role).' };
+        }
+        const def = COLLECTION_MAP[args.collection];
+        if (!def) {
+          return { ok: false, data: null, summary: `"${args.collection}" registry me nahi hai.` };
+        }
+
+        const ref  = doc(db, def.name, args.docId);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) {
+          return { ok: false, data: null, summary: `${def.name} me id "${args.docId}" nahi mila.` };
+        }
+        const before = snap.data() as any;
+
+        await deleteDoc(ref);
+        clearQueryCache(); clearStockCache();
+
+        return {
+          ok: true,
+          data: { deleted: args.docId, collection: def.name, was: before },
+          summary: `DELETED ${def.name}/${args.docId} ` +
+                   `(${before?.name ?? before?.itemName ?? before?.traineeName ?? 'record'})`,
+        };
       }
 
       // ─────────── WRITE: ADD ───────────

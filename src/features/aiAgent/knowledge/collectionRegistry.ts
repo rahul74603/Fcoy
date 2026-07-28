@@ -393,12 +393,16 @@ export const COLLECTIONS: CollectionDef[] = [
   },
   {
     name: 'training_fund_expenses',
-    description: 'Training fund se hua kharcha',
-    synonyms: ['training expense', 'training kharcha', 'training fund'],
+    description: 'Training items ki KHARIDARI (t-shirt, shoes, bucket...). Stock ka purchase side.',
+    synonyms: ['training expense', 'training kharcha', 'training fund',
+               'kit kharida', 'item purchase', 'saman kharida'],
     batchScoped: false, domain: 'finance',
     fields: [MONEY('amount','Amount'), DATEF('date','Date'),
-      { name:'itemName', kind:'text', label:'Item' }, { name:'vendor', kind:'text', label:'Vendor' },
-      MONEY('paidAmount','Paid'), MONEY('dueAmount','Due')],
+      { name:'itemName', kind:'text', label:'Item', synonyms:['item','saman','cheez'] },
+      { name:'quantity', kind:'number', label:'Quantity', synonyms:['qty','kitne'] },
+      { name:'sizes', kind:'array', label:'Size-wise Qty', synonyms:['size','naap'] },
+      { name:'vendor', kind:'text', label:'Vendor' },
+      MONEY('unitPrice','Unit Price'), MONEY('paidAmount','Paid'), MONEY('dueAmount','Due')],
   },
   {
     name: 'training_fund_recoveries',
@@ -416,12 +420,17 @@ export const COLLECTIONS: CollectionDef[] = [
   },
   {
     name: 'company_assets_expenses',
-    description: 'Company assets fund se kharcha (furniture, equipment)',
-    synonyms: ['assets expense', 'company assets', 'asset kharcha', 'furniture'],
+    description: 'Company assets ki kharidari — CHAIR, table, furniture, fan, cooler, equipment.',
+    synonyms: ['assets expense', 'company assets', 'asset kharcha', 'furniture',
+               'chair', 'kursi', 'table', 'mez', 'almirah', 'fan', 'cooler',
+               'equipment', 'saman', 'bed', 'palang'],
     batchScoped: false, domain: 'finance',
     fields: [MONEY('amount','Amount'), DATEF('date','Date'),
-      { name:'itemName', kind:'text', label:'Item' }, { name:'vendor', kind:'text', label:'Vendor' },
-      MONEY('paidAmount','Paid'), MONEY('dueAmount','Due')],
+      { name:'itemName', kind:'text', label:'Item', synonyms:['item','saman','cheez'] },
+      { name:'quantity', kind:'number', label:'Quantity', synonyms:['qty','kitne','kitni'] },
+      { name:'vendor', kind:'text', label:'Vendor' },
+      { name:'assetStatus', kind:'text', label:'Asset Status' },
+      MONEY('unitPrice','Unit Price'), MONEY('paidAmount','Paid'), MONEY('dueAmount','Due')],
   },
   {
     name: 'general_fund_collections',
@@ -519,13 +528,15 @@ export const COLLECTIONS: CollectionDef[] = [
 
   // ══════════════ INVENTORY ══════════════
   {
+    // ⚠️ LEGACY — ye collection KHAALI hai. Koi screen isme likhti nahi.
+    // Stock ke liye get_stock tool use karo (purchases − issues compute karta hai).
     name: 'item_master',
-    description: 'Inventory items ka master — stock, rate',
-    synonyms: ['item', 'stock', 'inventory', 'saman', 'store'],
+    description: '⚠️ EMPTY legacy collection — DO NOT USE. For stock use get_stock tool.',
+    synonyms: [],
     batchScoped: false, titleField: 'name', domain: 'inventory',
     fields: [{ name:'name', kind:'text', label:'Item Name' },
       { name:'category', kind:'text', label:'Category' },
-      { name:'quantity', kind:'number', label:'Quantity', synonyms:['stock','qty','kitna'] },
+      { name:'quantity', kind:'number', label:'Quantity' },
       MONEY('rate','Rate')],
   },
   {

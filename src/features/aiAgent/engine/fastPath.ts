@@ -12,6 +12,7 @@
 // ═══════════════════════════════════════════════════════════
 
 import { runQuery } from './queryEngine';
+import { findStock } from './stockEngine';
 import { matchCollections, type CollectionDef } from '../knowledge/collectionRegistry';
 
 export interface FastResult {
@@ -122,8 +123,72 @@ export async function tryFastPath(message: string): Promise<FastResult | null> {
     }
   }
 
-  // ══════ 4. FUND TOTALS: "mess fund me kitna kharcha" ══════
-  if (has(t, ...SUM_WORDS, ...COUNT_WORDS)) {
+  // ══════ 4. STOCK: "chair kitni hai", "M size t-shirt kitni hai" ══════
+  if (has(t, 'stock', 'kitni hai', 'kitne hai', 'kitna hai', 'kitni bachi', 'kitne bache',
+             'available', 'bacha hai', 'baaki hai', 'store me', 'godown')) {
+    // Item naam nikalo — stop words hata kar
+    const STOP = new Set([
+      'stock','me','mein','hai','hain','kitni','kitne','kitna','bachi','bache','bacha',
+      'available','ka','ki','ke','our','hamare','pass','store','godown','baaki','bata',
+      'batao','dikhao','?','kya','abhi','total','left','remaining','size',
+    ]);
+    const words = t.trim().split(/\s+/).filter(w => w.length > 1 && !STOP.has(w));
+
+    // Size detect: "M size", "size M", standalone S/M/L/XL/XXL
+    const sizeMatch = t.match(/\b(xxl|xl|[sml])\s*size\b/i) || t.match(/\bsize\s*(xxl|xl|[sml])\b/i);
+    const size = sizeMatch ? sizeMatch[1].toUpperCase() : undefined;
+    const itemWords = words.filter(w => !/^(xxl|xl|[sml])$/i.test(w));
+    const itemQuery = itemWords.join(' ').replace(/[?.,!]/g, '').trim();
+
+    if (itemQuery || size) {
+      const r = await findStock(itemQuery || undefined, size);
+
+      if (r.items.length === 0) {
+        return {
+          reply: `📦 **"${itemQuery || size}"** ka koi record nahi mila.\n\n${r.note}`,
+          toolSummary: `stock lookup "${itemQuery}": 0 items`,
+        };
+      }
+
+      const lines = r.items.slice(0, 12).map(i => {
+        const head = `• **${i.itemName}** — ${i.balance} available` +
+                     `  _(${i.purchased} kharide, ${i.issued} issue hue)_`;
+        const sz = i.sizes.length
+          ? '\n' + i.sizes.map(s => `    └ ${s.size}: **${s.balance}** left`).join('\n')
+          : '';
+        return head + sz;
+      }).join('\n');
+
+      return {
+        reply: `📦 **Stock${size ? ` (${size} size)` : ''}**\n\n${lines}` +
+               (r.items.length > 12 ? `\n\n_+${r.items.length - 12} aur items_` : ''),
+        toolSummary: `stock: ${r.items.length} item(s), ${r.totals.totalBalance} balance`,
+      };
+    }
+  }
+
+  // ══════ 5. FULL STOCK LIST ══════
+  if (has(t, 'stock') && has(t, 'list', 'dikhao', 'sab', 'saara', 'poora', 'report')) {
+    const r = await findStock();
+    if (r.items.length) {
+      const lines = r.items.slice(0, 20)
+        .map(i => `• **${i.itemName}** — ${i.balance} left _(${i.purchased} − ${i.issued})_`)
+        .join('\n');
+      return {
+        reply: `📦 **Poora Stock (${r.items.length} items)**\n\n${lines}` +
+               (r.items.length > 20 ? `\n\n_+${r.items.length - 20} aur_` : '') +
+               `\n\n**Total balance: ${r.totals.totalBalance} units**`,
+        toolSummary: `stock: ${r.items.length} items, ${r.totals.totalBalance} balance`,
+      };
+    }
+  }
+
+  // ══════ 6. FUND TOTALS: "mess fund me kitna kharcha" ══════
+  // NOTE: yahan sirf PAISE wale shabd chalein. "chair kitni hai" jaisa
+  // sawaal upar STOCK rule me handle ho chuka hota hai — agar yahan
+  // COUNT_WORDS bhi allow karein to quantity ke sawaal ka jawab
+  // rupaye me chala jaata hai (bug tha).
+  if (has(t, ...SUM_WORDS)) {
     const cands = matchCollections(message).filter(c => c.domain === 'finance');
     const col: CollectionDef | undefined = cands[0];
 
@@ -146,7 +211,7 @@ export async function tryFastPath(message: string): Promise<FastResult | null> {
     }
   }
 
-  // ══════ 5. VENDOR DUE ══════
+  // ══════ 7. VENDOR DUE ══════
   if (has(t, 'vendor') && has(t, 'due', 'baaki', 'baki', 'udhaar', 'pending', 'dena')) {
     const r = await runQuery({
       collection: 'vendor_entries',
@@ -167,7 +232,7 @@ export async function tryFastPath(message: string): Promise<FastResult | null> {
     }
   }
 
-  // ══════ 6. SIMPLE LIST: "trainee list dikhao" ══════
+  // ══════ 8. SIMPLE LIST: "trainee list dikhao" ══════
   if (has(t, ...LIST_WORDS) && has(t, 'trainee', 'rangroot', 'jawan')) {
     const r = await runQuery({
       collection: 'trainees',

@@ -63,18 +63,69 @@ src/features/aiAgent/
 
 ---
 
-## AI ke 8 Tools
+## AI ke 11 Tools
+
+**Read (sabke liye):**
 
 | Tool | Kaam |
 |---|---|
 | `query_data` | Kisi bhi collection se data — filter, groupBy, sum/avg/count, sort |
 | `join_data` | Do collections jodo (e.g. "Bihar ke trainees jo FPT fail") |
 | `find_entity` | Naam/chest/mobile se koi bhi dhoondo |
+| `get_stock` | **Inventory** — purchases − issues, size-wise breakdown |
 | `describe_schema` | Collection ke fields aur possible values dekho |
 | `sample_values` | Field me asal me kya likha hai (spelling discovery) |
 | `system_overview` | Active batch, total counts ka snapshot |
-| `add_trainee` | Naya trainee (sirf CC/Clerk) |
-| `update_trainee` | Trainee update (sirf CC/Clerk) |
+
+**Write (sirf Company Commander + Clerk):**
+
+| Tool | Kaam |
+|---|---|
+| `add_record` | **Kisi bhi** collection me naya document |
+| `update_record` | **Kisi bhi** collection me document update |
+| `delete_record` | Document delete (destructive — saaf command par hi) |
+| `add_trainee` | Trainee with auto chest number |
+| `update_trainee` | Trainee update by chest number |
+
+Write tools par automatic:
+
+`addedBy` / `updatedBy` = user ka email
+
+`createdAt` / `updatedAt` = server timestamp
+
+`source: 'ai-agent'`
+
+Batch-scoped collection me `batchId` apne aap lag jaata hai
+
+Cache clear ho jaata hai (agla sawaal fresh data padhega)
+
+---
+
+## ⚠️ STOCK — Zaroori Baat
+
+**`item_master` collection KHAALI hai.** Ye purani legacy collection hai,
+koi bhi screen isme likhti nahi. Pehle AI isi me dekhta tha aur hamesha
+"0 records" milta tha.
+
+**Asli stock kahin store nahi hota — COMPUTE hota hai:**
+
+```
+Training items  (t-shirt, shoes, bucket, plate...)
+   training_fund_expenses     (kharida)
+ − issue_records              (trainees ko diya)
+ = balance stock
+
+Company assets  (chair, table, fan, furniture...)
+   company_assets_expenses    (kharida)
+   (ye issue nahi hote)
+```
+
+Ye bilkul wahi logic hai jo QM screen use karti hai — `engine/stockEngine.ts`.
+
+Size-wise breakdown bhi milta hai (`sizes` array se): "M size t-shirt kitni hai"
+→ 50 kharide, 2 issue hue, **48 left**.
+
+---
 
 ---
 
