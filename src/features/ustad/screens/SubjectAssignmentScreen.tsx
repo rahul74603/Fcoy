@@ -8,7 +8,6 @@ import { useSubjects } from '../hooks/useSubjects';
 import { Staff } from '../types/staff.types';
 import { StaffSubjectAssignment } from '../types/subject.types';
 import SubjectBadge from '../components/shared/SubjectBadge';
-import StaffStatusBadge from '../components/shared/StaffStatusBadge';
 import FormModal from '../components/shared/FormModal';
 import ConfirmDialog from '../components/shared/ConfirmDialog';
 

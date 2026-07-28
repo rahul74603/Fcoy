@@ -1,5 +1,6 @@
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+import { AI_CONFIG } from '../config/ai.config';
 
 // ✅ Backend imports SABSE PEHLE - order matter karta hai!
 import '@tensorflow/tfjs-backend-webgl';
@@ -7,8 +8,8 @@ import '@tensorflow/tfjs-backend-cpu';
 import * as tf from '@tensorflow/tfjs';
 import * as use from '@tensorflow-models/universal-sentence-encoder';
 
-const PINECONE_API_KEY = import.meta.env.VITE_PINECONE_API_KEY;
-const PINECONE_HOST = "https://bsf-data-index-q67gsrt.svc.aped-4627-b74a.pinecone.io";
+const PINECONE_API_KEY = AI_CONFIG.pineconeKey;
+const PINECONE_HOST = AI_CONFIG.pineconeHost;
 
 let model: use.UniversalSentenceEncoder | null = null;
 
@@ -46,8 +47,8 @@ async function getEmbedding(text: string): Promise<number[]> {
 }
 
 export async function syncFirebaseToPinecone(collectionsToSync: string[]) {
-  if (!PINECONE_API_KEY || !PINECONE_HOST) {
-    console.error("❌ API Keys missing!");
+  if (!AI_CONFIG.enablePinecone || !PINECONE_API_KEY || !PINECONE_HOST) {
+    console.warn("Pinecone disabled/missing. Set VITE_AI_ENABLE_PINECONE=true, VITE_PINECONE_API_KEY and VITE_PINECONE_HOST to enable sync.");
     return;
   }
 
@@ -112,6 +113,7 @@ export async function syncFirebaseToPinecone(collectionsToSync: string[]) {
 
 export async function searchPinecone(queryText: string): Promise<string> {
   try {
+    if (!AI_CONFIG.enablePinecone || !PINECONE_API_KEY || !PINECONE_HOST) return "";
     const queryEmbedding = await getEmbedding(queryText);
     
     const response = await fetch(`${PINECONE_HOST}/query`, {

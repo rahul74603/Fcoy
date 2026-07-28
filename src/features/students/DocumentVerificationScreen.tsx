@@ -6,7 +6,7 @@ import {
   Trash2, Eye, ExternalLink, FileImage, File, Shield, Info,
   ToggleLeft, ToggleRight, X, ChevronLeft, ChevronRight, Download
 } from 'lucide-react';
-import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
@@ -89,7 +89,6 @@ export const DocumentVerificationScreen = () => {
     hasBatch,
     searchTrainee,
     setTrainee: setSearchedTrainee,
-    setError:   setSearchError,
   } = useTraineeSearch();
 
   const [searchQuery, setSearchQuery]   = useState('');

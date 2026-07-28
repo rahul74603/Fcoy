@@ -47,7 +47,7 @@ export const LoginScreen = () => {
             navigate('/clerk');
             break;
           case 'Ustad':
-            navigate('/deployment'); // Ustad defaults to Deployment operations
+            navigate('/ustad'); // Ustad dashboard route
             break;
           default:
             setError('Unassigned Role. Access Denied.');

@@ -2,8 +2,8 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import {
-  doc, collection, onSnapshot, getDoc, getDocs,
-  setDoc, updateDoc, query, where, orderBy, writeBatch
+  doc, collection, onSnapshot, getDoc,
+  updateDoc, query, orderBy, writeBatch
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 

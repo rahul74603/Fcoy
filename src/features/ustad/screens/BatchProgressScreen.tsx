@@ -116,7 +116,7 @@ const BatchProgressScreen: React.FC = () => {
     handleAddMilestone, handleCompleteMilestone, clearError,
   } = useBatchProgress();
 
-  const { activeSubjects, handleAddSubject: addToSubjectMaster } = useSubjects();
+  const { activeSubjects } = useSubjects();
 
   // UI State
   const [showAddSubject, setShowAddSubject] = useState(false);

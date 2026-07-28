@@ -2,7 +2,7 @@
 // Complete: Seed + Sync + Cleanup (All-in-One)
 
 import React, { useState } from 'react';
-import { Loader2, Plus, AlertTriangle, Layers, Briefcase, Shield, RefreshCw } from 'lucide-react';
+import { Loader2, Plus, AlertTriangle, Layers, RefreshCw } from 'lucide-react';
 import { collection, addDoc, getDocs, deleteDoc, doc, query, where, updateDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { useBatch } from '../../contexts/BatchContext';
@@ -241,8 +241,7 @@ const SeedStaffData: React.FC = () => {
       addLog(`❌ Error: ${err instanceof Error ? err.message : 'Unknown'}`);
     } finally { setStatus('idle'); }
   };
-  // ═══════════════════════════════════════════
-  // CLEAN OLD TEST RECORDS (weeklyTestRecords + fptRecords)
+
   // ═══════════════════════════════════════════
   const cleanOldTestRecords = async () => {
     if (!activeBatch) return;
@@ -299,6 +298,8 @@ const SeedStaffData: React.FC = () => {
       setStatus('idle');
     }
   };
+  void cleanOldTestRecords;
+
   // ═══════════════════════════════════════════
   // 7. CLEAN ORPHAN ATTENDANCE + DUTIES
   // ═══════════════════════════════════════════

@@ -1,4 +1,3 @@
-import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { ShieldAlert } from 'lucide-react';
@@ -23,6 +22,16 @@ export const ProtectedRoute = ({ children, allowedRoles }: ProtectedRouteProps) 
 
   if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  if (!user.isActive) {
+    return (
+      <div className="h-screen w-screen flex items-center justify-center bg-slate-100 flex-col">
+        <ShieldAlert size={48} className="text-status-danger mb-4" />
+        <h1 className="text-xl font-black text-military-900 uppercase tracking-widest">Account Disabled</h1>
+        <p className="text-sm font-bold text-slate-500 mt-2">Contact Company Commander to reactivate access.</p>
+      </div>
+    );
   }
 
   if (allowedRoles && !allowedRoles.includes(user.role) && user.role !== 'Company Commander') {

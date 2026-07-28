@@ -2,7 +2,7 @@
 // User ka message right side, AI ka message left side
 
 import React from "react";
-import { Bot, User, CheckCircle, XCircle, Info } from "lucide-react";
+import { Bot, User, CheckCircle, XCircle } from "lucide-react";
 
 // Message ka structure
 export interface Message {

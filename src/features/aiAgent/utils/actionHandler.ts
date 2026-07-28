@@ -11,7 +11,6 @@ import {
   doc,
   serverTimestamp,
   limit,
-  orderBy,
 } from "firebase/firestore";
 import { db } from "../../../config/firebase";
 import type { AIResponse } from "../api/aiAgent.api";
@@ -234,25 +233,31 @@ async function fetchAbsentList(
     const targetDate =
       !filters.date || filters.date === "TODAY" ? today : filters.date;
 
-    // ── Attendance collection se absent fetch karo ──
+    // ── App schema: AbsentManagement absentRecords collection use karta hai ──
     const absentQuery = query(
-      collection(db, "attendance"),           // ← apna collection name
+      collection(db, "absentRecords"),
       where("batchId", "==", batchId),
-      where("date", "==", targetDate),
-      where("status", "==", "A")              // A = Absent
+      where("status", "==", "Active"),
+      where("type", "==", "A")
     );
     const snap = await getDocs(absentQuery);
 
-    if (snap.empty) {
+    let records = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() })) as any[];
+
+    records = records.filter((r) => {
+      const from = r.fromDate || targetDate;
+      const to = r.toDate || from;
+      return from <= targetDate && targetDate <= to;
+    });
+
+    if (records.length === 0) {
       return {
         success: true,
         message: `✅ ${targetDate} ko koi absent nahi`,
         details: "Sab present hain!",
       };
     }
-
-    const records = snap.docs
-      .map((d) => ({ id: d.id, ...d.data() })) as any[];
 
     records.sort((a, b) => parseInt(a.chestNo) - parseInt(b.chestNo));
 
@@ -285,24 +290,31 @@ async function fetchLeaveList(
   filters: { leaveType?: string; date?: string }
 ): Promise<ActionResult> {
   try {
-    const conditions: any[] = [where("batchId", "==", batchId)];
+    const conditions: any[] = [
+      where("batchId", "==", batchId),
+      where("status", "==", "Active"),
+      where("type", "==", "L"),
+    ];
 
-    if (filters.leaveType) {
-      conditions.push(where("leaveType", "==", filters.leaveType));
-    }
-
-    const leaveQuery = query(collection(db, "leaves"), ...conditions);
+    const leaveQuery = query(collection(db, "absentRecords"), ...conditions);
     const snap = await getDocs(leaveQuery);
 
-    if (snap.empty) {
+    let records = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() })) as any[];
+
+    if (filters.leaveType) {
+      const leaveType = filters.leaveType.toLowerCase();
+      records = records.filter((r) =>
+        String(r.leaveType || r.reason || "").toLowerCase().includes(leaveType)
+      );
+    }
+
+    if (records.length === 0) {
       return {
         success: true,
         message: `📭 Koi ${filters.leaveType || ""} leave record nahi mila`,
       };
     }
-
-    const records = snap.docs
-      .map((d) => ({ id: d.id, ...d.data() })) as any[];
 
     records.sort((a, b) => parseInt(a.chestNo) - parseInt(b.chestNo));
 
@@ -419,6 +431,109 @@ async function fetchWeeklyTestList(
   }
 }
 
+const getAttnCode = (value?: string): 'P' | 'A' | 'S' | 'H' | 'L' | 'R' | 'M' => {
+  const v = String(value || 'P').toLowerCase();
+  if (v === 'a' || v.includes('absent')) return 'A';
+  if (v === 's' || v.includes('sick')) return 'S';
+  if (v === 'h' || v.includes('hospital')) return 'H';
+  if (v === 'l' || v.includes('leave') || v.includes('away')) return 'L';
+  if (v === 'r' || v.includes('rest')) return 'R';
+  if (v === 'm' || v.includes('medical')) return 'M';
+  return 'P';
+};
+
+const money = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
+
+const calcPaid = (docs: any[]) => docs.reduce((s, e) => {
+  if (e.vendorId || e.linkedVendorId) return s + Number(e.paidAmount ?? 0);
+  return s + Number(e.amount ?? 0);
+}, 0);
+
+async function fetchAttendanceSummary(batchId: string, status?: string): Promise<ActionResult> {
+  const [tSnap, mSnap] = await Promise.all([
+    getDocs(query(collection(db, 'trainees'), where('batchId', '==', batchId))),
+    getDocs(query(collection(db, 'medicalRecords'), where('batchId', '==', batchId))),
+  ]);
+  const activeMed: Record<string, any> = {};
+  mSnap.docs.forEach(d => {
+    const data = d.data();
+    if (data.status === 'Active' && !activeMed[data.traineeId]) activeMed[data.traineeId] = data;
+  });
+  const rows = tSnap.docs.map(d => {
+    const t = { id: d.id, ...d.data() } as any;
+    let code = getAttnCode(t.attn);
+    if (activeMed[t.id]) {
+      const cat = activeMed[t.id].category;
+      code = cat === 'Hospital Admit' ? 'H' : cat === 'B-Rest' || cat === 'C-Rest' ? 'R' : cat === 'Medical Board' ? 'M' : 'S';
+    }
+    return { ...t, code, medical: activeMed[t.id] };
+  });
+  const counts = {
+    total: rows.length,
+    present: rows.filter(r => r.code === 'P').length,
+    absent: rows.filter(r => r.code === 'A').length,
+    sick: rows.filter(r => r.code === 'S').length,
+    hospital: rows.filter(r => r.code === 'H').length,
+    leave: rows.filter(r => r.code === 'L').length,
+    rest: rows.filter(r => r.code === 'R').length,
+    medical: rows.filter(r => r.code === 'M').length,
+  };
+  const filtered = status === 'not_present'
+    ? rows.filter(r => r.code !== 'P')
+    : status ? rows.filter(r => r.code === status) : rows;
+  const list = filtered
+    .sort((a, b) => Number(a.chestNo) - Number(b.chestNo))
+    .slice(0, 80)
+    .map((t, i) => `${i + 1}. Chest ${t.chestNo} - ${t.name} | ${t.code}${t.medical ? ` | ${t.medical.category}: ${t.medical.diagnosis || '-'}` : ''}`)
+    .join('\n');
+  return {
+    success: true,
+    message: `📊 Attendance: Total ${counts.total} | Present ${counts.present} | Away ${counts.total - counts.present}`,
+    details: `Absent ${counts.absent} · Sick ${counts.sick} · Hospital ${counts.hospital} · Leave ${counts.leave} · Rest ${counts.rest} · Medical ${counts.medical}\n\n${list || 'No matching trainees'}`,
+  };
+}
+
+async function fetchFinanceSummary(fundKey?: string): Promise<ActionResult> {
+  const configs = [
+    ['mess_fund', 'Mess Fund', 'mess_fund_collections', 'mess_fund_expenses'],
+    ['training_fund', 'Training Fund', 'training_fund_collections', 'training_fund_expenses'],
+    ['company_assets_fund', 'Company Assets', 'company_assets_collections', 'company_assets_expenses'],
+    ['general_fund', 'General Fund', 'general_fund_collections', 'general_fund_expenses'],
+  ];
+  const lines: string[] = [];
+  for (const [key, label, colName, expName] of configs) {
+    if (fundKey && key !== fundKey) continue;
+    const [cSnap, eSnap] = await Promise.all([getDocs(collection(db, colName)), getDocs(collection(db, expName))]);
+    const collectionTotal = cSnap.docs.reduce((s, d) => s + Number(d.data().amount ?? 0), 0);
+    const expenses = eSnap.docs.map(d => d.data());
+    const paid = calcPaid(expenses);
+    const orders = expenses.reduce((s, e) => s + Number(e.amount ?? 0), 0);
+    const due = expenses.reduce((s, e) => s + Number(e.dueAmount ?? 0), 0);
+    lines.push(`${label}: Collection ${money(collectionTotal)} | Orders ${money(orders)} | Paid ${money(paid)} | Due ${money(due)} | Balance ${money(collectionTotal - paid)}`);
+  }
+  return { success: true, message: '💰 Fund Summary', details: lines.join('\n') };
+}
+
+async function fetchVendorDueSummary(): Promise<ActionResult> {
+  const snap = await getDocs(collection(db, 'vendor_entries'));
+  const map: Record<string, any> = {};
+  snap.docs.forEach(d => {
+    const e = d.data();
+    const due = Number(e.dueAmount ?? 0);
+    if (due <= 0) return;
+    const id = e.vendorId || e.vendorName || d.id;
+    if (!map[id]) map[id] = { name: e.vendorName || 'Vendor', due: 0, entries: 0, fund: e.fundKey || '-' };
+    map[id].due += due;
+    map[id].entries += 1;
+  });
+  const list = Object.values(map).sort((a: any, b: any) => b.due - a.due);
+  return {
+    success: true,
+    message: `🏪 Vendor Dues: ${list.length} vendors pending`,
+    details: list.length ? list.map((v: any, i) => `${i + 1}. ${v.name} | Due ${money(v.due)} | ${v.entries} entries | ${v.fund}`).join('\n') : 'All vendor payments clear ✅',
+  };
+}
+
 // ═══════════════════════════════════════════════════════════
 // MAIN FUNCTION: AI action execute karo
 // ═══════════════════════════════════════════════════════════
@@ -521,23 +636,34 @@ export async function executeAction(
         };
       }
 
+      const batch = await getActiveBatch();
       const trainee = await findTraineeByChest(aiResponse.chestNo);
       const traineeName = trainee?.name || `Chest #${aiResponse.chestNo}`;
       const traineeId   = trainee?.id   || "";
       const today       = new Date().toISOString().split("T")[0];
 
-      await addDoc(collection(db, "leaves"), {
-        chestNo:     String(aiResponse.chestNo),
-        traineeName: traineeName,
+      await addDoc(collection(db, "absentRecords"), {
+        batchId:     batch.id,
         traineeId:   traineeId,
+        traineeName: traineeName,
+        chestNo:     String(aiResponse.chestNo),
+        regNo:       trainee?.regNo || "",
+        platoon:     trainee?.platoon || "",
+        type:        "L",
         reason:      aiResponse.reason,
         leaveType:   aiResponse.leaveType || "general",
-        startDate:   today,
-        endDate:     today,
-        status:      "approved",
+        fromDate:    today,
+        toDate:      today,
+        totalDays:   1,
+        status:      "Active",
+        remarks:     `AI Agent by ${userEmail}`,
+        createdAt:   new Date().toISOString(),
         addedBy:     userEmail,
-        createdAt:   serverTimestamp(),
       });
+
+      if (traineeId) {
+        await updateDoc(doc(db, "trainees", traineeId), { attn: "L" });
+      }
 
       return {
         success: true,
@@ -549,6 +675,19 @@ export async function executeAction(
           `📋 Type: ${aiResponse.leaveType || "general"}\n` +
           `📅 Date: ${today}`,
       };
+    }
+
+    // ══════════════════════════════
+    // ACTION: Exact ERP summaries (deterministic, no AI guessing)
+    // ══════════════════════════════
+    if (aiResponse.action === 'get_summary') {
+      const batch = await getActiveBatch();
+      const listType = aiResponse.listType || 'attendance';
+      const filters = aiResponse.filters || {};
+      if (listType === 'attendance') return await fetchAttendanceSummary(batch.id, filters.status);
+      if (listType === 'finance') return await fetchFinanceSummary(filters.category);
+      if (listType === 'vendor_due') return await fetchVendorDueSummary();
+      return { success: false, message: '❌ Summary type samajh nahi aaya', details: String(listType) };
     }
 
     // ══════════════════════════════════════════════════════

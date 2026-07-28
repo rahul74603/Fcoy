@@ -7,10 +7,14 @@ import { Bot, Trash2, AlertCircle, Sparkles, Loader2, Database } from "lucide-re
 import { ChatInput } from "./ChatInput";
 import { ChatMessage, type Message } from "./ChatMessage";
 import { extractWeeklyProgramFromImage } from "../api/aiAgent.api";
-import { smartRoute, printStats, getRouterStats } from "../utils/smartRouter";
-import { executeAction, saveWeeklyProgramFromAI } from "../utils/actionHandler";
+import { getAIHealth, hasAnyCloudAI } from "../config/ai.config";
+import { saveWeeklyProgramFromAI } from "../utils/actionHandler";
 import { useAuth } from "../../../contexts/AuthContext";
-import { syncFirebaseToPinecone } from "../scripts/syncToPinecone"; // ✅ NAYA IMPORT
+import { checkQuickResponse } from "../utils/commandPatterns";
+// 🆕 NAYA AGENT ENGINE — tool calling + live Firebase reads
+import { runAgent, type AgentStep } from "../engine/agentLoop";
+import { tryFastPath } from "../engine/fastPath";
+import { COLLECTIONS } from "../knowledge/collectionRegistry";
 
 // Unique ID banane ka simple function
 const makeId = () => Math.random().toString(36).slice(2);
@@ -19,20 +23,30 @@ const makeId = () => Math.random().toString(36).slice(2);
 const WELCOME_MESSAGE: Message = {
   id: makeId(),
   type: "ai",
-  text: "Namaste! 🙏 Main aapka Smart Training Center AI Assistant hoon.\n\n⚡ Quick commands (greetings, help) - instant!\n💾 Repeated queries - cached for speed\n🧠 Smart AI for complex commands\n\nTry karein:\n• \"Rahul ko add karo\"\n• \"Chest 5 ki age 25\"\n• \"Chest 30 ko medical leave\"\n• \"List dikhao\"\n• 📸 Weekly Program image (purple button)",
+  text:
+    `Namaste! 🙏 Main **F Coy ERP Assistant** hoon.\n\n` +
+    `Main poore database ki **${COLLECTIONS.length} collections** live padh sakta hoon — ` +
+    `trainee, staff, finance, inventory, training sab kuch.\n\n` +
+    `**Aise sawaal poochein:**\n` +
+    `• "state wise trainees ka breakdown do"\n` +
+    `• "Bihar ke kitne trainees hain"\n` +
+    `• "aaj kitne absent hain aur kyun"\n` +
+    `• "mess fund me kitna kharcha hua"\n` +
+    `• "vendor ka kitna paisa baaki hai"\n` +
+    `• "Bengal ke trainees jo FPT me fail hue"\n` +
+    `• "sabse zyada chhutti kisne li"\n` +
+    `• "Rahul ka poora detail batao"\n\n` +
+    `Jo bhi poochoge, main **asli data** dhoond kar jawab dunga. 🎯`,
   status: "info",
   timestamp: new Date(),
 };
 
-// Source ka label
-const getSourceLabel = (source?: string) => {
-  switch (source) {
-    case "quick": return "Quick ⚡";
-    case "cache": return "Cache 💾";
-    case "groq": return "Groq AI 🧠";
-    case "gemini": return "Gemini 🔄";
-    default: return "";
-  }
+// Agent ke steps ko padhne layak banao
+const formatSteps = (steps: AgentStep[]): string => {
+  if (!steps.length) return "";
+  return steps
+    .map((s, i) => `${s.ok ? "✅" : "⚠️"} ${i + 1}. ${s.tool} → ${s.summary}`)
+    .join("\n");
 };
 
 const AIAgentScreen: React.FC = () => {
@@ -45,8 +59,9 @@ const AIAgentScreen: React.FC = () => {
   // Image upload chal raha hai?
   const [imageLoading, setImageLoading] = useState(false);
   
-  // API key hai ya nahi
-  const [apiKeyMissing, setApiKeyMissing] = useState(false);
+  // Cloud AI key hai ya nahi (local ERP commands still work)
+  const [cloudAIMissing, setCloudAIMissing] = useState(false);
+  const [aiHealth, setAIHealth] = useState(getAIHealth());
 
   // Current logged in user
   const { user } = useAuth();
@@ -60,13 +75,10 @@ const AIAgentScreen: React.FC = () => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // API key check karo (Gemini ya Groq - dono mein se ek bhi ho)
+  // AI config check karo. Local ERP layer works even without cloud keys.
   useEffect(() => {
-    const hasGemini = !!import.meta.env.VITE_GEMINI_API_KEY;
-    const hasGroq = !!import.meta.env.VITE_GROQ_API_KEY;
-    if (!hasGemini && !hasGroq) {
-      setApiKeyMissing(true);
-    }
+    setAIHealth(getAIHealth());
+    setCloudAIMissing(!hasAnyCloudAI());
   }, []);
 
   // Naya message add karo list mein
@@ -87,42 +99,75 @@ const handleSend = async (userText: string) => {
   setIsLoading(true);
 
   try {
-    const routerResult = await smartRoute(userText);
-    const aiResponse = routerResult.response;
-
-    console.log("🤖 AI Response:", JSON.stringify(aiResponse, null, 2));
-    // ↑ Ye console mein dekho - kya Groq sahi JSON de raha hai?
-
-    if (
-      aiResponse.reply &&
-      (aiResponse.action === "greeting" || aiResponse.action === "help")
-    ) {
+    // ── Layer 1: Greeting / thanks / bye — bina API ke, 0ms ──
+    const quick = checkQuickResponse(userText);
+    if (quick.matched && quick.action !== "help") {
       addMessage({
         type: "ai",
-        text: aiResponse.reply,
-        details: `📊 ${getSourceLabel(routerResult.source)} • ${routerResult.responseTime}ms`,
+        text: quick.reply || "👍",
+        details: "⚡ Instant (no API used)",
         status: "success",
       });
-    } else {
-      // ✅ Debug: AI ka raw response bhi dikha do temporarily
-      const debugInfo = `🔍 Debug: action=${aiResponse.action}, listType=${aiResponse.listType || "none"}, filters=${JSON.stringify(aiResponse.filters || {})}`;
-      
-      const result = await executeAction(aiResponse, userEmail);
-
-      addMessage({
-        type: "ai",
-        text: result.message,
-        details: result.details
-          ? `${result.details}\n\n━━━━━━━━━━\n📊 ${getSourceLabel(routerResult.source)} • ${routerResult.responseTime}ms\n${debugInfo}`
-          : `📊 ${getSourceLabel(routerResult.source)} • ${routerResult.responseTime}ms\n${debugInfo}`,
-        status: result.success ? "success" : "error",
-      });
+      setIsLoading(false);
+      return;
     }
+
+    // ── Layer 2: Fast path — aam sawaal bina AI ke (0 token, instant) ──
+    // Agar pattern match na ho to null aata hai aur poora AI agent chalta hai.
+    try {
+      const fast = await tryFastPath(userText);
+      if (fast) {
+        addMessage({
+          type: "ai",
+          text: fast.reply,
+          details: `✅ ${fast.toolSummary}\n\n━━━━━━━━━━\n⚡ Direct DB query • 0 AI tokens used`,
+          status: "success",
+        });
+        setIsLoading(false);
+        return;
+      }
+    } catch (e) {
+      console.warn("Fast path fail, AI agent chala rahe hain:", e);
+    }
+
+    // ── Layer 3: Asli AI Agent — tools ke saath live database ──
+    const answer = await runAgent(
+      userText,
+      {
+        userEmail,
+        userRole: user?.role || "Unknown",
+        // Commander aur Clerk hi data badal sakte hain
+        allowWrites: user?.role === "Company Commander" || user?.role === "Clerk",
+      },
+      // pichhle 3 exchanges ka context (follow-up sawaal ke liye)
+      messages
+        .filter((m) => m.type === "user" || m.type === "ai")
+        .slice(-6)
+        .map((m) => ({
+          role: (m.type === "user" ? "user" : "assistant") as "user" | "assistant",
+          content: m.text,
+        })),
+    );
+
+    console.log("🤖 Agent:", answer);
+
+    const stepText = formatSteps(answer.steps);
+    const meta =
+      `🧠 ${answer.provider === "groq" ? "Groq" : answer.provider === "gemini" ? "Gemini" : "—"}` +
+      ` • ${answer.steps.length} data lookup${answer.steps.length === 1 ? "" : "s"}` +
+      ` • ${(answer.elapsedMs / 1000).toFixed(1)}s`;
+
+    addMessage({
+      type: "ai",
+      text: answer.reply,
+      details: stepText ? `${stepText}\n\n━━━━━━━━━━\n${meta}` : meta,
+      status: answer.error ? "error" : "success",
+    });
   } catch (error: any) {
     addMessage({
       type: "ai",
       text: "❌ Kuch gadbad ho gayi",
-      details: error.message,
+      details: error?.message ?? String(error),
       status: "error",
     });
   } finally {
@@ -184,31 +229,24 @@ const handleSend = async (userText: string) => {
     setMessages([WELCOME_MESSAGE]);
   };
 
-  // Stats dikhao
+  // AI kya kya padh sakta hai — capability list
   const handleShowStats = () => {
-    const stats = getRouterStats();
-    printStats(); // Console mein bhi
-    
-    const statsMessage = `📊 **AI Router Statistics**
+    const byDomain = COLLECTIONS.reduce<Record<string, string[]>>((acc, c) => {
+      (acc[c.domain] ??= []).push(c.name);
+      return acc;
+    }, {});
 
-Total Queries: ${stats.total}
-
-**Layer Breakdown:**
-⚡ Quick Match: ${stats.breakdown.quick} (${stats.percentages.quick}%)
-💾 Cache Hits: ${stats.breakdown.cache} (${stats.percentages.cache}%)
-🧠 Groq AI: ${stats.breakdown.groq} (${stats.percentages.groq}%)
-🔄 Gemini: ${stats.breakdown.gemini} (${stats.percentages.gemini}%)
-❌ Errors: ${stats.breakdown.errors}
-
-**Performance:**
-⚡ Avg Response Time: ${stats.avgResponseTime}ms
-💰 Free Queries: ${stats.apiCallsSaved}/${stats.total} (${stats.cacheHitRate})
-
-🎯 ${stats.apiCallsSaved} API calls saved!`;
+    const lines = Object.entries(byDomain)
+      .map(([d, names]) => `**${d.toUpperCase()}** (${names.length})\n${names.join(", ")}`)
+      .join("\n\n");
 
     addMessage({
       type: "ai",
-      text: statsMessage,
+      text:
+        `🗄️ **Main ye poora database padh sakta hoon**\n\n${lines}\n\n` +
+        `Total: **${COLLECTIONS.length} collections**\n\n` +
+        `Kisi bhi collection ke baare me poochein — filter, ginti, total, ` +
+        `ya do collections ko jodkar bhi. Bas normal Hinglish me poochein. 🎯`,
       status: "info",
     });
   };
@@ -225,32 +263,18 @@ Total Queries: ${stats.total}
               AI Agent
             </h2>
             <p className="text-[10px] text-military-200 uppercase tracking-wider">
-              Smart Routing • Quick + Cache + Groq + Gemini
+              Live Database Agent • {COLLECTIONS.length} Collections • Tool Calling
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
 
-          {/* 🔄 NAYA: Sync Button */}
-          <button
-            onClick={async () => {
-              addMessage({ type: "ai", text: "🔄 Database Sync Start ho gaya hai...", status: "info" });
-              // Yahan wo collections likhein jinka data aapko AI ko sikhana hai
-              await syncFirebaseToPinecone(["messFund", "trainees", "leaves"]);
-              addMessage({ type: "ai", text: "✅ Pinecone Vector DB mein sync pura ho gaya!", status: "success" });
-            }}
-            className="w-8 h-8 flex items-center justify-center rounded-sm bg-green-600 hover:bg-green-500 transition-colors"
-            title="Database Sync Karein (Pinecone)"
-          >
-            <Database size={14} />
-          </button>
-
-          {/* Stats Button */}
+          {/* Capabilities — AI kya padh sakta hai */}
           <button
             onClick={handleShowStats}
             className="w-8 h-8 flex items-center justify-center rounded-sm bg-blue-600 hover:bg-blue-500 transition-colors"
-            title="AI Stats dekho"
+            title="AI kaunsa data padh sakta hai"
           >
             <Database size={14} />
           </button>
@@ -273,7 +297,7 @@ Total Queries: ${stats.total}
               type="file"
               accept="image/*"
               className="hidden"
-              disabled={imageLoading || isLoading || apiKeyMissing}
+              disabled={imageLoading || isLoading || cloudAIMissing}
               onChange={handleImageUpload}
             />
           </label>
@@ -289,13 +313,21 @@ Total Queries: ${stats.total}
         </div>
       </div>
 
-      {/* ── API Key Warning ── */}
-      {apiKeyMissing && (
-        <div className="bg-red-50 border-b border-red-200 px-4 py-2 flex items-center gap-2 text-red-700 text-xs flex-shrink-0">
+      {/* ── AI Status / API Key Warning ── */}
+      {cloudAIMissing && (
+        <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-center gap-2 text-amber-800 text-xs flex-shrink-0">
           <AlertCircle size={14} />
           <span>
-            Koi API key nahi mili. .env mein VITE_GROQ_API_KEY ya VITE_GEMINI_API_KEY add karo.
+            Local ERP AI active hai. Natural language fallback ke liye .env mein VITE_GROQ_API_KEY ya VITE_GEMINI_API_KEY add karo.
           </span>
+        </div>
+      )}
+      {!cloudAIMissing && (
+        <div className="bg-green-50 border-b border-green-200 px-4 py-1.5 text-[10px] text-green-800 font-bold flex-shrink-0">
+          🟢 Live DB Agent · {COLLECTIONS.length} collections readable ·
+          Groq keys {aiHealth.groqKeys} · Gemini keys {aiHealth.geminiKeys} ·
+          {(user?.role === 'Company Commander' || user?.role === 'Clerk')
+            ? ' Read+Write' : ' Read-only'}
         </div>
       )}
 
@@ -330,7 +362,7 @@ Total Queries: ${stats.total}
 
       {/* ── Input Area ── */}
       <div className="flex-shrink-0">
-        <ChatInput onSend={handleSend} disabled={isLoading || imageLoading || apiKeyMissing} />
+        <ChatInput onSend={handleSend} disabled={isLoading || imageLoading} />
       </div>
     </div>
   );
