@@ -4,11 +4,14 @@ import React, { useState, useEffect } from 'react';
 import {
   HeartPulse, Plus, Trash2,
   AlertCircle, Layers, CheckCircle2, X, Loader2, Activity,
-  Stethoscope, BedDouble
+  Stethoscope, BedDouble, Printer, Search
 } from 'lucide-react';
-import { collection, addDoc, getDocs, getDoc, updateDoc, deleteDoc, doc, query, where, orderBy } from 'firebase/firestore';
+import { collection, addDoc, getDocs, getDoc, updateDoc, deleteDoc, doc, query, where, orderBy, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { useBatch } from '../../contexts/BatchContext';
+import { useAuth } from '../../contexts/AuthContext';               // ★ audit stamps
+import { useUnitConfig } from '../../contexts/UnitConfigContext';   // ★ report header
+import { buildSickReportHtml, printDocument } from '../shared/printDocuments'; // ★
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -23,15 +26,18 @@ interface MedicalRecord {
   name: string;
   platoon: string;
   date: string;
-  category: 'Sick Report' | 'Hospital Admit' | 'B-Rest' | 'C-Rest' | 'Medical Board';
+  // ★ 'Injury (Training)' aur 'Medical Exam' naye additive categories
+  category: 'Sick Report' | 'Hospital Admit' | 'B-Rest' | 'C-Rest' | 'Medical Board' | 'Injury (Training)' | 'Medical Exam';
   diagnosis: string;
   wardNo?: string;
   recommendedDays?: number;
   remarks: string;
   status: 'Active' | 'Fit / Discharged';
+  createdBy?: string;        // ★
+  createdByName?: string;    // ★
 }
 
-const CATEGORIES = ['Sick Report', 'Hospital Admit', 'B-Rest', 'C-Rest', 'Medical Board'];
+const CATEGORIES = ['Sick Report', 'Hospital Admit', 'Injury (Training)', 'B-Rest', 'C-Rest', 'Medical Board', 'Medical Exam'];
 
 
 const absentTypeToMedicalCategory = (type: string): MedicalRecord['category'] => {
@@ -56,21 +62,47 @@ const categoryToMedStat = (category: MedicalRecord['category']): string => {
   return 'Sick';
 };
 
+// ★ 'Medical Exam' sirf record hai — trainee ki duty status (attn)
+//   NAHI badalni chahiye (exam hone se koi sick nahi hota)
+const shouldSyncDutyStatus = (category: MedicalRecord['category']): boolean =>
+  category !== 'Medical Exam';
+
+// ★ Kitne din se case chal raha hai
+const daysSince = (dateStr: string): number => {
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return 1;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  d.setHours(0, 0, 0, 0);
+  return Math.max(1, Math.round((today.getTime() - d.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+};
+
 // ═══════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════
 export const MedicalRegisterScreen = () => {
   const { activeBatch } = useBatch();
   const hasBatch = !!activeBatch;
+  const { user } = useAuth();                 // ★
+  const { unitConfig } = useUnitConfig();     // ★
 
   const [records, setRecords] = useState<MedicalRecord[]>([]);
   const [trainees, setTrainees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
-  
+
   const [showForm, setShowForm] = useState(false);
   const todayDate = new Date().toISOString().split('T')[0];
+
+  // ★ SEARCH & FILTERS (M14)
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterCategory, setFilterCategory] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterPlatoon, setFilterPlatoon] = useState<string>('all');
+
+  // ★ Sick report date (print)
+  const [reportDate, setReportDate] = useState(todayDate);
 
   const getEmptyForm = (): Omit<MedicalRecord, 'id' | 'batchId'> => ({
     traineeId: '', chestNo: '', name: '', platoon: '',
@@ -154,14 +186,26 @@ export const MedicalRegisterScreen = () => {
     setSaving(true);
     setMessage('');
     try {
-      await addDoc(collection(db, 'medicalRecords'), { ...form, batchId: activeBatch.id });
-      await updateDoc(doc(db, 'trainees', form.traineeId), {
-        attn: categoryToAttendance(form.category),
-        medStat: categoryToMedStat(form.category),
-        medicalStatus: form.category,
-        lastMedicalUpdate: new Date().toISOString(),
+      // ★ audit stamps — kaun ne record banaya
+      await addDoc(collection(db, 'medicalRecords'), {
+        ...form,
+        batchId: activeBatch.id,
+        createdBy: user?.uid ?? '',
+        createdByName: user?.displayName ?? user?.email ?? '',
+        createdAt: serverTimestamp(),
       });
-      setMessage('SUCCESS: Medical record save ho gaya aur trainee status sync ho gaya!');
+      // ★ Medical Exam pe duty-status sync NAHI hota
+      if (shouldSyncDutyStatus(form.category)) {
+        await updateDoc(doc(db, 'trainees', form.traineeId), {
+          attn: categoryToAttendance(form.category),
+          medStat: categoryToMedStat(form.category),
+          medicalStatus: form.category,
+          lastMedicalUpdate: new Date().toISOString(),
+        });
+      }
+      setMessage(shouldSyncDutyStatus(form.category)
+        ? 'SUCCESS: Medical record save ho gaya aur trainee status sync ho gaya!'
+        : 'SUCCESS: Medical exam record save ho gaya! (duty status unchanged — exam record hai)');
       setShowForm(false);
       setForm(getEmptyForm());
       fetchData();
@@ -180,7 +224,13 @@ export const MedicalRegisterScreen = () => {
       if (record?.source === 'absent' && record.linkedAbsentId) {
         await updateDoc(doc(db, 'absentRecords', record.linkedAbsentId), { status: 'Returned', toDate: new Date().toISOString().split('T')[0] });
       } else {
-        await updateDoc(doc(db, 'medicalRecords', id), { status: 'Fit / Discharged' });
+        // ★ fit-marking audit stamps (kisne fit kiya + kab)
+        await updateDoc(doc(db, 'medicalRecords', id), {
+          status: 'Fit / Discharged',
+          fitMarkedBy: user?.uid ?? '',
+          fitMarkedByName: user?.displayName ?? user?.email ?? '',
+          fitMarkedAt: serverTimestamp(),
+        });
       }
 
       if (record?.traineeId) {
@@ -248,6 +298,52 @@ export const MedicalRegisterScreen = () => {
   const activeCases = records.filter(r => r.status === 'Active');
   const hospitalCases = activeCases.filter(r => r.category === 'Hospital Admit').length;
   const restCases = activeCases.filter(r => r.category === 'B-Rest' || r.category === 'C-Rest').length;
+
+  // ═══════════════════════════════════════════
+  // ★ SEARCH + FILTERS (chest / name / diagnosis / category / status / platoon)
+  // ═══════════════════════════════════════════
+  const filteredRecords = records.filter(r => {
+    const q = searchQuery.trim().toLowerCase();
+    const matchSearch = !q ||
+      r.name.toLowerCase().includes(q) ||
+      r.chestNo.toLowerCase().includes(q) ||
+      r.diagnosis.toLowerCase().includes(q);
+    const matchCategory = filterCategory === 'all' || r.category === filterCategory;
+    const matchStatus = filterStatus === 'all' || r.status === filterStatus;
+    const matchPlatoon = filterPlatoon === 'all' || r.platoon === filterPlatoon;
+    return matchSearch && matchCategory && matchStatus && matchPlatoon;
+  });
+
+  const platoonOptions = Array.from(new Set(records.map(r => r.platoon).filter(Boolean))).sort();
+
+  // ═══════════════════════════════════════════
+  // ★ DAILY SICK PARADE STATE — print (M14)
+  // ═══════════════════════════════════════════
+  const handlePrintSickReport = () => {
+    const newEntries = records
+      .filter(r => r.date === reportDate)
+      .map(r => ({
+        date: r.date, chestNo: r.chestNo, traineeName: r.name, platoon: r.platoon,
+        category: r.category, diagnosis: r.diagnosis, wardNo: r.wardNo,
+        days: daysSince(r.date),
+      }));
+    const active = activeCases.map(r => ({
+      date: r.date, chestNo: r.chestNo, traineeName: r.name, platoon: r.platoon,
+      category: r.category, diagnosis: r.diagnosis, wardNo: r.wardNo,
+      days: daysSince(r.date),
+    }));
+    const html = buildSickReportHtml({
+      dateStr: new Date(reportDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+      unitName: unitConfig.parentUnit,
+      coyName: unitConfig.companyShort,
+      batchNumber: activeBatch?.batchNumber,
+      totalStrength: trainees.length,
+      newEntries,
+      activeCases: active,
+      printedBy: user?.displayName ?? user?.email ?? '',
+    });
+    printDocument(`Daily Sick Parade State — ${reportDate}`, html);
+  };
 
   const inputCls = "w-full text-xs px-2 py-1.5 border border-slate-300 focus:outline-none focus:border-military-700 bg-white";
   const labelCls = "text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1";
@@ -321,9 +417,64 @@ export const MedicalRegisterScreen = () => {
         <div className="bg-white border border-slate-300 shadow-flat flex flex-col min-h-0">
           <div className="px-4 py-3 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
             <h3 className="text-xs font-black text-slate-700 uppercase">Medical Records History</h3>
-            <button onClick={() => { setShowForm(!showForm); setForm(getEmptyForm()); }} className="bg-red-600 text-white px-3 py-1.5 text-[10px] font-bold uppercase hover:bg-red-700 flex items-center gap-1">
-              {showForm ? <><X size={12}/> Close Form</> : <><Plus size={12}/> New Entry</>}
-            </button>
+            <div className="flex items-center gap-2">
+              {/* ★ Daily Sick State print */}
+              <input
+                type="date"
+                value={reportDate}
+                onChange={e => setReportDate(e.target.value)}
+                title="Sick report date"
+                className="text-[10px] border border-slate-300 px-2 py-1 focus:outline-none focus:border-red-400"
+              />
+              <button
+                onClick={handlePrintSickReport}
+                className="bg-slate-700 text-white px-3 py-1.5 text-[10px] font-bold uppercase hover:bg-slate-800 flex items-center gap-1"
+                title="Daily Sick Parade State print karein (aaj ke naye cases + saare active cases)"
+              >
+                <Printer size={12}/> Sick State
+              </button>
+              <button onClick={() => { setShowForm(!showForm); setForm(getEmptyForm()); }} className="bg-red-600 text-white px-3 py-1.5 text-[10px] font-bold uppercase hover:bg-red-700 flex items-center gap-1">
+                {showForm ? <><X size={12}/> Close Form</> : <><Plus size={12}/> New Entry</>}
+              </button>
+            </div>
+          </div>
+
+          {/* ★ SEARCH & FILTER BAR */}
+          <div className="px-4 py-2 border-b border-slate-200 bg-white flex flex-wrap items-center gap-2">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Search: chest no / naam / diagnosis..."
+                className="w-full pl-7 pr-2 py-1.5 text-xs border border-slate-300 focus:outline-none focus:border-red-400"
+              />
+            </div>
+            <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="text-[11px] border border-slate-300 px-2 py-1.5 focus:outline-none">
+              <option value="all">All Categories</option>
+              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="text-[11px] border border-slate-300 px-2 py-1.5 focus:outline-none">
+              <option value="all">All Status</option>
+              <option value="Active">Active</option>
+              <option value="Fit / Discharged">Fit / Discharged</option>
+            </select>
+            <select value={filterPlatoon} onChange={e => setFilterPlatoon(e.target.value)} className="text-[11px] border border-slate-300 px-2 py-1.5 focus:outline-none">
+              <option value="all">All Platoons</option>
+              {platoonOptions.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+            {(searchQuery || filterCategory !== 'all' || filterStatus !== 'all' || filterPlatoon !== 'all') && (
+              <button
+                onClick={() => { setSearchQuery(''); setFilterCategory('all'); setFilterStatus('all'); setFilterPlatoon('all'); }}
+                className="text-[10px] font-bold text-red-600 hover:text-red-800 uppercase"
+              >
+                Clear ✕
+              </button>
+            )}
+            <span className="text-[10px] font-bold text-slate-400 uppercase ml-auto">
+              {filteredRecords.length} / {records.length} records
+            </span>
           </div>
 
           {/* Form */}
@@ -370,16 +521,32 @@ export const MedicalRegisterScreen = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {records.map(r => (
+                  {filteredRecords.map(r => (
                     <tr key={r.id} className={`hover:bg-slate-50 ${r.status === 'Active' ? 'bg-red-50/20' : 'bg-slate-50 opacity-70'}`}>
-                      <td className="px-3 py-2 font-mono text-slate-500">{r.date}</td>
+                      <td className="px-3 py-2 font-mono text-slate-500">
+                        {r.date}
+                        {/* ★ active case kitne din se chal raha hai */}
+                        {r.status === 'Active' && (
+                          <span className="block text-[9px] font-bold text-red-500">Day {daysSince(r.date)}</span>
+                        )}
+                      </td>
                       <td className="px-3 py-2">
                         <span className="font-mono font-bold text-military-800 mr-2">{r.chestNo}</span>
                         <span className="font-bold text-slate-800">{r.name}</span>
+                        {/* ★ audit: kisne entry ki */}
+                        {r.createdByName && (
+                          <span className="block text-[8px] text-slate-400">by {r.createdByName}</span>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-[10px] text-slate-600">{r.platoon}</td>
                       <td className="px-3 py-2">
-                        <span className={`px-2 py-0.5 text-[9px] font-bold rounded-sm ${r.category.includes('Hospital') ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                        <span className={`px-2 py-0.5 text-[9px] font-bold rounded-sm ${
+                          r.category.includes('Hospital') ? 'bg-red-100 text-red-700' :
+                          r.category.includes('Injury') ? 'bg-orange-100 text-orange-700' :
+                          r.category.includes('Exam') ? 'bg-blue-100 text-blue-700' :
+                          r.category.includes('Board') ? 'bg-purple-100 text-purple-700' :
+                          'bg-amber-100 text-amber-700'
+                        }`}>
                           {r.category}
                         </span>
                       </td>
@@ -406,7 +573,7 @@ export const MedicalRegisterScreen = () => {
                       </td>
                     </tr>
                   ))}
-                  {records.length === 0 && <tr><td colSpan={7} className="p-8 text-center text-slate-400 italic font-bold">Koi medical record nahi hai.</td></tr>}
+                  {filteredRecords.length === 0 && <tr><td colSpan={7} className="p-8 text-center text-slate-400 italic font-bold">{records.length === 0 ? 'Koi medical record nahi hai.' : 'Filter/search mein koi record match nahi hua.'}</td></tr>}
                 </tbody>
               </table>
             </div>

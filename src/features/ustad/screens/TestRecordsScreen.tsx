@@ -10,12 +10,16 @@ import {
   Edit3, PlayCircle, Search, Eye,
   Settings2, BarChart3,
   ChevronDown, ChevronUp,  Save,
+  Printer, Trophy,   // ★ M13 print + merit
 } from 'lucide-react';
 import { useTestRecords } from '../hooks/useTestRecords';
 import { useStaff } from '../hooks/useStaff';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { useBatch } from '../../../contexts/BatchContext';
+import { useAuth } from '../../../contexts/AuthContext';                 // ★
+import { useUnitConfig } from '../../../contexts/UnitConfigContext';     // ★
+import { buildTestResultHtml, printDocument } from '../../shared/printDocuments'; // ★
 import {
   TestRecord, TestFormData, TestType, TraineeResult, FPTEvent,
   RunningGrade, DEFAULT_TEST_FORM, TEST_TYPE_INFO,
@@ -32,6 +36,33 @@ const TestResultDetailsPanel: React.FC<{ test: TestRecord }> = ({ test }) => {
     const order = { fail: 0, absent: 1, pass: 2 } as Record<string, number>;
     return (order[a.status] ?? 3) - (order[b.status] ?? 3) || Number(a.chestNo) - Number(b.chestNo);
   });
+
+  // ★ M13 — Dense rank (same marks = same rank; absent ko rank nahi)
+  const rankMap: Record<string, number> = {};
+  {
+    const merit = [...test.results]
+      .filter(r => r.status !== 'absent')
+      .sort((a, b) => Number(b.marks || 0) - Number(a.marks || 0));
+    let lastMarks = -Infinity;
+    let lastRank = 0;
+    merit.forEach((r, i) => {
+      const m = Number(r.marks || 0);
+      if (m !== lastMarks) { lastRank = i + 1; lastMarks = m; }
+      rankMap[r.traineeId] = lastRank;
+    });
+  }
+  const rankBadge = (tid: string) => {
+    const rk = rankMap[tid];
+    if (!rk) return null;
+    const medal = rk === 1 ? '🥇' : rk === 2 ? '🥈' : rk === 3 ? '🥉' : '';
+    return (
+      <span className={`text-[9px] font-black px-1.5 py-0.5 rounded flex-shrink-0 ${
+        rk <= 3 ? 'bg-amber-400 text-amber-900' : 'bg-slate-200 text-slate-600'
+      }`}>
+        {medal} #{rk}
+      </span>
+    );
+  };
 
   const toggleRow = (id: string) => {
     setOpenRows(prev => ({ ...prev, [id]: !prev[id] }));
@@ -107,6 +138,8 @@ const TestResultDetailsPanel: React.FC<{ test: TestRecord }> = ({ test }) => {
                         </p>
                       </div>
                     </div>
+                    {/* ★ M13 rank badge (absent ko rank nahi) */}
+                    {r.status !== 'absent' && rankBadge(r.traineeId)}
                     <span className={`text-[9px] font-black px-2 py-1 rounded-lg flex-shrink-0 ${
                       isPass ? 'bg-green-600 text-white' : isFail ? 'bg-red-600 text-white' : 'bg-slate-500 text-white'
                     }`}>
@@ -185,6 +218,8 @@ const TestRecordsScreen: React.FC = () => {
 
   const { staffList } = useStaff();
   const { activeBatch } = useBatch();
+  const { user } = useAuth();                 // ★ print audit ke liye
+  const { unitConfig } = useUnitConfig();     // ★ report header ke liye
 
   // ─── UI State ────────────────────────────
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -598,6 +633,102 @@ const TestRecordsScreen: React.FC = () => {
     })(),
   })).filter(s => s.count > 0);
 
+  // ═══════════════════════════════════════════
+  // ★ M13 — PLATOON-WISE PERFORMANCE
+  // ═══════════════════════════════════════════
+  const platoonStats: Record<string, { pass: number; fail: number; totalPct: number; marksCount: number }> = {};
+  tests.filter(t => t.status === 'completed').forEach(t => {
+    t.results.forEach(r => {
+      if (r.status === 'absent') return;
+      const pl = r.platoon || 'Unknown';
+      if (!platoonStats[pl]) platoonStats[pl] = { pass: 0, fail: 0, totalPct: 0, marksCount: 0 };
+      if (r.status === 'pass') platoonStats[pl].pass++;
+      else platoonStats[pl].fail++;
+      const maxM = t.testType === 'fpt' && r.events
+        ? r.events.reduce((s, e) => s + e.maxMarks, 0)
+        : t.totalMarks;
+      if (maxM > 0) {
+        platoonStats[pl].totalPct += (Number(r.marks || 0) / maxM) * 100;
+        platoonStats[pl].marksCount++;
+      }
+    });
+  });
+  const platoonList = Object.entries(platoonStats)
+    .map(([name, s]) => ({
+      name,
+      pass: s.pass,
+      fail: s.fail,
+      passRate: s.pass + s.fail > 0 ? Math.round((s.pass / (s.pass + s.fail)) * 100) : 0,
+      avgPct: s.marksCount > 0 ? Math.round(s.totalPct / s.marksCount) : 0,
+    }))
+    .sort((a, b) => b.passRate - a.passRate);
+
+  // ═══════════════════════════════════════════
+  // ★ M13 — TOP PERFORMERS (avg% across completed tests)
+  // ═══════════════════════════════════════════
+  const traineeScoreMap: Record<string, { name: string; chestNo: string; platoon: string; totalPct: number; tests: number }> = {};
+  tests.filter(t => t.status === 'completed').forEach(t => {
+    t.results.forEach(r => {
+      if (r.status === 'absent') return;
+      if (!traineeScoreMap[r.traineeId]) {
+        traineeScoreMap[r.traineeId] = { name: r.traineeName, chestNo: r.chestNo, platoon: r.platoon, totalPct: 0, tests: 0 };
+      }
+      const maxM = t.testType === 'fpt' && r.events
+        ? r.events.reduce((s, e) => s + e.maxMarks, 0)
+        : t.totalMarks;
+      if (maxM > 0) {
+        traineeScoreMap[r.traineeId].totalPct += (Number(r.marks || 0) / maxM) * 100;
+        traineeScoreMap[r.traineeId].tests++;
+      }
+    });
+  });
+  const topPerformers = Object.entries(traineeScoreMap)
+    .filter(([, d]) => d.tests > 0)
+    .map(([id, d]) => ({ id, ...d, avgPct: Math.round(d.totalPct / d.tests) }))
+    .sort((a, b) => b.avgPct - a.avgPct)
+    .slice(0, 5);
+
+  // ═══════════════════════════════════════════
+  // ★ M13 — WEAK SUBJECT DETECTION
+  //   Sabse kam pass-rate wale subjects (min 1 completed test)
+  // ═══════════════════════════════════════════
+  const weakSubjects = typeStats
+    .filter(s => s.passRate < 50 && s.count > 0)
+    .sort((a, b) => a.passRate - b.passRate);
+
+  // ═══════════════════════════════════════════
+  // ★ M13 — PRINT RESULT SHEET / MERIT LIST
+  // ═══════════════════════════════════════════
+  const handlePrintResult = (test: TestRecord) => {
+    const info = TEST_TYPE_INFO[test.testType];
+    const html = buildTestResultHtml({
+      testName: test.testName,
+      testTypeLabel: info?.label ?? test.testType,
+      dateStr: test.testDate
+        ? test.testDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+        : '—',
+      venue: test.venue,
+      weekNumber: test.weekNumber,
+      instructorName: test.instructorName,
+      totalMarks: test.totalMarks,
+      passingMarks: test.passingMarks,
+      unitName: unitConfig.parentUnit,
+      coyName: unitConfig.companyShort,
+      batchNumber: test.batchNumber || activeBatch?.batchNumber,
+      rows: test.results.map(r => ({
+        traineeName: r.traineeName,
+        chestNo: r.chestNo,
+        platoon: r.platoon,
+        marks: r.status === 'absent' ? -1 : Number(r.marks || 0),
+        status: r.status,
+        grade: r.grade,
+        remarks: r.remarks,
+      })),
+      printedBy: user?.displayName ?? user?.email ?? '',
+    });
+    printDocument(`Result Sheet — ${test.testName}`, html);
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
 
@@ -854,6 +985,92 @@ const TestRecordsScreen: React.FC = () => {
                   </div>
                 )}
               </div>
+
+              {/* ★ M13 — WEAK SUBJECT DETECTION */}
+              {weakSubjects.length > 0 && (
+                <div className="bg-red-50 border-2 border-red-300 rounded-xl p-4">
+                  <h4 className="text-xs font-black text-red-700 uppercase mb-2 flex items-center gap-2">
+                    <AlertTriangle size={14} /> ⚠ Weak Subjects Detected (Pass Rate &lt; 50%)
+                  </h4>
+                  <p className="text-[10px] text-red-600 mb-3">
+                    In subjects mein batch struggle kar raha hai — extra classes / revision schedule karein:
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {weakSubjects.map(s => (
+                      <div key={s.type} className="bg-white border border-red-300 rounded-lg px-3 py-2 flex items-center gap-2">
+                        <span className="text-xl">{s.info.icon}</span>
+                        <div>
+                          <p className="text-xs font-black text-red-800">{s.info.label}</p>
+                          <p className="text-[10px] font-bold text-red-600">{s.passRate}% pass rate · {s.count} test(s)</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ★ M13 — PLATOON-WISE PERFORMANCE */}
+              {platoonList.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-bold text-indigo-700 uppercase mb-3">🪖 Platoon-wise Performance</h4>
+                  <table className="w-full text-xs border border-slate-200 rounded-lg overflow-hidden">
+                    <thead className="bg-slate-100">
+                      <tr>
+                        {['Position', 'Platoon', 'Pass', 'Fail', 'Pass Rate', 'Avg %'].map(h => (
+                          <th key={h} className="px-3 py-2 text-left text-[10px] font-bold text-slate-500 uppercase">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {platoonList.map((p, idx) => (
+                        <tr key={p.name} className={`hover:bg-slate-50 ${idx === 0 ? 'bg-green-50/40' : ''}`}>
+                          <td className="px-3 py-2 font-black text-slate-500">
+                            {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`}
+                          </td>
+                          <td className="px-3 py-2 font-bold text-indigo-800">{p.name}</td>
+                          <td className="px-3 py-2"><span className="bg-green-100 text-green-700 px-2 py-0.5 text-[9px] font-bold rounded">{p.pass}</span></td>
+                          <td className="px-3 py-2"><span className="bg-red-100 text-red-700 px-2 py-0.5 text-[9px] font-bold rounded">{p.fail}</span></td>
+                          <td className="px-3 py-2">
+                            <div className="flex items-center gap-2">
+                              <div className="w-16 bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                                <div className={`h-full rounded-full ${p.passRate >= 70 ? 'bg-green-500' : p.passRate >= 40 ? 'bg-amber-500' : 'bg-red-500'}`}
+                                  style={{ width: `${p.passRate}%` }} />
+                              </div>
+                              <span className={`font-bold text-[10px] ${p.passRate >= 70 ? 'text-green-600' : p.passRate >= 40 ? 'text-amber-600' : 'text-red-600'}`}>{p.passRate}%</span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 font-bold">{p.avgPct}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* ★ M13 — TOP PERFORMERS */}
+              {topPerformers.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-bold text-amber-700 uppercase mb-3 flex items-center gap-1">
+                    <Trophy size={13} /> Top Performers (Overall Avg %)
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+                    {topPerformers.map((t, idx) => (
+                      <div key={t.id} className={`rounded-xl border-2 p-3 text-center ${
+                        idx === 0 ? 'bg-amber-50 border-amber-400' :
+                        idx === 1 ? 'bg-slate-50 border-slate-300' :
+                        idx === 2 ? 'bg-orange-50 border-orange-300' :
+                        'bg-white border-slate-200'
+                      }`}>
+                        <p className="text-2xl">{idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '🎖️'}</p>
+                        <p className="text-lg font-black text-slate-800 mt-1">{t.avgPct}%</p>
+                        <p className="text-[10px] font-bold text-slate-700 truncate">{t.name}</p>
+                        <p className="text-[9px] text-slate-500">{t.chestNo} · {t.platoon}</p>
+                        <p className="text-[9px] text-slate-400 mt-0.5">{t.tests} test(s)</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1110,6 +1327,16 @@ const TestRecordsScreen: React.FC = () => {
                       >
                         <Edit3 size={12} /> {test.status === 'completed' ? 'Edit' : 'Enter'} Marks
                       </button>
+                      {/* ★ M13 — Merit List / Result Sheet print */}
+                      {test.status === 'completed' && test.results.length > 0 && (
+                        <button
+                          onClick={() => handlePrintResult(test)}
+                          className="px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded hover:bg-emerald-700 flex items-center gap-1"
+                          title="Merit List + Result Sheet print karein (rank-wise)"
+                        >
+                          <Printer size={12} /> Merit
+                        </button>
+                      )}
                       {test.status === 'scheduled' && (
                         <button
                           onClick={() => handleUpdateStatus(test.id, 'in_progress')}

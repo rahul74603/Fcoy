@@ -294,3 +294,259 @@ export const buildFundVoucherHtml = (d: FundVoucherData): string => {
     <div class="foot">Ye computer-generated ${title.toLowerCase()} hai — F Coy ERP</div>
   </div>`;
 };
+
+// ─────────────────────────────────────────────
+// M13 — TEST RESULT SHEET + MERIT LIST + FAILED LIST
+//   Rank dense hai: same marks = same rank.
+//   Absent hamesha last, rank '—'.
+// ─────────────────────────────────────────────
+export interface TestResultRow {
+  traineeName: string;
+  chestNo: string;
+  platoon: string;
+  marks: number;              // absent ke case mein -1 allowed
+  status: 'pass' | 'fail' | 'absent';
+  grade?: string;
+  remarks?: string;
+}
+
+export interface TestResultSheetData {
+  testName: string;
+  testTypeLabel: string;
+  dateStr: string;
+  venue?: string;
+  weekNumber?: number;
+  instructorName?: string;
+  totalMarks: number;
+  passingMarks: number;
+  unitName: string;
+  coyName: string;
+  batchNumber?: string;
+  rows: TestResultRow[];
+  printedBy?: string;
+}
+
+export const buildTestResultHtml = (d: TestResultSheetData): string => {
+  // ★ Dense rank calculation (appeared candidates only, absent excluded)
+  const appeared = d.rows.filter(r => r.status !== 'absent');
+  const absentees = d.rows.filter(r => r.status === 'absent');
+  const sorted = [...appeared].sort((a, b) => b.marks - a.marks);
+
+  const rankOf: number[] = [];
+  let lastMarks = -Infinity;
+  let lastRank = 0;
+  sorted.forEach((r, i) => {
+    if (r.marks !== lastMarks) { lastRank = i + 1; lastMarks = r.marks; }
+    rankOf.push(lastRank);
+  });
+
+  const medal = (rank: number): string =>
+    rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '';
+
+  const resultRows = sorted.map((r, i) => `
+    <tr ${r.status === 'fail' ? 'style="background:#fdecec"' : ''}>
+      <td style="text-align:center;font-weight:800">${medal(rankOf[i])} ${rankOf[i]}</td>
+      <td style="text-align:center;font-family:monospace;font-weight:800">${r.chestNo || '—'}</td>
+      <td><b>${r.traineeName}</b></td>
+      <td style="text-align:center">${r.platoon || '—'}</td>
+      <td style="text-align:center;font-weight:800">${r.marks}/${d.totalMarks}</td>
+      <td style="text-align:center">${d.totalMarks > 0 ? Math.round((r.marks / d.totalMarks) * 100) : 0}%</td>
+      <td style="text-align:center;font-weight:800;color:${r.status === 'pass' ? '#116b1e' : '#b00000'}">${r.status === 'pass' ? 'PASS' : 'FAIL'}</td>
+      <td style="text-align:center">${r.grade ?? '—'}</td>
+    </tr>`).join('');
+
+  const failedRows = sorted
+    .filter(r => r.status === 'fail')
+    .map((r, i) => `
+      <tr>
+        <td style="text-align:center">${i + 1}</td>
+        <td style="text-align:center;font-family:monospace;font-weight:800">${r.chestNo || '—'}</td>
+        <td><b>${r.traineeName}</b></td>
+        <td style="text-align:center">${r.platoon || '—'}</td>
+        <td style="text-align:center;font-weight:800">${r.marks}/${d.totalMarks}</td>
+        <td>${r.remarks || 'Re-test ki taraf dhyan dene ki zaroorat'}</td>
+      </tr>`).join('');
+
+  const passCount = appeared.filter(r => r.status === 'pass').length;
+  const failCount = appeared.filter(r => r.status === 'fail').length;
+  const avg = appeared.length > 0
+    ? Math.round((appeared.reduce((s, r) => s + r.marks, 0) / appeared.length))
+    : 0;
+  const passRate = appeared.length > 0 ? Math.round((passCount / appeared.length) * 100) : 0;
+  const topper = sorted[0];
+
+  return `
+  <div class="doc">
+    <div class="h-row">
+      <div>
+        <div class="unit">${d.unitName}</div>
+        <div style="font-size:11px;font-weight:700">${d.coyName}${d.batchNumber ? ` · Batch ${d.batchNumber}` : ''}</div>
+        <div style="font-size:10px;color:#444">Examination & Assessment Cell</div>
+      </div>
+      <div class="doc-type">RESULT SHEET / MERIT LIST</div>
+    </div>
+    <div class="meta">
+      <div><b>Test:</b> ${d.testName}</div>
+      <div><b>Type:</b> ${d.testTypeLabel}${d.weekNumber ? ` · Week ${d.weekNumber}` : ''}</div>
+      <div><b>Date:</b> ${d.dateStr}</div>
+      <div><b>Venue:</b> ${d.venue || '—'}</div>
+      <div><b>Max / Pass Marks:</b> ${d.totalMarks} / ${d.passingMarks}</div>
+      <div><b>Examiner:</b> ${d.instructorName || '—'}</div>
+      <div><b>Appeared:</b> ${appeared.length} (Absent: ${absentees.length})</div>
+      <div><b>Pass:</b> ${passCount} · <b>Fail:</b> ${failCount} · <b>Pass Rate:</b> ${passRate}% · <b>Avg:</b> ${avg}</div>
+      ${topper ? `<div style="grid-column:1/3"><b>🏆 Topper:</b> ${topper.traineeName} (Chest ${topper.chestNo}) — ${topper.marks}/${d.totalMarks}</div>` : ''}
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width:42px">Rank</th><th style="width:58px">Chest</th><th>Trainee Name</th>
+          <th style="width:56px">Platoon</th><th style="width:64px">Marks</th>
+          <th style="width:42px">%</th><th style="width:48px">Result</th><th style="width:42px">Grade</th>
+        </tr>
+      </thead>
+      <tbody>${resultRows || '<tr><td colspan="8" style="text-align:center;color:#777">Koi appeared candidate nahi</td></tr>'}</tbody>
+    </table>
+
+    ${absentees.length > 0 ? `
+    <table>
+      <thead><tr><th colspan="3">⛔ ABSENT CANDIDATES (${absentees.length}) — Makeup test schedule karein</th></tr>
+      <tr><th style="width:58px">Chest</th><th>Name</th><th style="width:70px">Platoon</th></tr></thead>
+      <tbody>${absentees.map(r => `
+        <tr>
+          <td style="text-align:center;font-family:monospace;font-weight:800">${r.chestNo || '—'}</td>
+          <td><b>${r.traineeName}</b></td>
+          <td style="text-align:center">${r.platoon || '—'}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>` : ''}
+
+    ${failCount > 0 ? `
+    <table>
+      <thead><tr><th colspan="6">⚠ FAILED CANDIDATES (${failCount}) — Improvement / re-test required</th></tr>
+      <tr><th style="width:30px">#</th><th style="width:58px">Chest</th><th>Name</th><th style="width:56px">Platoon</th><th style="width:64px">Marks</th><th>Remarks</th></tr></thead>
+      <tbody>${failedRows}</tbody>
+    </table>` : `
+    <div class="words" style="margin-top:14px">✅ Saare appeared candidates PASS hue — congratulations!</div>`}
+
+    <div class="sig">
+      <div>Examiner / Ustad<br/><span style="font-weight:400;font-size:9px">${d.instructorName || ''}</span></div>
+      <div>Checked By (Clerk)<br/><span style="font-weight:400;font-size:9px">${d.printedBy || ''}</span></div>
+      <div>Company Commander</div>
+    </div>
+    <div class="foot">Computer-generated result sheet — merit dense-rank se calculated hai (same marks = same rank) — F Coy ERP</div>
+  </div>`;
+};
+
+// ─────────────────────────────────────────────
+// M14 — DAILY SICK PARADE STATE / MI ROOM REPORT
+//   Sarkari "Sick Report" — Roz subah MI Room +
+//   hospital cases ki consolidated state.
+// ─────────────────────────────────────────────
+export interface SickReportRow {
+  date: string;
+  chestNo: string;
+  traineeName: string;
+  platoon: string;
+  category: string;        // Sick Report / Hospital Admit / B-Rest / C-Rest / Medical Board / Injury ...
+  diagnosis: string;
+  wardNo?: string;
+  days?: number;           // kitne din se ...
+}
+
+export interface SickReportData {
+  dateStr: string;
+  unitName: string;
+  coyName: string;
+  batchNumber?: string;
+  totalStrength?: number;
+  newEntries: SickReportRow[];    // report date ke naye cases
+  activeCases: SickReportRow[];   // abhi jo bhi Active status mein hai
+  printedBy?: string;
+}
+
+export const buildSickReportHtml = (d: SickReportData): string => {
+  const catGroups: Record<string, SickReportRow[]> = {};
+  d.activeCases.forEach(r => {
+    (catGroups[r.category] = catGroups[r.category] || []).push(r);
+  });
+  const order = ['Hospital Admit', 'Sick Report', 'Injury (Training)', 'B-Rest', 'C-Rest', 'Medical Board', 'Medical Exam'];
+  const orderedCats = [...order.filter(c => catGroups[c]), ...Object.keys(catGroups).filter(c => !order.includes(c))];
+
+  const catTable = (cat: string, list: SickReportRow[]): string => `
+    <table>
+      <thead>
+        <tr><th colspan="7">${cat.toUpperCase()} (${list.length})</th></tr>
+        <tr>
+          <th style="width:30px">#</th><th style="width:58px">Chest</th><th>Name</th>
+          <th style="width:56px">Platoon</th><th>Diagnosis / Details</th>
+          <th style="width:70px">Since</th><th style="width:56px">Days</th>
+        </tr>
+      </thead>
+      <tbody>${list.map((r, i) => `
+        <tr>
+          <td style="text-align:center">${i + 1}</td>
+          <td style="text-align:center;font-family:monospace;font-weight:800">${r.chestNo || '—'}</td>
+          <td><b>${r.traineeName}</b></td>
+          <td style="text-align:center">${r.platoon || '—'}</td>
+          <td>${r.diagnosis}${r.wardNo ? ` <i>(Ward: ${r.wardNo})</i>` : ''}</td>
+          <td style="text-align:center">${r.date}</td>
+          <td style="text-align:center;font-weight:800">${r.days ?? 1}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+
+  const newRows = d.newEntries.map((r, i) => `
+    <tr>
+      <td style="text-align:center">${i + 1}</td>
+      <td style="text-align:center;font-family:monospace;font-weight:800">${r.chestNo || '—'}</td>
+      <td><b>${r.traineeName}</b></td>
+      <td style="text-align:center">${r.platoon || '—'}</td>
+      <td style="text-align:center">${r.category}</td>
+      <td>${r.diagnosis}</td>
+    </tr>`).join('');
+
+  const hospitalized = d.activeCases.filter(r => r.category === 'Hospital Admit').length;
+  const onRest = d.activeCases.filter(r => r.category === 'B-Rest' || r.category === 'C-Rest').length;
+  const sickInLines = d.activeCases.length - hospitalized - onRest;
+
+  return `
+  <div class="doc">
+    <div class="h-row">
+      <div>
+        <div class="unit">${d.unitName}</div>
+        <div style="font-size:11px;font-weight:700">${d.coyName}${d.batchNumber ? ` · Batch ${d.batchNumber}` : ''}</div>
+        <div style="font-size:10px;color:#444">MI Room / Medical Inspection</div>
+      </div>
+      <div class="doc-type">DAILY SICK PARADE STATE</div>
+    </div>
+    <div class="meta">
+      <div><b>Report Date:</b> ${d.dateStr}</div>
+      ${d.totalStrength ? `<div><b>Total Strength:</b> ${d.totalStrength}</div>` : ''}
+      <div><b>Hospital:</b> ${hospitalized} · <b>On Rest:</b> ${onRest} · <b>Sick in Lines:</b> ${sickInLines}</div>
+      <div><b>Total Active Cases:</b> ${d.activeCases.length}${d.totalStrength ? ` (${((d.activeCases.length / d.totalStrength) * 100).toFixed(1)}% of strength)` : ''}</div>
+      <div><b>New Cases Today:</b> ${d.newEntries.length}</div>
+      <div><b>Printed By:</b> ${d.printedBy || '—'}</div>
+    </div>
+
+    ${d.newEntries.length > 0 ? `
+    <table>
+      <thead>
+        <tr><th colspan="6">🆕 AAJ KE NAYE CASES (${d.dateStr})</th></tr>
+        <tr><th style="width:30px">#</th><th style="width:58px">Chest</th><th>Name</th><th style="width:56px">Platoon</th><th style="width:90px">Category</th><th>Diagnosis</th></tr>
+      </thead>
+      <tbody>${newRows}</tbody>
+    </table>` : ''}
+
+    ${orderedCats.length > 0
+      ? orderedCats.map(c => catTable(c, catGroups[c])).join('')
+      : '<div class="words" style="margin-top:14px">✅ Koi active medical case nahi — sab trainees fit hain.</div>'}
+
+    <div class="sig">
+      <div>Nursing Assistant / Medic</div>
+      <div>MI Room In-charge<br/><span style="font-weight:400;font-size:9px">${d.printedBy || ''}</span></div>
+      <div>Company Commander</div>
+    </div>
+    <div class="foot">Computer-generated daily sick state — MI Room register se — F Coy ERP</div>
+  </div>`;
+};
