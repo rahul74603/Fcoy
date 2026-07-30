@@ -9,6 +9,9 @@ import { useUnitConfig } from '../../contexts/UnitConfigContext';
 // 🆕 Notification System Import
 import NotificationBell from '../../features/notifications/NotificationBell';
 
+// 🆕 Global Search (Ctrl+K) — permission-based
+import GlobalSearch from '../../features/globalSearch/GlobalSearch';
+
 interface EnterpriseLayoutProps {
   children: React.ReactNode;
 }
@@ -73,7 +76,16 @@ export const EnterpriseLayout: React.FC<EnterpriseLayoutProps> = ({ children }) 
             </div>
           </div>
 
+          {/* 🆕 GLOBAL SEARCH BAR — sab roles ke liye, results permission-based */}
+          <div className="flex-1 max-w-xl mx-6 hidden md:block">
+            <GlobalSearch />
+          </div>
+
           <div className="flex items-center space-x-6">
+            {/* Mobile: sirf search icon ke liye */}
+            <div className="md:hidden w-40">
+              <GlobalSearch />
+            </div>
             {/* Live Date & Time */}
             <div className="flex flex-col text-right mr-4 border-r border-slate-300 pr-6">
               <span className="text-[12px] font-black text-military-900 uppercase">
