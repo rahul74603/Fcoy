@@ -215,6 +215,20 @@ export const SEARCH_ENTITIES: SearchEntityConfig[] = [
     route: () => '/medical-register',
   },
   {
+    id: 'trainee_attendance', collection: 'trainee_attendance', label: 'Daily Hazri Register', icon: ClipboardList,
+    roles: [ROLE.CLERK],
+    maxFetch: 400,
+    searchFields: ['date', 'session', 'sessionLabel', 'batchNumber', 'markedBy'],
+    title: (d) => join(`${fmt(d.date)} — ${s(d.sessionLabel || d.session)}`, s(d.batchNumber)),
+    subtitle: (d) => join(
+      `Present: ${s(d.presentCount ?? 0)}/${s(d.totalTrainees ?? 0)}`,
+      d.absentCount ? `Absent: ${d.absentCount}` : '',
+      d.markedBy && `By: ${d.markedBy}`
+    ),
+    badge: (d) => (Number(d.absentCount) > 0 ? `${d.absentCount} ABSENT` : 'FULL'),
+    route: () => '/trainee-attendance',
+  },
+  {
     id: 'fptRecords', collection: 'fptRecords', label: 'FPT Results', icon: ClipboardList,
     roles: [ROLE.CLERK],
     maxFetch: 800,

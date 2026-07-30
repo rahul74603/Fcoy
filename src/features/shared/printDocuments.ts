@@ -150,8 +150,93 @@ export const buildKitSlipHtml = (d: KitSlipData): string => {
 };
 
 // ─────────────────────────────────────────────
-// M8 — FUND RECEIPT / PAYMENT VOUCHER
+// M9 — DAILY / MONTHLY MESS REPORT
 // ─────────────────────────────────────────────
+export interface MessReportData {
+  periodLabel: string;          // "30 July 2026" ya "July 2026"
+  unitName: string;
+  coyName: string;
+  generatedBy: string;
+  totalCollection: number;
+  totalExpense: number;
+  totalPaid: number;
+  totalDue: number;
+  balance: number;
+  traineeCount: number;
+  collections: { date: string; label: string; amount: number }[];
+  categoryWise: { category: string; amount: number; entries: number }[];
+  topExpenses: { date: string; label: string; vendor: string; amount: number }[];
+  vendorDues: { vendor: string; due: number }[];
+}
+
+export const buildMessReportHtml = (d: MessReportData): string => {
+  const row = (cells: (string | number)[], bolds: boolean[] = []) =>
+    `<tr>${cells.map((c, i) =>
+      `<td style="${i === 0 ? 'text-align:center' : ''}${bolds[i] ? ';font-weight:800' : ''}">${c}</td>`
+    ).join('')}</tr>`;
+
+  const colRows = d.collections.length
+    ? d.collections.map((c, i) => row([i + 1, c.date, c.label, `₹${c.amount.toLocaleString('en-IN')}`])).join('')
+    : row(['—', '—', '(Koi collection nahi)', '—']);
+
+  const catRows = d.categoryWise.length
+    ? d.categoryWise.map((c, i) => row([i + 1, c.category, `${c.entries} entries`, `₹${c.amount.toLocaleString('en-IN')}`])).join('')
+    : row(['—', '(Koi expense nahi)', '—', '—']);
+
+  const expRows = d.topExpenses.length
+    ? d.topExpenses.map((e, i) => row([i + 1, e.date, e.label, e.vendor || '—', `₹${e.amount.toLocaleString('en-IN')}`])).join('')
+    : row(['—', '—', '(Koi expense nahi)', '—', '—']);
+
+  const dueRows = d.vendorDues.length
+    ? d.vendorDues.map((v, i) => row([i + 1, v.vendor, `₹${v.due.toLocaleString('en-IN')}`])).join('')
+    : row(['—', '(Koi vendor due nahi)', '—']);
+
+  return `
+  <div class="doc">
+    <div class="h-row">
+      <div>
+        <div class="unit">${d.unitName}</div>
+        <div style="font-size:11px;font-weight:700">${d.coyName}</div>
+        <div style="font-size:10px;color:#444">Mess Accounts — Kote / Langar</div>
+      </div>
+      <div class="doc-type">MESS REPORT</div>
+    </div>
+
+    <div class="meta">
+      <div><b>Period:</b> ${d.periodLabel}</div>
+      <div><b>Mess Strength:</b> ${d.traineeCount} trainees</div>
+      <div><b>Total Collection (Aamdani):</b> ₹${d.totalCollection.toLocaleString('en-IN')}</div>
+      <div><b>Total Expense (Kharcha):</b> ₹${d.totalExpense.toLocaleString('en-IN')}</div>
+      <div><b>Paid:</b> ₹${d.totalPaid.toLocaleString('en-IN')}</div>
+      <div><b>Due (Baaki):</b> ₹${d.totalDue.toLocaleString('en-IN')}</div>
+      <div style="grid-column:1/3"><b>Balance:</b>
+        <span style="font-size:14px;font-weight:900;color:${d.balance >= 0 ? '#166534' : '#b91c1c'}">
+          ₹${Math.abs(d.balance).toLocaleString('en-IN')} ${d.balance < 0 ? '(GHATA / DEFICIT)' : '(BACHAT / SURPLUS)'}
+        </span>
+      </div>
+    </div>
+    <div class="words">Balance in words: <b>${numberToWordsINR(Math.abs(d.balance))} Only</b></div>
+
+    <p style="margin-top:14px;font-size:11px;font-weight:800;text-transform:uppercase">Collections (Mess Cutting)</p>
+    <table><thead><tr><th style="width:30px">#</th><th style="width:90px">Date</th><th>Particulars</th><th style="width:110px">Amount</th></tr></thead><tbody>${colRows}</tbody></table>
+
+    <p style="margin-top:14px;font-size:11px;font-weight:800;text-transform:uppercase">Category-wise Kharcha</p>
+    <table><thead><tr><th style="width:30px">#</th><th>Category</th><th style="width:90px">Entries</th><th style="width:110px">Total</th></tr></thead><tbody>${catRows}</tbody></table>
+
+    <p style="margin-top:14px;font-size:11px;font-weight:800;text-transform:uppercase">Top Expenses (Period)</p>
+    <table><thead><tr><th style="width:30px">#</th><th style="width:80px">Date</th><th>Item / Particulars</th><th style="width:110px">Vendor</th><th style="width:100px">Amount</th></tr></thead><tbody>${expRows}</tbody></table>
+
+    <p style="margin-top:14px;font-size:11px;font-weight:800;text-transform:uppercase">Vendor Dues (Baaki Paisa)</p>
+    <table><thead><tr><th style="width:30px">#</th><th>Vendor</th><th style="width:120px">Due Amount</th></tr></thead><tbody>${dueRows}</tbody></table>
+
+    <div class="sig">
+      <div>Mess Havildar / In-charge</div>
+      <div>Prepared By<br/><span style="font-weight:400;font-size:9px">${d.generatedBy}</span></div>
+      <div>Company Commander</div>
+    </div>
+    <div class="foot">Ye computer-generated mess report hai — F Coy ERP · ${d.periodLabel}</div>
+  </div>`;
+};
 export interface FundVoucherData {
   type: 'collection' | 'expense' | 'vendor_payment' | 'salary' | 'transfer';
   voucherNo: string;

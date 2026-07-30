@@ -44,6 +44,8 @@ import { DeputationScreen } from './features/ustad/screens';
 // --- Dashboard Sub-Modules ---
 import { AbsentManagement }  from './features/dashboard/AbsentManagement';
 import { TestRecordsScreen } from './features/ustad/screens';
+// --- 🆕 Trainee Daily Attendance Register ---
+import { TraineeAttendanceScreen } from './features/attendance/TraineeAttendanceScreen';
 // --- System & Config ---
 import { ReportsScreen }      from './features/system/ReportsScreen';
 import { SettingsScreen }     from './features/system/SettingsScreen';
@@ -309,8 +311,17 @@ function App() {
                     <EnterpriseLayout><AbsentManagement /></EnterpriseLayout>
                   </ProtectedRoute>
                 }
-              
              
+            
+              />
+              {/* 🆕 Trainee Daily Hazri Register (Parade/PT/Roll Call) */}
+              <Route
+                path="/trainee-attendance"
+                element={
+                  <ProtectedRoute allowedRoles={CLERK_ROLES}>
+                    <EnterpriseLayout><TraineeAttendanceScreen /></EnterpriseLayout>
+                  </ProtectedRoute>
+                }
               />
               <Route
                 path="/test-records"

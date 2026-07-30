@@ -487,6 +487,7 @@ export const Sidebar = () => {
                   menuKey="clerkRecords"
                 >
                   <GroupDivider label="Daily Tracking" />
+                  <SubItem title="🫡 Daily Hazri (Parade/PT)" path="/trainee-attendance" dot="bg-green-500" />
                   <SubItem title="Absent / Leave / Medical" path="/absent-management" dot="bg-red-500" />
                   <GroupDivider label="Exam Records" />
                   <SubItem title="FPT / Weekly Test Records" path="/test-records" dot="bg-purple-500" />

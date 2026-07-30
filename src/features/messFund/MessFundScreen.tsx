@@ -6,7 +6,7 @@ import {
   RefreshCw, TrendingUp, TrendingDown, Info, Trash2,
   Filter, ArrowDownToLine, ArrowUpFromLine, Calculator,
   Receipt, ChevronDown, ChevronUp, Lock, Calendar,
-  Tag, Building2, Phone,
+  Tag, Building2, Phone, Printer,
   ShoppingCart, ArrowRightLeft
 } from 'lucide-react';
 import {
@@ -15,6 +15,10 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { useAuth } from '../../contexts/AuthContext';
+import { useUnitConfig } from '../../contexts/UnitConfigContext';
+import {
+  printDocument, buildMessReportHtml,
+} from '../shared/printDocuments';
 import {
   PaymentModeSelector,
   PaymentModeBadge,
@@ -87,7 +91,16 @@ interface VendorDueSummary {
 // ═════════════════════════════════════════════
 export const MessFundScreen: React.FC = () => {
   const { user } = useAuth();
+  const { unitConfig } = useUnitConfig(); // ★ report header
   const recordedBy = user?.email ?? 'Quarter Master';
+
+  // ── ★ MESS REPORT MODAL (Daily / Monthly print) ──
+  const [reportModal, setReportModal] = useState(false);
+  const [reportMode, setReportMode] = useState<'daily' | 'monthly'>('daily');
+  const [reportMonth, setReportMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
 
   // ── DATA ──
   const [collections, setCollections] = useState<MessCollection[]>([]);
@@ -185,6 +198,94 @@ export const MessFundScreen: React.FC = () => {
   // ─────────────────────────────────────────
   // FETCH
   // ─────────────────────────────────────────
+  // ── ★ PRINT DAILY / MONTHLY MESS REPORT ──
+  const printMessReport = () => {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    let periodLabel = '';
+    let inPeriod: (dateStr: string) => boolean;
+
+    if (reportMode === 'daily') {
+      const now = new Date();
+      const key = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+      periodLabel = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' });
+      inPeriod = (ds: string) => {
+        const d = new Date(ds);
+        if (isNaN(d.getTime())) return false;
+        return String(ds).startsWith(key) ||
+          `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` === key;
+      };
+    } else {
+      const [y, m] = reportMonth.split('-').map(Number);
+      periodLabel = new Date(y, (m || 1) - 1, 1).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+      inPeriod = (ds: string) => {
+        const d = new Date(ds);
+        if (isNaN(d.getTime())) return false;
+        return String(ds).startsWith(reportMonth) ||
+          (d.getFullYear() === y && d.getMonth() + 1 === m);
+      };
+    }
+
+    const cols = collections.filter(c => inPeriod(c.date));
+    const exps = expenses.filter(e => inPeriod((e as any).date ?? (e as any).entryDate ?? ''));
+
+    const totalCollection = cols.reduce((s, c) => s + (c.amount || 0), 0);
+    const totalExpense    = exps.reduce((s, e) => s + (e.amount || 0), 0);
+    const totalPaid       = exps.reduce((s, e) => s + (e.paidAmount || 0), 0);
+    const totalDue        = exps.reduce((s, e) => s + (e.dueAmount || 0), 0);
+
+    // Category-wise expense
+    const catMap = new Map<string, { amount: number; entries: number }>();
+    exps.forEach(e => {
+      const k = e.categoryLabel || e.category || 'Other';
+      const cur = catMap.get(k) ?? { amount: 0, entries: 0 };
+      cur.amount += e.amount || 0; cur.entries += 1;
+      catMap.set(k, cur);
+    });
+
+    // Vendor dues (mess vendors from vendor entries with due)
+    const dueMap = new Map<string, number>();
+    vendorEntries.forEach(ve => {
+      const due = Number((ve as any).dueAmount ?? 0);
+      if (due > 0) dueMap.set(ve.vendorName, (dueMap.get(ve.vendorName) ?? 0) + due);
+    });
+
+    printDocument(
+      `Mess-Report-${periodLabel}`,
+      buildMessReportHtml({
+        periodLabel,
+        unitName: unitConfig.parentUnit || 'STC TEKANPUR',
+        coyName: unitConfig.companyShort || unitConfig.companyName || 'F-COY',
+        generatedBy: recordedBy,
+        totalCollection,
+        totalExpense,
+        totalPaid,
+        totalDue,
+        balance: totalCollection - totalPaid,
+        traineeCount,
+        collections: cols.map(c => ({
+          date: formatDate(c.date), label: c.remarks || c.monthLabel || 'Mess Cutting', amount: c.amount,
+        })),
+        categoryWise: Array.from(catMap.entries())
+          .map(([category, v]) => ({ category, amount: v.amount, entries: v.entries }))
+          .sort((a, b) => b.amount - a.amount),
+        topExpenses: [...exps]
+          .sort((a, b) => (b.amount || 0) - (a.amount || 0))
+          .slice(0, 15)
+          .map(e => ({
+            date: formatDate((e as any).date ?? ''),
+            label: (e as any).itemName || e.categoryLabel || e.category || 'Expense',
+            vendor: e.vendor || '',
+            amount: e.amount,
+          })),
+        vendorDues: Array.from(dueMap.entries())
+          .map(([vendor, due]) => ({ vendor, due }))
+          .sort((a, b) => b.due - a.due)
+          .slice(0, 10),
+      })
+    );
+    setReportModal(false);
+  };
+
   const fetchAllData = useCallback(async () => {
     setDataLoading(true);
     try {
@@ -843,10 +944,17 @@ export const MessFundScreen: React.FC = () => {
             </p>
           </div>
         </div>
-        <button onClick={fetchAllData} disabled={dataLoading}
-          className="flex items-center gap-1.5 text-[11px] font-bold uppercase border border-slate-300 px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50 rounded">
-          <RefreshCw size={12} className={dataLoading ? 'animate-spin' : ''} /> Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setReportModal(true)}
+            className="flex items-center gap-1.5 text-[11px] font-bold uppercase bg-orange-600 text-white px-3 py-1.5 hover:bg-orange-700 rounded"
+            title="Daily / Monthly Mess Report print karo">
+            <Printer size={12} /> Print Report
+          </button>
+          <button onClick={fetchAllData} disabled={dataLoading}
+            className="flex items-center gap-1.5 text-[11px] font-bold uppercase border border-slate-300 px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50 rounded">
+            <RefreshCw size={12} className={dataLoading ? 'animate-spin' : ''} /> Refresh
+          </button>
+        </div>
       </div>
 
       {/* ALERTS */}
@@ -2125,6 +2233,72 @@ export const MessFundScreen: React.FC = () => {
       {/* BILL PREVIEW MODAL */}
       {previewBill && (
         <BillPreviewModal bill={previewBill} onClose={() => setPreviewBill(null)} />
+      )}
+
+      {/* ── ★ MESS REPORT MODAL (Daily / Monthly) ── */}
+      {reportModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl border-2 border-orange-500 shadow-2xl w-full max-w-sm overflow-hidden">
+            <div className="bg-orange-600 text-white px-4 py-3 flex items-center justify-between">
+              <h3 className="text-xs font-black uppercase flex items-center gap-2">
+                <Printer size={14} /> Mess Report Print
+              </h3>
+              <button onClick={() => setReportModal(false)}><X size={16} /></button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setReportMode('daily')}
+                  className={`px-3 py-2.5 text-xs font-black uppercase rounded border-2 transition-colors ${
+                    reportMode === 'daily'
+                      ? 'border-orange-500 bg-orange-50 text-orange-800'
+                      : 'border-slate-200 text-slate-500 hover:border-slate-300'
+                  }`}
+                >
+                  📅 Daily (Aaj)
+                </button>
+                <button
+                  onClick={() => setReportMode('monthly')}
+                  className={`px-3 py-2.5 text-xs font-black uppercase rounded border-2 transition-colors ${
+                    reportMode === 'monthly'
+                      ? 'border-orange-500 bg-orange-50 text-orange-800'
+                      : 'border-slate-200 text-slate-500 hover:border-slate-300'
+                  }`}
+                >
+                  🗓️ Monthly
+                </button>
+              </div>
+              {reportMode === 'monthly' && (
+                <div>
+                  <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Month Select Karo</label>
+                  <input
+                    type="month"
+                    value={reportMonth}
+                    onChange={e => setReportMonth(e.target.value)}
+                    className="w-full border border-slate-300 px-3 py-2 text-xs font-bold focus:outline-none focus:border-orange-500 rounded"
+                  />
+                </div>
+              )}
+              <p className="text-[10px] text-slate-400 font-bold">
+                Report mein period ki collections, category-wise kharcha, top expenses, vendor dues aur balance (words mein) aayega — sarkari format, CC signature block ke saath.
+              </p>
+            </div>
+            <div className="px-4 py-3 border-t border-slate-200 bg-slate-50 flex justify-end gap-2">
+              <button
+                onClick={() => setReportModal(false)}
+                className="px-4 py-2 text-[10px] font-black uppercase border border-slate-300 rounded hover:bg-white"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={printMessReport}
+                className="bg-orange-600 text-white px-4 py-2 text-[10px] font-black uppercase hover:bg-orange-700 rounded flex items-center gap-1.5"
+              >
+                <Printer size={12} /> Print Report
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
