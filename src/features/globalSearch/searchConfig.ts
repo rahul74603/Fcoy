@@ -343,6 +343,16 @@ export const SEARCH_ENTITIES: SearchEntityConfig[] = [
     badge: (d) => s(d.status) || null,
     route: () => '/funds',
   },
+  {
+    id: 'stock_returns', collection: 'stock_returns', label: 'Kit Returns', icon: Repeat,
+    roles: [ROLE.QM],
+    maxFetch: 500,
+    searchFields: ['traineeName', 'chestNo', 'itemName', 'condition', 'reason', 'returnedBy'],
+    title: (d) => join(s(d.traineeName), `— ${s(d.itemName)} ×${s(d.quantity ?? 1)}`),
+    subtitle: (d) => join(d.assignedSize && d.assignedSize !== 'N/A' ? `Size: ${d.assignedSize}` : '', s(d.reason), fmt(d.returnDateISO), d.returnedBy && `By: ${d.returnedBy}`),
+    badge: (d) => (s(d.condition) || 'Good').toUpperCase(),
+    route: () => '/issue-kit',
+  },
 
   fundCollection('mess_fund_collections', 'mess_fund_collections', 'Mess Collections', '/mess-fund'),
   fundExpense('mess_fund_expenses', 'mess_fund_expenses', 'Mess Expenses', '/mess-fund'),

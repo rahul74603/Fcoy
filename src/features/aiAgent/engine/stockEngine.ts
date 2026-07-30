@@ -24,6 +24,7 @@ export interface SizeStock {
   size: string;
   purchased: number;
   issued: number;
+  returned: number;
   balance: number;
 }
 
@@ -33,6 +34,8 @@ export interface StockItem {
   kind: 'training' | 'asset';
   purchased: number;
   issued: number;
+  returned: number;   // ★ Good-condition returns (stock wapas)
+  damaged: number;    // ★ Damage write-off (stock mein nahi aata)
   balance: number;
   totalValue: number;
   unitPrice: number;
@@ -102,12 +105,13 @@ const safeGet = async (name: string): Promise<any[]> => {
 export async function buildStockReport(): Promise<StockReport> {
   if (cache && Date.now() - cache.at < 60_000) return cache.report;
 
-  const [customItems, trainingExp, assetExp, issues, assetCustom] = await Promise.all([
+  const [customItems, trainingExp, assetExp, issues, assetCustom, returns] = await Promise.all([
     safeGet('training_custom_items'),
     safeGet('training_fund_expenses'),
     safeGet('company_assets_expenses'),
     safeGet('issue_records'),
     safeGet('company_assets_custom_items'),
+    safeGet('stock_returns'), // ★ Return Register
   ]);
 
   // ── Catalog: fixed + custom ──
@@ -172,6 +176,24 @@ export async function buildStockReport(): Promise<StockReport> {
     });
   });
 
+  // ── ★ RETURNS (Good = stock wapas, Damaged = write-off) ──
+  const returned = new Map<string, { good: number; damaged: number; sizes: Record<string, number> }>();
+  returns.forEach(d => {
+    const itemName = String(d.itemName ?? '').trim();
+    if (!itemName) return;
+    const key = norm(itemName);
+    if (!returned.has(key)) returned.set(key, { good: 0, damaged: 0, sizes: {} });
+    const a = returned.get(key)!;
+    const q = num(d.quantity ?? 1);
+    if ((d.condition ?? 'Good') === 'Good') {
+      a.good += q;
+      const sz = String(d.assignedSize ?? '').trim();
+      if (sz && sz !== 'N/A') a.sizes[sz] = (a.sizes[sz] ?? 0) + q;
+    } else {
+      a.damaged += q;
+    }
+  });
+
   // ── MERGE ──
   const allKeys = new Set<string>([...catalog.keys(), ...purchased.keys()]);
   const items: StockItem[] = [];
@@ -180,6 +202,7 @@ export async function buildStockReport(): Promise<StockReport> {
     const meta = catalog.get(key);
     const p    = purchased.get(key);
     const i    = issued.get(key);
+    const r    = returned.get(key);
 
     const itemName = p?.itemName ?? meta?.name ?? key;
     const category = meta?.category ?? (p?.kind === 'asset' ? 'Asset' : 'Other');
@@ -189,21 +212,28 @@ export async function buildStockReport(): Promise<StockReport> {
     const sizeKeys = new Set<string>([
       ...Object.keys(p?.sizes ?? {}),
       ...Object.keys(i?.sizes ?? {}),
+      ...Object.keys(r?.sizes ?? {}),
     ]);
+    // ★ Balance = purchased − issued + good-returns
     const sizes: SizeStock[] = Array.from(sizeKeys).map(sz => {
       const pq = p?.sizes[sz] ?? 0;
       const iq = i?.sizes[sz] ?? 0;
-      return { size: sz, purchased: pq, issued: iq, balance: pq - iq };
+      const rq = r?.sizes[sz] ?? 0;
+      return { size: sz, purchased: pq, issued: iq, returned: rq, balance: pq - iq + rq };
     }).sort((a, b) => a.size.localeCompare(b.size));
 
     const pq = p?.qty ?? 0;
     const iq = i?.qty ?? 0;
+    const rq = r?.good ?? 0;
+    const dq = r?.damaged ?? 0;
 
     items.push({
       itemName, category, kind,
       purchased: pq,
       issued: iq,
-      balance: pq - iq,
+      returned: rq,
+      damaged: dq,
+      balance: pq - iq + rq,
       totalValue: p?.value ?? 0,
       unitPrice: p?.unitPrice ?? 0,
       sizes,
@@ -225,11 +255,12 @@ export async function buildStockReport(): Promise<StockReport> {
       `training_fund_expenses (${trainingExp.length})`,
       `company_assets_expenses (${assetExp.length})`,
       `issue_records (${issues.length})`,
+      `stock_returns (${returns.length})`,
       `training_custom_items (${customItems.length})`,
     ],
     note:
-      'Stock COMPUTED hai: purchases − issues. `item_master` collection khaali hai ' +
-      '(legacy) — usse mat padho.',
+      'Stock COMPUTED hai: purchases − issues + good-returns (damaged returns write-off hain). ' +
+      '`item_master` collection khaali hai (legacy) — usse mat padho.',
   };
 
   cache = { at: Date.now(), report };

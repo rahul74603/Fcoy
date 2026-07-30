@@ -10,8 +10,8 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
-// ✅ HOOK IMPORT
 import { useTraineeSearch } from '../../hooks/useTraineeSearch';
+import { useAuth } from '../../contexts/AuthContext';
 
 // ─────────────────────────────────────────────
 // CONSTANTS
@@ -72,6 +72,11 @@ interface DocStatusItem {
   status: 'Pending' | 'Uploaded' | 'Verified' | 'Rejected';
   isRequired: boolean;
   files: FileInfo[];
+  // ★ AUDIT FIELDS — verification workflow metadata
+  verifiedBy?: string;
+  verifiedAt?: string;
+  actionedBy?: string;      // reject karne wala
+  rejectionReason?: string;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -107,6 +112,13 @@ export const DocumentVerificationScreen = () => {
   const [currentUploadKey, setCurrentUploadKey]         = useState('');
   const [currentUploadMultiple, setCurrentUploadMultiple] = useState(false);
 
+  // ★ Verification workflow ke liye logged-in user (verifiedBy / actionedBy)
+  const { user } = useAuth();
+  // ★ Rejection reason modal
+  const [rejectModal, setRejectModal] = useState<{ open: boolean; docKey: string; docLabel: string; reason: string }>({
+    open: false, docKey: '', docLabel: '', reason: '',
+  });
+
   // ── Doc Status Initialize ──
   const initDocStatus = (existingDocs: any) => {
     const status: Record<string, DocStatusItem> = {};
@@ -123,6 +135,11 @@ export const DocumentVerificationScreen = () => {
             fileType:   existing.fileType   || 'image/jpeg',
             uploadedAt: existing.uploadedAt || '',
           }] : []),
+          // ★ audit metadata bhi wapas load karo
+          verifiedBy:      existing.verifiedBy      || undefined,
+          verifiedAt:      existing.verifiedAt      || undefined,
+          actionedBy:      existing.actionedBy      || undefined,
+          rejectionReason: existing.rejectionReason || undefined,
         };
       } else {
         status[d.key] = { status: 'Pending', isRequired: d.defaultRequired, files: [] };
@@ -211,15 +228,11 @@ export const DocumentVerificationScreen = () => {
           uploadedAt: new Date().toISOString(),
         });
       } catch {
-        // Offline fallback — local URL
-        const localUrl = URL.createObjectURL(file);
-        newFiles.push({
-          fileName:   file.name,
-          fileUrl:    localUrl,
-          fileSize:   `${fileSizeKB}KB`,
-          fileType:   file.type,
-          uploadedAt: new Date().toISOString(),
-        });
+        // ★ FIX: Pehle yahan local blob URL save ho jaata tha jo refresh ke baad
+        // toot jaata tha (zombie link). Ab fail file ko list mein nahi daalte.
+        setMessage(
+          `ERROR: "${file.name}" Firebase Storage pe upload nahi ho payi. Internet check karke retry karein — file ko document me add nahi kiya gaya.`
+        );
       }
     }
 
@@ -261,10 +274,57 @@ export const DocumentVerificationScreen = () => {
   };
 
   const handleStatusChange = (docKey: string, newStatus: string) => {
+    // ★ Reject pe reason ZAROORI hai — modal kholo
+    if (newStatus === 'Rejected') {
+      const docItem = REQUIRED_DOCUMENTS.find(d => d.key === docKey);
+      setRejectModal({
+        open: true,
+        docKey,
+        docLabel: docItem?.label ?? docKey,
+        reason: docStatus[docKey]?.rejectionReason ?? '',
+      });
+      return;
+    }
+
     setDocStatus(prev => ({
       ...prev,
-      [docKey]: { ...prev[docKey], status: newStatus as DocStatusItem['status'] },
+      [docKey]: {
+        ...prev[docKey],
+        status: newStatus as DocStatusItem['status'],
+        // ★ Verified pe audit trail capture karo
+        ...(newStatus === 'Verified'
+          ? {
+              verifiedBy: user?.name ?? user?.email ?? 'Unknown',
+              verifiedAt: new Date().toISOString(),
+              rejectionReason: undefined,
+              actionedBy: undefined,
+            }
+          : {}),
+        // status wapas Pending/Uploaded pe le jaao to audit fields hata do
+        ...(newStatus === 'Pending' || newStatus === 'Uploaded'
+          ? { verifiedBy: undefined, verifiedAt: undefined, actionedBy: undefined, rejectionReason: undefined }
+          : {}),
+      },
     }));
+  };
+
+  // ★ Rejection confirm — reason ke saath
+  const handleRejectConfirm = () => {
+    const reason = rejectModal.reason.trim();
+    if (!reason) return;
+    setDocStatus(prev => ({
+      ...prev,
+      [rejectModal.docKey]: {
+        ...prev[rejectModal.docKey],
+        status: 'Rejected',
+        actionedBy: user?.name ?? user?.email ?? 'Unknown',
+        verifiedAt: new Date().toISOString(),
+        rejectionReason: reason,
+        verifiedBy: undefined,
+      },
+    }));
+    setRejectModal({ open: false, docKey: '', docLabel: '', reason: '' });
+    setMessage('Document "Rejected" mark ho gaya — reason save kiya gaya. Save Changes dabana na bhoolein!');
   };
 
   const toggleRequired = (docKey: string) => {
@@ -777,6 +837,28 @@ export const DocumentVerificationScreen = () => {
                               )}
                             </div>
                           )}
+
+                          {/* ★ VERIFICATION AUDIT TRAIL — kisne, kab, kyun */}
+                          {isVerified && status.verifiedBy && (
+                            <div className="mt-1 text-[9px] font-bold text-green-700 flex items-center gap-1">
+                              <CheckCircle2 size={9} />
+                              Verified by {status.verifiedBy}
+                              {status.verifiedAt && ` · ${new Date(status.verifiedAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`}
+                            </div>
+                          )}
+                          {isRejected && (
+                            <div className="mt-1 bg-red-50 border border-red-200 rounded px-2 py-1">
+                              <p className="text-[9px] font-black text-red-700 uppercase">
+                                ✗ Rejected{status.actionedBy ? ` by ${status.actionedBy}` : ''}
+                                {status.verifiedAt ? ` · ${new Date(status.verifiedAt).toLocaleDateString('en-IN')}` : ''}
+                              </p>
+                              {status.rejectionReason && (
+                                <p className="text-[10px] text-red-600 font-semibold mt-0.5">
+                                  Reason: {status.rejectionReason}
+                                </p>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -927,6 +1009,58 @@ export const DocumentVerificationScreen = () => {
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ═══ ★ REJECTION REASON MODAL ═══ */}
+      {rejectModal.open && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+          <div className="bg-white w-full max-w-md border-2 border-red-400 shadow-2xl">
+            <div className="bg-red-600 text-white px-4 py-3 flex items-center justify-between">
+              <h3 className="text-xs font-black uppercase flex items-center gap-2">
+                <XCircle size={14} /> Reject Document
+              </h3>
+              <button onClick={() => setRejectModal({ open: false, docKey: '', docLabel: '', reason: '' })}>
+                <X size={16} />
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <p className="text-[11px] font-bold text-slate-600">
+                Document: <span className="text-red-700">{rejectModal.docLabel}</span>
+              </p>
+              <div>
+                <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">
+                  Rejection Reason *
+                </label>
+                <textarea
+                  value={rejectModal.reason}
+                  onChange={e => setRejectModal(p => ({ ...p, reason: e.target.value }))}
+                  rows={3}
+                  placeholder="e.g. Photo blurry hai, dobara upload karo / Document expired hai..."
+                  className="w-full border border-slate-300 px-3 py-2 text-xs focus:outline-none focus:border-red-500 resize-none"
+                  autoFocus
+                />
+                <p className="text-[9px] text-slate-400 mt-1">
+                  Ye reason trainee/clerk ko dikhega — clear likhein taaki sahi document dobara aaye.
+                </p>
+              </div>
+            </div>
+            <div className="px-4 py-3 border-t border-slate-200 bg-slate-50 flex justify-end gap-2">
+              <button
+                onClick={() => setRejectModal({ open: false, docKey: '', docLabel: '', reason: '' })}
+                className="px-4 py-2 text-[10px] font-black uppercase border border-slate-300 hover:bg-white"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRejectConfirm}
+                disabled={!rejectModal.reason.trim()}
+                className="bg-red-600 text-white px-4 py-2 text-[10px] font-black uppercase hover:bg-red-700 disabled:opacity-50 flex items-center gap-1"
+              >
+                <XCircle size={11} /> Reject with Reason
+              </button>
+            </div>
           </div>
         </div>
       )}

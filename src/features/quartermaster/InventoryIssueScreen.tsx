@@ -6,7 +6,7 @@ import {
   CheckCircle2, XCircle, Plus, Trash2, ShoppingCart,
   Package, AlertTriangle, Clock, Ruler,
   Loader2, RefreshCw, Info, X,
-  UserCheck, Award, Target, ChevronDown, ChevronUp
+  UserCheck, Award, Target, ChevronDown, ChevronUp, RotateCcw
 } from 'lucide-react';
 import {
   collection, query, where, getDocs,
@@ -61,6 +61,10 @@ interface TrainingItemStock {
   sizeStock: Record<string, number>;
   totalPurchased: number;
   totalIssued: number;
+  // ★ Return Register (stock_returns collection)
+  totalReturned: number;   // Good condition — stock mein wapas aaya
+  totalDamaged: number;    // Damaged — damage register (stock mein nahi aata)
+  returnedSizeStock: Record<string, number>;
   isCustom?: boolean;
 }
 
@@ -668,6 +672,16 @@ export const InventoryIssueScreen: React.FC = () => {
   // ✅ Previously Issued Items expand state
   const [expandedIssuedItem, setExpandedIssuedItem] = useState<string | null>(null);
 
+  // ── ★ KIT RETURN REGISTER STATE ──
+  const [returnModal, setReturnModal] = useState<{
+    open: boolean;
+    item: MergedIssuedItem | null;
+    qty: number;
+    condition: 'Good' | 'Damaged';
+    reason: string;
+  }>({ open: false, item: null, qty: 1, condition: 'Good', reason: '' });
+  const [returnLoading, setReturnLoading] = useState(false);
+
   const dropdownRef   = useRef<HTMLDivElement>(null);
   const itemSearchRef = useRef<HTMLInputElement>(null);
 
@@ -803,8 +817,8 @@ export const InventoryIssueScreen: React.FC = () => {
       });
 
       const issueSnap = await getDocs(collection(db, 'issue_records'));
-      const issuedMap = new Map<string, { 
-        totalQty: number; sizeStock: Record<string, number> 
+      const issuedMap = new Map<string, {
+        totalQty: number; sizeStock: Record<string, number>
       }>();
 
       issueSnap.forEach(d => {
@@ -821,7 +835,7 @@ export const InventoryIssueScreen: React.FC = () => {
           const itemName = String(item.itemName ?? '').trim();
           if (!itemName) return;
           const key = normalizeName(itemName);
-          if (!issuedMap.has(key)) 
+          if (!issuedMap.has(key))
             issuedMap.set(key, { totalQty: 0, sizeStock: {} });
 
           const qty  = Number(item.quantity     ?? 1);
@@ -834,6 +848,36 @@ export const InventoryIssueScreen: React.FC = () => {
         });
       });
 
+      // ── ★ RETURN REGISTER — stock_returns (Good = stock wapas, Damaged = write-off) ──
+      const returnedMap = new Map<string, {
+        goodQty: number; damagedQty: number; goodSizeStock: Record<string, number>;
+      }>();
+      try {
+        const returnSnap = await getDocs(collection(db, 'stock_returns'));
+        returnSnap.forEach(d => {
+          const data = d.data() as any;
+          const itemName = String(data.itemName ?? '').trim();
+          if (!itemName) return;
+          const key = normalizeName(itemName);
+          if (!returnedMap.has(key))
+            returnedMap.set(key, { goodQty: 0, damagedQty: 0, goodSizeStock: {} });
+
+          const qty  = Number(data.quantity ?? 1);
+          const size = String(data.assignedSize ?? '').trim();
+          const agg  = returnedMap.get(key)!;
+          if ((data.condition ?? 'Good') === 'Good') {
+            agg.goodQty += qty;
+            if (size && size !== 'N/A') {
+              agg.goodSizeStock[size] = (agg.goodSizeStock[size] || 0) + qty;
+            }
+          } else {
+            agg.damagedQty += qty; // Damage register — stock mein wapas nahi aata
+          }
+        });
+      } catch (retErr) {
+        console.warn('stock_returns fetch skipped:', retErr);
+      }
+
       const allKeys = new Set<string>([
         ...Array.from(catalogMap.keys()),
         ...Array.from(purchasedMap.keys()),
@@ -845,36 +889,44 @@ export const InventoryIssueScreen: React.FC = () => {
         const meta      = catalogMap.get(key);
         const purchased = purchasedMap.get(key);
         const issued    = issuedMap.get(key);
+        const returned  = returnedMap.get(key);
 
         const itemName = purchased?.itemName ?? meta?.name ?? key;
         const category = meta?.category ?? 'Other';
         if (isAssetLike(category, itemName)) return;
 
-        const sizeRequired   = Boolean(meta?.hasSizes) || 
+        const sizeRequired   = Boolean(meta?.hasSizes) ||
                                Object.keys(purchased?.sizeStock ?? {}).length > 0;
         const sizeOptions    = meta?.sizeOptions ?? [];
         const purchSizeStock = purchased?.sizeStock ?? {};
         const issuSizeStock  = issued?.sizeStock   ?? {};
+        const retSizeStock   = returned?.goodSizeStock ?? {};
 
         const mergedSizeKeys = new Set<string>([
           ...sizeOptions,
           ...Object.keys(purchSizeStock),
           ...Object.keys(issuSizeStock),
+          ...Object.keys(retSizeStock),
         ]);
 
+        // ★ Stock = Purchased − Issued + Returned(Good)
         const liveSizeStock: Record<string, number> = {};
         mergedSizeKeys.forEach(size => {
           liveSizeStock[size] = Math.max(
             0,
-            Number(purchSizeStock[size] || 0) - Number(issuSizeStock[size] || 0)
+            Number(purchSizeStock[size] || 0)
+              - Number(issuSizeStock[size] || 0)
+              + Number(retSizeStock[size]  || 0)
           );
         });
 
         const totalPurchased = Number(purchased?.totalQty || 0);
         const totalIssued    = Number(issued?.totalQty    || 0);
+        const totalReturned  = Number(returned?.goodQty   || 0);
+        const totalDamaged   = Number(returned?.damagedQty || 0);
         const currentStock   = sizeRequired && Object.keys(liveSizeStock).length > 0
           ? Object.values(liveSizeStock).reduce((s, q) => s + q, 0)
-          : Math.max(0, totalPurchased - totalIssued);
+          : Math.max(0, totalPurchased - totalIssued + totalReturned);
 
         const fallbackUnitPrice = totalPurchased > 0
           ? Number((Number(purchased?.totalValue || 0) / totalPurchased).toFixed(2))
@@ -893,6 +945,9 @@ export const InventoryIssueScreen: React.FC = () => {
           sizeStock:     liveSizeStock,
           totalPurchased,
           totalIssued,
+          totalReturned,
+          totalDamaged,
+          returnedSizeStock: retSizeStock,
           isCustom:      meta?.isCustom,
         });
       });
@@ -1156,6 +1211,87 @@ export const InventoryIssueScreen: React.FC = () => {
     }
   };
 
+  // ── ★ KIT RETURN — stock wapas (Good) ya damage write-off ──
+  const openReturnModal = (item: MergedIssuedItem) => {
+    setErrorMsg(''); setSuccessMsg('');
+    setReturnModal({ open: true, item, qty: 1, condition: 'Good', reason: '' });
+  };
+
+  const handleReturn = async () => {
+    if (!trainee || !returnModal.item) return;
+    const { item, qty, condition, reason } = returnModal;
+
+    // Validations
+    if (qty < 1 || qty > item.totalQuantity) {
+      setErrorMsg(`Return quantity 1 se ${item.totalQuantity} ke beech honi chahiye.`);
+      return;
+    }
+    if (condition === 'Damaged' && !reason.trim()) {
+      setErrorMsg('Damaged return ke liye reason likhna zaroori hai.');
+      return;
+    }
+
+    setReturnLoading(true);
+    setErrorMsg(''); setSuccessMsg('');
+
+    try {
+      const returnDateISO = new Date().toISOString();
+
+      // ── STEP 1: Return register entry (immutable ledger) ──
+      await addDoc(collection(db, 'stock_returns'), {
+        traineeId:    trainee.id,
+        traineeName:  trainee.name,
+        chestNo:      trainee.chestNo,
+        platoon:      trainee.platoon ?? '',
+        itemName:     item.itemName,
+        assignedSize: item.assignedSize ?? 'N/A',
+        quantity:     qty,
+        condition,                       // Good = stock wapas | Damaged = write-off
+        reason:       reason.trim(),
+        returnedBy:   issuedBy,
+        returnDateISO,
+        createdAt:    serverTimestamp(),
+      });
+
+      // ── STEP 2: Trainee ke issuedKitItems se qty kam karo ──
+      let remaining = qty;
+      const updatedKit: IssuedKitItem[] = [];
+      for (const kitItem of trainee.issuedKitItems ?? []) {
+        const isMatch =
+          normalizeName(kitItem.itemName) === normalizeName(item.itemName) &&
+          normalizeName(kitItem.assignedSize || 'N/A') === normalizeName(item.assignedSize || 'N/A');
+
+        if (isMatch && remaining > 0) {
+          const kitQty = Number(kitItem.quantity ?? 1);
+          const take   = Math.min(kitQty, remaining);
+          const left   = kitQty - take;
+          remaining   -= take;
+          if (left > 0) updatedKit.push({ ...kitItem, quantity: left });
+          // left === 0 → entry hata do (poora return ho gaya)
+        } else {
+          updatedKit.push(kitItem);
+        }
+      }
+
+      await updateDoc(doc(db, 'trainees', trainee.id), {
+        issuedKitItems: updatedKit,
+      });
+
+      setSuccessMsg(
+        `✓ ${qty} × ${item.itemName}${item.assignedSize !== 'N/A' ? ` (Size ${item.assignedSize})` : ''} return ho gaya — ` +
+        (condition === 'Good' ? 'stock mein wapas add ho gaya.' : 'Damage Register mein likha gaya (stock mein nahi aaya).')
+      );
+      setReturnModal({ open: false, item: null, qty: 1, condition: 'Good', reason: '' });
+      await fetchItems(); // stock recompute (returns ab count honge)
+
+    } catch (err) {
+      console.error('Return error:', err);
+      setErrorMsg('Return save karne mein error. Please retry karein.');
+    } finally {
+      setReturnLoading(false);
+    }
+  };
+
   // ── COMPUTED ──
   const issuedCount = trainee
     ? kitStatusItems.filter(item =>
@@ -1207,7 +1343,7 @@ export const InventoryIssueScreen: React.FC = () => {
       </div>
 
       {/* STOCK SUMMARY */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
         {[
           { 
             label: 'Total Items', 
@@ -1239,12 +1375,19 @@ export const InventoryIssueScreen: React.FC = () => {
             border: 'border-l-amber-500', 
             sub: 'Need attention' 
           },
-          { 
-            label: 'Total Units', 
-            value: totalAvailableUnits, 
-            color: 'text-purple-700', 
-            border: 'border-l-purple-500', 
-            sub: 'Live available' 
+          {
+            label: 'Total Units',
+            value: totalAvailableUnits,
+            color: 'text-purple-700',
+            border: 'border-l-purple-500',
+            sub: 'Live available'
+          },
+          {
+            label: 'Returns',
+            value: allItems.reduce((s, i) => s + (i.totalReturned || 0), 0),
+            color: 'text-teal-700',
+            border: 'border-l-teal-500',
+            sub: `Damaged: ${allItems.reduce((s, i) => s + (i.totalDamaged || 0), 0)} (write-off)`
           },
         ].map(({ label, value, color, border, sub }) => (
           <div key={label} 
@@ -1736,11 +1879,12 @@ export const InventoryIssueScreen: React.FC = () => {
 
               {/* Column Headers */}
               <div className="grid grid-cols-12 gap-2 px-4 py-1.5 bg-slate-100 border-b border-slate-200 text-[9px] font-black uppercase text-slate-500">
-                <div className="col-span-4">Item</div>
+                <div className="col-span-3">Item</div>
                 <div className="col-span-2 text-center">Size</div>
                 <div className="col-span-2 text-center">Total Qty</div>
                 <div className="col-span-2 text-center">Times</div>
                 <div className="col-span-2">Last Issue</div>
+                <div className="col-span-1 text-center">Return</div>
               </div>
 
               <div className="divide-y divide-slate-50 max-h-64 overflow-y-auto">
@@ -1763,13 +1907,13 @@ export const InventoryIssueScreen: React.FC = () => {
                           }
                         }}
                       >
-                        <div className="col-span-4 flex items-center gap-1.5">
+                        <div className="col-span-3 flex items-center gap-1.5">
                           <CheckCircle2 size={11} className="text-green-500 flex-shrink-0" />
                           <span className="text-xs font-bold text-slate-700 truncate">
                             {item.itemName}
                           </span>
                           {item.issueCount > 1 && (
-                            isExpanded 
+                            isExpanded
                               ? <ChevronUp size={11} className="text-slate-400 flex-shrink-0" />
                               : <ChevronDown size={11} className="text-slate-400 flex-shrink-0" />
                           )}
@@ -1803,6 +1947,15 @@ export const InventoryIssueScreen: React.FC = () => {
                           <span className="text-[10px] text-slate-400">
                             {formatDate(item.lastIssueDate)}
                           </span>
+                        </div>
+                        <div className="col-span-1 text-center">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); openReturnModal(item); }}
+                            className="text-[9px] font-black uppercase bg-amber-50 text-amber-700 border border-amber-300 rounded px-1.5 py-1 hover:bg-amber-100 flex items-center gap-0.5 mx-auto"
+                            title="Item return karo — Good condition stock mein wapas jayega"
+                          >
+                            <RotateCcw size={9} /> Return
+                          </button>
                         </div>
                       </div>
 
@@ -1854,6 +2007,103 @@ export const InventoryIssueScreen: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* ═══ ★ KIT RETURN MODAL ═══ */}
+      {returnModal.open && returnModal.item && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white w-full max-w-md border-2 border-amber-400 shadow-2xl rounded-md overflow-hidden">
+            <div className="bg-amber-500 text-white px-4 py-3 flex items-center justify-between">
+              <h3 className="text-xs font-black uppercase flex items-center gap-2">
+                <RotateCcw size={14} /> Kit Return — {trainee?.name} {trainee?.chestNo ? `(#${trainee.chestNo})` : ''}
+              </h3>
+              <button onClick={() => setReturnModal({ open: false, item: null, qty: 1, condition: 'Good', reason: '' })}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3">
+              <div className="bg-slate-50 border border-slate-200 rounded px-3 py-2">
+                <p className="text-xs font-black text-slate-800">{returnModal.item.itemName}</p>
+                <p className="text-[10px] text-slate-500 font-bold">
+                  {returnModal.item.assignedSize !== 'N/A' ? `Size: ${returnModal.item.assignedSize} · ` : ''}
+                  Trainee ke paas: {returnModal.item.totalQuantity}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Return Qty *</label>
+                  <input
+                    type="number" min={1} max={returnModal.item.totalQuantity}
+                    value={returnModal.qty}
+                    onChange={e => setReturnModal(p => ({
+                      ...p,
+                      qty: Math.max(1, Math.min(p.item?.totalQuantity ?? 1, Number(e.target.value) || 1)),
+                    }))}
+                    className="w-full border border-slate-300 px-2 py-1.5 text-xs font-bold focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Condition *</label>
+                  <select
+                    value={returnModal.condition}
+                    onChange={e => setReturnModal(p => ({ ...p, condition: e.target.value as 'Good' | 'Damaged' }))}
+                    className="w-full border border-slate-300 px-2 py-1.5 text-xs font-bold bg-white focus:outline-none focus:border-amber-500"
+                  >
+                    <option value="Good">Good — stock wapas</option>
+                    <option value="Damaged">Damaged — write-off</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">
+                  Reason {returnModal.condition === 'Damaged' ? '*' : '(Optional)'}
+                </label>
+                <textarea
+                  value={returnModal.reason}
+                  onChange={e => setReturnModal(p => ({ ...p, reason: e.target.value }))}
+                  rows={2}
+                  placeholder={returnModal.condition === 'Damaged'
+                    ? 'e.g. Sole toot gaya / Silai khul gayi — damage kaise hua?'
+                    : 'e.g. Size exchange ke liye wapas'}
+                  className="w-full border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:border-amber-500 resize-none"
+                />
+              </div>
+
+              {returnModal.condition === 'Damaged' && (
+                <p className="text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1.5">
+                  ⚠ Damaged item stock mein wapas NAHI jayega — Damage Register mein likha jayega.
+                  Paise ki recovery ke liye alag se Recovery create karni hogi (auto nahi hoti).
+                </p>
+              )}
+              {returnModal.condition === 'Good' && (
+                <p className="text-[10px] font-bold text-teal-700 bg-teal-50 border border-teal-200 rounded px-2 py-1.5">
+                  ✓ Good condition — item turant stock mein wapas add ho jayega (size-wise).
+                </p>
+              )}
+            </div>
+
+            <div className="px-4 py-3 border-t border-slate-200 bg-slate-50 flex justify-end gap-2">
+              <button
+                onClick={() => setReturnModal({ open: false, item: null, qty: 1, condition: 'Good', reason: '' })}
+                className="px-4 py-2 text-[10px] font-black uppercase border border-slate-300 hover:bg-white"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleReturn}
+                disabled={returnLoading || (returnModal.condition === 'Damaged' && !returnModal.reason.trim())}
+                className="bg-amber-600 text-white px-4 py-2 text-[10px] font-black uppercase hover:bg-amber-700 disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {returnLoading
+                  ? <><Loader2 size={11} className="animate-spin" /> Processing...</>
+                  : <><RotateCcw size={11} /> Confirm Return</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
