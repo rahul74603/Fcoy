@@ -360,6 +360,7 @@ export const TraineeProfileScreen = () => {
     platoon: 'Platoon 1', section: 'Section A', height: '', weight: '', chest: '',
     medStat: 'SHAPE-1', medRemarks: '', chestNo: '', remarks: '-',
     shoeSize: '', dressSize: '', weaponNo: '',
+    bankName: '', accountNo: '', ifscCode: '', npciStatus: 'Unknown',
   });
 
   const [formData, setFormData] = useState(getEmptyForm);
@@ -512,6 +513,23 @@ export const TraineeProfileScreen = () => {
         setFormMessage('ERROR: Yeh Registration Number pehle se exist karta hai!');
         setFormLoading(false); return;
       }
+      // ★ UNIQUE CHEST NO VALIDATION — same batch mein duplicate chest allow nahi
+      const chestInput = (formData.chestNo || '').trim();
+      if (chestInput) {
+        const cq  = query(
+          collection(db, 'trainees'),
+          where('batchId', '==', formData.batchId),
+          where('chestNo', '==', chestInput)
+        );
+        const cqs = await getDocs(cq);
+        if (!cqs.empty) {
+          const dup = cqs.docs[0].data() as any;
+          setFormMessage(
+            `ERROR: Chest No "${chestInput}" is batch mein pehle se ${dup.name || 'kisi aur trainee'} ko issued hai! Duplicate chest no allowed nahi.`
+          );
+          setFormLoading(false); return;
+        }
+      }
       await addDoc(collection(db, 'trainees'), {
         ...formData,
         kitIssued: false, issuedItems: [], issuedKitItems: [],
@@ -545,6 +563,25 @@ export const TraineeProfileScreen = () => {
     if (!targetId) { setEditMessage('ERROR: Trainee ID missing!'); return; }
     setEditLoading(true); setEditMessage('');
     try {
+      // ★ EDIT-TIME CHEST NO DUPLICATE CHECK — same batch, apne aap ko chhod kar
+      const newChest = (editData?.chestNo || '').trim();
+      if (newChest) {
+        const cq  = query(
+          collection(db, 'trainees'),
+          where('batchId', '==', editData?.batchId || ''),
+          where('chestNo', '==', newChest)
+        );
+        const cqs = await getDocs(cq);
+        const clash = cqs.docs.find(d => d.id !== targetId);
+        if (clash) {
+          const dup = clash.data() as any;
+          setEditMessage(
+            `ERROR: Chest No "${newChest}" is batch mein ${dup.name || 'dusre trainee'} ke paas already hai!`
+          );
+          setEditLoading(false); return;
+        }
+      }
+
       const { id: _removed, ...dataToSave } = editData;
       if (dataToSave.dob) dataToSave.age = calculateAge(dataToSave.dob);
 
@@ -933,6 +970,16 @@ export const TraineeProfileScreen = () => {
                       <div><label className={labelCls}>Chest (cm) *</label><input required type="text" value={formData.chest} onChange={e => setFormData(p => ({ ...p, chest: e.target.value }))} className={inputCls} placeholder="77/82" /></div>
                     </div>
                   </div>
+                  {/* ★ Bank & NPCI Details (Optional) — salary/DBT ke liye */}
+                  <div className="mt-4 pt-3 border-t border-slate-200">
+                    <h4 className="text-xs font-black text-military-900 uppercase flex items-center gap-2 mb-3"><FileText size={13} /> Bank &amp; NPCI Details (Optional)</h4>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div><label className={labelCls}>Bank Name</label><input type="text" value={formData.bankName} onChange={e => setFormData(p => ({ ...p, bankName: e.target.value }))} className={inputCls} placeholder="SBI / PNB / BOI..." /></div>
+                      <div><label className={labelCls}>Account No</label><input type="text" maxLength={18} value={formData.accountNo} onChange={e => setFormData(p => ({ ...p, accountNo: e.target.value.replace(/\D/g,'') }))} className={`${inputCls} font-mono`} /></div>
+                      <div><label className={labelCls}>IFSC Code</label><input type="text" maxLength={11} value={formData.ifscCode} onChange={e => setFormData(p => ({ ...p, ifscCode: e.target.value.toUpperCase() }))} className={`${inputCls} font-mono`} placeholder="SBIN0001234" /></div>
+                      <div><label className={labelCls}>NPCI Status</label><select value={formData.npciStatus} onChange={e => setFormData(p => ({ ...p, npciStatus: e.target.value }))} className={selectCls}>{['Unknown','Mapped','Not Mapped'].map(n => <option key={n}>{n}</option>)}</select></div>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -1096,6 +1143,8 @@ export const TraineeProfileScreen = () => {
                   if (!searchedTrainee.batchNumber) issues.push('Batch not assigned!');
                   if (!searchedTrainee.chestNo)     issues.push('Chest Number not issued');
                   if (!searchedTrainee.photoURL)    issues.push('Profile photo not uploaded');
+                  if (!searchedTrainee.accountNo)   issues.push('Bank details pending');
+                  else if (searchedTrainee.npciStatus === 'Not Mapped') issues.push('NPCI not mapped — DBT issue');
                   if (ks.pending.length > 0)        issues.push(`${ks.pending.length} Kit items pending`);
                   if (ds.pending.length > 0)        issues.push(`${ds.pending.length} Documents pending`);
                   return issues.length > 0 ? (
@@ -1573,6 +1622,15 @@ export const TraineeProfileScreen = () => {
                 <div><label className={labelCls}>Shoe Size</label><input type="text" value={editData?.shoeSize || ''} onChange={e => setEditData(p => ({ ...p, shoeSize: e.target.value }))} className={inputCls} /></div>
                 <div><label className={labelCls}>Dress Size</label><input type="text" value={editData?.dressSize || ''} onChange={e => setEditData(p => ({ ...p, dressSize: e.target.value }))} className={inputCls} /></div>
                 <div><label className={labelCls}>Weapon No</label><input type="text" value={editData?.weaponNo || ''} onChange={e => setEditData(p => ({ ...p, weaponNo: e.target.value }))} className={`${inputCls} font-mono`} /></div>
+
+                {/* ★ Bank & NPCI */}
+                <div className="md:col-span-3 pt-1 pb-1 border-b border-slate-200">
+                  <h4 className="text-[10px] font-black text-military-900 uppercase flex items-center gap-1.5"><FileText size={12} /> Bank &amp; NPCI</h4>
+                </div>
+                <div><label className={labelCls}>Bank Name</label><input type="text" value={editData?.bankName || ''} onChange={e => setEditData(p => ({ ...p, bankName: e.target.value }))} className={inputCls} /></div>
+                <div><label className={labelCls}>Account No</label><input type="text" maxLength={18} value={editData?.accountNo || ''} onChange={e => setEditData(p => ({ ...p, accountNo: e.target.value.replace(/\D/g,'') }))} className={`${inputCls} font-mono`} /></div>
+                <div><label className={labelCls}>IFSC Code</label><input type="text" maxLength={11} value={editData?.ifscCode || ''} onChange={e => setEditData(p => ({ ...p, ifscCode: e.target.value.toUpperCase() }))} className={`${inputCls} font-mono`} /></div>
+                <div><label className={labelCls}>NPCI Status</label><select value={editData?.npciStatus || 'Unknown'} onChange={e => setEditData(p => ({ ...p, npciStatus: e.target.value }))} className={selectCls}>{['Unknown','Mapped','Not Mapped'].map(n => <option key={n}>{n}</option>)}</select></div>
 
                 {/* Performance */}
                 <div className="md:col-span-3 pt-1 pb-1 border-b border-slate-200">

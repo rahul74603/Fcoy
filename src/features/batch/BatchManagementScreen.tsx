@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import {
   Layers, Plus, CheckCircle2, AlertTriangle, X, Loader2,
   Calendar, Users, Archive, Shield,
-  Clock, Hash, FileText, Eye, ArrowRight, Star
+  Clock, Hash, FileText, Eye, ArrowRight, Star, Edit3, Save
 } from 'lucide-react';
 import { useBatch, CreateBatchForm } from '../../contexts/BatchContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -13,9 +13,14 @@ import { db } from '../../config/firebase';
 
 export const BatchManagementScreen: React.FC = () => {
   const { user } = useAuth();
-  const { activeBatch, allBatches, loading, createNewBatch } = useBatch();
+  const { activeBatch, allBatches, loading, createNewBatch, updateBatchInfo } = useBatch();
 
   const isCommander = user?.role === 'Company Commander';
+
+  // ── ★ Edit Batch State ──
+  const [editingBatch, setEditingBatch] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ batchName: '', startDate: '', endDate: '', description: '' });
+  const [editLoading, setEditLoading] = useState(false);
 
   // ── Form State ──
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -104,6 +109,45 @@ export const BatchManagementScreen: React.FC = () => {
       setError(`Batch create failed: ${err.message}`);
     } finally {
       setCreateLoading(false);
+    }
+  };
+
+  // ── ★ Handle Edit Batch ──
+  const openEdit = (batch: any) => {
+    setEditingBatch(batch.id);
+    setEditForm({
+      batchName: batch.batchName || '',
+      startDate: batch.startDate || '',
+      endDate: batch.endDate || '',
+      description: batch.description || '',
+    });
+    setError('');
+    setSuccess('');
+  };
+
+  const handleEditSave = async () => {
+    if (!editingBatch) return;
+    if (!isCommander) {
+      setError('Only Company Commander can edit batch details');
+      return;
+    }
+    if (!editForm.batchName.trim()) {
+      setError('Batch Name required hai');
+      return;
+    }
+    setEditLoading(true);
+    setError('');
+    try {
+      await updateBatchInfo(editingBatch, {
+        ...editForm,
+        updatedBy: user?.name ?? user?.email ?? 'Unknown',
+      });
+      setSuccess('✓ Batch details successfully update ho gayi!');
+      setEditingBatch(null);
+    } catch (err: any) {
+      setError(`Batch update failed: ${err.message}`);
+    } finally {
+      setEditLoading(false);
     }
   };
 
@@ -645,9 +689,20 @@ export const BatchManagementScreen: React.FC = () => {
                 </h3>
                 {getStatusBadge(batch.status)}
               </div>
-              <button onClick={() => setSelectedBatch(null)} className="text-slate-400 hover:text-slate-600">
-                <X size={14} />
-              </button>
+              <div className="flex items-center gap-2">
+                {isCommander && (
+                  <button
+                    onClick={() => openEdit(batch)}
+                    className="text-[10px] font-black uppercase flex items-center gap-1 px-2.5 py-1 border border-military-300 text-military-700 rounded hover:bg-military-50"
+                    title="Batch details edit karo"
+                  >
+                    <Edit3 size={11} /> Edit
+                  </button>
+                )}
+                <button onClick={() => setSelectedBatch(null)} className="text-slate-400 hover:text-slate-600">
+                  <X size={14} />
+                </button>
+              </div>
             </div>
             <div className="p-5">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -718,6 +773,86 @@ export const BatchManagementScreen: React.FC = () => {
                   <p className="text-xs text-slate-600">{batch.description}</p>
                 </div>
               )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── ★ EDIT BATCH MODAL ── */}
+      {editingBatch && (() => {
+        const batch = allBatches.find(b => b.id === editingBatch);
+        if (!batch) return null;
+        return (
+          <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+            <div className="bg-white rounded-xl border border-slate-300 shadow-2xl w-full max-w-lg">
+              <div className="px-5 py-3 border-b border-slate-200 flex items-center justify-between bg-military-50">
+                <h3 className="text-xs font-black text-military-900 uppercase flex items-center gap-2">
+                  <Edit3 size={13} /> Edit Batch: {batch.batchNumber}
+                </h3>
+                <button onClick={() => setEditingBatch(null)} className="text-slate-400 hover:text-slate-600">
+                  <X size={14} />
+                </button>
+              </div>
+              <div className="p-5 space-y-4">
+                <p className="text-[10px] text-slate-400 font-bold">
+                  Batch Number "{batch.batchNumber}" identity hai — change nahi hogi. Sirf name, dates aur description edit ho sakte hain.
+                </p>
+                <div>
+                  <label className={labelCls}>Batch Name *</label>
+                  <input
+                    type="text"
+                    value={editForm.batchName}
+                    onChange={e => setEditForm({ ...editForm, batchName: e.target.value })}
+                    className={inputCls}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className={labelCls}><Calendar size={10} className="inline mr-1" />Start Date</label>
+                    <input
+                      type="date"
+                      value={editForm.startDate}
+                      onChange={e => setEditForm({ ...editForm, startDate: e.target.value })}
+                      className={inputCls}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}><Calendar size={10} className="inline mr-1" />Expected End Date</label>
+                    <input
+                      type="date"
+                      value={editForm.endDate}
+                      onChange={e => setEditForm({ ...editForm, endDate: e.target.value })}
+                      className={inputCls}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className={labelCls}>Description / Notes</label>
+                  <textarea
+                    value={editForm.description}
+                    onChange={e => setEditForm({ ...editForm, description: e.target.value })}
+                    className={`${inputCls} resize-none`}
+                    rows={3}
+                  />
+                </div>
+              </div>
+              <div className="px-5 py-3 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
+                <button
+                  onClick={() => setEditingBatch(null)}
+                  className="px-4 py-2 text-xs font-black text-slate-600 border border-slate-300 rounded hover:bg-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleEditSave}
+                  disabled={editLoading || !editForm.batchName.trim()}
+                  className="bg-military-800 text-white px-5 py-2 text-xs font-black uppercase flex items-center gap-2 rounded hover:bg-military-900 disabled:opacity-50"
+                >
+                  {editLoading
+                    ? <><Loader2 size={12} className="animate-spin" /> Saving...</>
+                    : <><Save size={12} /> Save Changes</>}
+                </button>
+              </div>
             </div>
           </div>
         );

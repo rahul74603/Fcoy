@@ -54,6 +54,10 @@ export interface TraineeSearchResult {
   shoeSize?: string;
   dressSize?: string;
   weaponNo?: string;
+  bankName?: string;
+  accountNo?: string;
+  ifscCode?: string;
+  npciStatus?: string;
   kitIssued?: boolean;
   issuedItems?: string[];
   documents?: Record<string, any>;

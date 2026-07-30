@@ -30,7 +30,17 @@ interface BatchContextType {
   error: string;
   createNewBatch: (data: CreateBatchForm) => Promise<void>;
   completeBatch: (batchId: string, userId: string) => Promise<void>;
+  updateBatchInfo: (batchId: string, data: UpdateBatchForm) => Promise<void>; // ★ NEW — Batch editing
   refreshBatches: () => void;
+}
+
+// ★ NEW — editable fields only (batchNumber identity hai, change nahi hoti)
+export interface UpdateBatchForm {
+  batchName?: string;
+  startDate?: string;
+  endDate?: string;
+  description?: string;
+  updatedBy?: string;
 }
 
 export interface CreateBatchForm {
@@ -49,6 +59,7 @@ const BatchContext = createContext<BatchContextType>({
   error: '',
   createNewBatch: async () => {},
   completeBatch: async () => {},
+  updateBatchInfo: async () => {},
   refreshBatches: () => {},
 });
 
@@ -157,6 +168,30 @@ export const BatchProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, []);
 
+  // ── ★ NEW: Edit Batch Info (name/dates/description) ──
+  // batchNumber identity hai — kabhi change nahi hoti.
+  // status bhi yahan change nahi hota (sirf create/complete se).
+  // onSnapshot real-time sync hai → UI apne aap refresh hogi.
+  const updateBatchInfo = useCallback(async (batchId: string, data: UpdateBatchForm) => {
+    try {
+      const patch: Record<string, any> = {
+        updatedAt: new Date().toISOString(),
+      };
+      if (data.updatedBy) patch.updatedBy = data.updatedBy;
+      if (data.batchName !== undefined && data.batchName.trim()) {
+        patch.batchName = data.batchName.trim();
+      }
+      if (data.startDate !== undefined) patch.startDate = data.startDate;
+      if (data.endDate   !== undefined) patch.endDate   = data.endDate;
+      if (data.description !== undefined) patch.description = data.description;
+
+      await updateDoc(doc(db, 'batches', batchId), patch);
+    } catch (err: any) {
+      console.error('Update batch error:', err);
+      throw err;
+    }
+  }, []);
+
   const refreshBatches = useCallback(() => {
     console.log('Batches are real-time synced via onSnapshot');
   }, []);
@@ -169,6 +204,7 @@ export const BatchProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       error,
       createNewBatch,
       completeBatch,
+      updateBatchInfo,
       refreshBatches,
     }}>
       {children}
