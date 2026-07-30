@@ -6,7 +6,7 @@ import {
   CheckCircle2, XCircle, Plus, Trash2, ShoppingCart,
   Package, AlertTriangle, Clock, Ruler,
   Loader2, RefreshCw, Info, X,
-  UserCheck, Award, Target, ChevronDown, ChevronUp, RotateCcw
+  UserCheck, Award, Target, ChevronDown, ChevronUp, RotateCcw, Printer
 } from 'lucide-react';
 import {
   collection, query, where, getDocs,
@@ -15,6 +15,10 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { useAuth } from '../../contexts/AuthContext';
+import { useUnitConfig } from '../../contexts/UnitConfigContext';
+import {
+  printDocument, buildKitSlipHtml, type KitSlipData,
+} from '../shared/printDocuments';
 
 const SHOE_SIZES  = ['5', '6', '7', '8', '9', '10', '11', '12', '13'];
 const SHIRT_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'];
@@ -648,6 +652,7 @@ const KitStatusPanel: React.FC<KitStatusPanelProps> = ({
 // ═══════════════════════════════════════════════════════════
 export const InventoryIssueScreen: React.FC = () => {
   const { user } = useAuth();
+  const { unitConfig } = useUnitConfig(); // ★ slip header ke liye unit/coy naam
   const issuedBy = user?.email ?? 'Quarter Master';
 
   const [searchQuery,   setSearchQuery]   = useState('');
@@ -681,6 +686,9 @@ export const InventoryIssueScreen: React.FC = () => {
     reason: string;
   }>({ open: false, item: null, qty: 1, condition: 'Good', reason: '' });
   const [returnLoading, setReturnLoading] = useState(false);
+
+  // ── ★ ISSUE / RETURN SLIP (printable) ──
+  const [slipData, setSlipData] = useState<KitSlipData | null>(null);
 
   const dropdownRef   = useRef<HTMLDivElement>(null);
   const itemSearchRef = useRef<HTMLInputElement>(null);
@@ -1199,6 +1207,27 @@ export const InventoryIssueScreen: React.FC = () => {
       setSuccessMsg(
         `✓ ${cartItems.length} item(s) ${trainee.name} (${trainee.chestNo}) ko issue ho gaye.`
       );
+
+      // ★ ISSUE SLIP — printable sarkari receipt
+      const slipTs = new Date();
+      setSlipData({
+        kind: 'ISSUE',
+        slipNo: `IS-${slipTs.getFullYear()}${String(slipTs.getMonth() + 1).padStart(2, '0')}${String(slipTs.getDate()).padStart(2, '0')}-${String(slipTs.getHours()).padStart(2, '0')}${String(slipTs.getMinutes()).padStart(2, '0')}${String(slipTs.getSeconds()).padStart(2, '0')}`,
+        dateISO: issueDateISO,
+        unitName: unitConfig.parentUnit || 'STC TEKANPUR',
+        coyName: unitConfig.companyShort || unitConfig.companyName || 'F-COY',
+        traineeName: trainee.name || '',
+        chestNo: trainee.chestNo,
+        platoon: trainee.platoon,
+        batchNumber: (trainee as any).batchNumber,
+        items: cartItems.map(i => ({
+          itemName: i.itemName, assignedSize: i.assignedSize,
+          quantity: i.quantity, unitPrice: i.unitPrice,
+        })),
+        totalValue,
+        actionBy: issuedBy,
+      });
+
       setCartItems([]);
       setItemSearchText('');
       await fetchItems();
@@ -1281,6 +1310,25 @@ export const InventoryIssueScreen: React.FC = () => {
         `✓ ${qty} × ${item.itemName}${item.assignedSize !== 'N/A' ? ` (Size ${item.assignedSize})` : ''} return ho gaya — ` +
         (condition === 'Good' ? 'stock mein wapas add ho gaya.' : 'Damage Register mein likha gaya (stock mein nahi aaya).')
       );
+
+      // ★ RETURN RECEIPT — printable
+      const rSlipTs = new Date();
+      setSlipData({
+        kind: 'RETURN',
+        slipNo: `RT-${rSlipTs.getFullYear()}${String(rSlipTs.getMonth() + 1).padStart(2, '0')}${String(rSlipTs.getDate()).padStart(2, '0')}-${String(rSlipTs.getHours()).padStart(2, '0')}${String(rSlipTs.getMinutes()).padStart(2, '0')}${String(rSlipTs.getSeconds()).padStart(2, '0')}`,
+        dateISO: returnDateISO,
+        unitName: unitConfig.parentUnit || 'STC TEKANPUR',
+        coyName: unitConfig.companyShort || unitConfig.companyName || 'F-COY',
+        traineeName: trainee.name || '',
+        chestNo: trainee.chestNo,
+        platoon: trainee.platoon,
+        batchNumber: (trainee as any).batchNumber,
+        items: [{ itemName: item.itemName, assignedSize: item.assignedSize, quantity: qty }],
+        actionBy: issuedBy,
+        condition,
+        reason: reason.trim(),
+      });
+
       setReturnModal({ open: false, item: null, qty: 1, condition: 'Good', reason: '' });
       await fetchItems(); // stock recompute (returns ab count honge)
 
@@ -2099,6 +2147,63 @@ export const InventoryIssueScreen: React.FC = () => {
                 {returnLoading
                   ? <><Loader2 size={11} className="animate-spin" /> Processing...</>
                   : <><RotateCcw size={11} /> Confirm Return</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ ★ ISSUE / RETURN SLIP MODAL ═══ */}
+      {slipData && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white w-full max-w-lg border-2 border-military-700 shadow-2xl rounded-md overflow-hidden">
+            <div className="bg-military-800 text-white px-4 py-3 flex items-center justify-between">
+              <h3 className="text-xs font-black uppercase flex items-center gap-2">
+                <Printer size={14} />
+                {slipData.kind === 'ISSUE' ? 'Kit Issue Slip Ready' : 'Kit Return Receipt Ready'}
+              </h3>
+              <button onClick={() => setSlipData(null)}>
+                <X size={16} />
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="bg-green-50 border border-green-300 rounded px-3 py-2">
+                <p className="text-xs font-black text-green-800">
+                  ✓ {slipData.kind === 'ISSUE' ? 'Issue complete' : 'Return complete'} — Slip No <span className="font-mono">{slipData.slipNo}</span>
+                </p>
+                <p className="text-[10px] text-green-700 font-bold">
+                  {slipData.traineeName} {slipData.chestNo ? `(#${slipData.chestNo})` : ''} · {slipData.items.length} item(s)
+                </p>
+              </div>
+              <div className="border border-slate-200 rounded divide-y divide-slate-100 max-h-48 overflow-y-auto">
+                {slipData.items.map((it, i) => (
+                  <div key={i} className="px-3 py-1.5 flex items-center justify-between text-xs">
+                    <span className="font-bold text-slate-700">{it.itemName}</span>
+                    <span className="text-slate-500 font-mono text-[10px]">
+                      {it.assignedSize && it.assignedSize !== 'N/A' ? `Sz ${it.assignedSize} · ` : ''}×{it.quantity}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[10px] text-slate-400 font-bold">
+                Sarkari format mein slip print karo — receiver signature ke liye. Print nahi karna to band kar do.
+              </p>
+            </div>
+            <div className="px-4 py-3 border-t border-slate-200 bg-slate-50 flex justify-end gap-2">
+              <button
+                onClick={() => setSlipData(null)}
+                className="px-4 py-2 text-[10px] font-black uppercase border border-slate-300 hover:bg-white"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => printDocument(
+                  slipData.slipNo,
+                  buildKitSlipHtml(slipData)
+                )}
+                className="bg-military-700 text-white px-4 py-2 text-[10px] font-black uppercase hover:bg-military-800 flex items-center gap-1.5"
+              >
+                <Printer size={12} /> Print {slipData.kind === 'ISSUE' ? 'Issue Slip' : 'Return Receipt'}
               </button>
             </div>
           </div>

@@ -5,12 +5,17 @@ import {
   Wallet, RefreshCw,
   AlertTriangle, CheckCircle2, X, Loader2,
   Building2,
-  Eye, Clock,
+  Eye, Clock, Printer,
   ArrowDownToLine, ArrowUpFromLine, ArrowRightLeft
 } from 'lucide-react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { formatCurrency, formatDate, FIXED_MESS_CATEGORIES } from './shared/utils';
+import { useAuth } from '../../contexts/AuthContext';
+import { useUnitConfig } from '../../contexts/UnitConfigContext';
+import {
+  printDocument, buildFundVoucherHtml,
+} from '../shared/printDocuments';
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -343,9 +348,12 @@ const FundDetailModal: React.FC<FundDetailProps> = ({
 // MAIN COMPONENT
 // ═════════════════════════════════════════════
 export const FundsDashboard: React.FC = () => {
+  const { user } = useAuth();               // ★ voucher "Prepared By"
+  const { unitConfig } = useUnitConfig();   // ★ voucher header
   const [funds, setFunds]                   = useState<FundSummary[]>([]);
   const [vendorDues, setVendorDues]         = useState<VendorDueSummary[]>([]);
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
+  const [todayStats, setTodayStats]         = useState({ income: 0, expense: 0 }); // ★ Today cards
   const [loading, setLoading]               = useState(true);
   const [errorMsg, setErrorMsg]             = useState('');
 
@@ -682,6 +690,24 @@ export const FundsDashboard: React.FC = () => {
         (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
       );
       setRecentActivity(activities.slice(0, 20));
+
+      // ── ★ TODAY'S INCOME / EXPENSE ──
+      const nowD = new Date();
+      const todayKey = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, '0')}-${String(nowD.getDate()).padStart(2, '0')}`;
+      const sameDay = (dateStr: string) => {
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return false;
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` === todayKey
+          || String(dateStr).startsWith(todayKey); // 'yyyy-mm-dd' direct match bhi
+      };
+      setTodayStats({
+        income: activities
+          .filter(a => sameDay(a.date) && a.type === 'collection')
+          .reduce((s, a) => s + (a.amount || 0), 0),
+        expense: activities
+          .filter(a => sameDay(a.date) && (a.type === 'expense' || a.type === 'salary' || a.type === 'vendor_payment'))
+          .reduce((s, a) => s + (a.amount || 0), 0),
+      });
     } catch (err) {
       console.error(err);
       setErrorMsg('Data load nahi hua. Refresh karo.');
@@ -693,6 +719,29 @@ export const FundsDashboard: React.FC = () => {
   useEffect(() => { fetchAllData(); }, [fetchAllData]);
 
   // ── Open fund detail modal ──
+  // ── ★ PRINT RECEIPT / VOUCHER — sarkari format, naye window mein ──
+  const printReceipt = (act: RecentActivity) => {
+    const prefix =
+      act.type === 'collection'     ? 'RC' :
+      act.type === 'transfer'       ? 'FT' :
+      act.type === 'salary'         ? 'SV' :
+      act.type === 'vendor_payment' ? 'VP' : 'PV';
+    printDocument(
+      `${prefix}-${act.id.slice(0, 8).toUpperCase()}`,
+      buildFundVoucherHtml({
+        type: act.type,
+        voucherNo: `${prefix}-${act.id.slice(0, 8).toUpperCase()}`,
+        date: act.date,
+        fundLabel: act.fund,
+        label: act.label,
+        amount: act.amount,
+        unitName: unitConfig.parentUnit || 'STC TEKANPUR',
+        coyName: unitConfig.companyShort || unitConfig.companyName || 'F-COY',
+        generatedBy: user?.name ?? user?.email ?? 'Accounts',
+      })
+    );
+  };
+
   const openFundDetail = (e: React.MouseEvent, fund: FundSummary) => {
     // CRITICAL: prevent any parent click handlers
     e.preventDefault();
@@ -760,6 +809,28 @@ export const FundsDashboard: React.FC = () => {
           <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
           Refresh
         </button>
+      </div>
+
+      {/* ── ★ TODAY'S INCOME / EXPENSE MINI-CARDS ── */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-white border border-slate-200 border-l-4 border-l-green-500 rounded-xl p-3 shadow-sm flex items-center gap-3">
+          <div className="w-9 h-9 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+            <ArrowDownToLine size={16} className="text-green-600" />
+          </div>
+          <div>
+            <p className="text-[10px] font-bold text-slate-400 uppercase">Aaj Ki Aamdani (Income)</p>
+            <p className="text-lg font-black text-green-700">{formatCurrency(todayStats.income)}</p>
+          </div>
+        </div>
+        <div className="bg-white border border-slate-200 border-l-4 border-l-red-500 rounded-xl p-3 shadow-sm flex items-center gap-3">
+          <div className="w-9 h-9 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+            <ArrowUpFromLine size={15} className="text-red-500" />
+          </div>
+          <div>
+            <p className="text-[10px] font-bold text-slate-400 uppercase">Aaj Ka Kharcha (Expense)</p>
+            <p className="text-lg font-black text-red-600">{formatCurrency(todayStats.expense)}</p>
+          </div>
+        </div>
       </div>
 
       {/* ── ERROR ── */}
@@ -1114,6 +1185,15 @@ export const FundsDashboard: React.FC = () => {
                         : '−'}
                       {formatCurrency(act.amount)}
                     </span>
+                    {/* ★ Receipt / Voucher print */}
+                    <button
+                      type="button"
+                      onClick={() => printReceipt(act)}
+                      className="flex-shrink-0 p-1.5 text-slate-400 hover:text-military-700 hover:bg-military-50 border border-transparent hover:border-military-300 rounded transition-colors"
+                      title={act.type === 'collection' ? 'Money Receipt print karo' : 'Payment Voucher print karo'}
+                    >
+                      <Printer size={13} />
+                    </button>
                   </div>
                 ))}
               </div>

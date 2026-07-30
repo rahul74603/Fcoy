@@ -1,0 +1,211 @@
+// ═══════════════════════════════════════════════════════════
+// PRINT HELPERS — Government-grade Receipt / Voucher / Slip
+// ───────────────────────────────────────────────────────────
+// SHARED helper — Kit Issue Slip (M7) aur Fund Receipt/Voucher (M8)
+// dono yahi use karte hain. New-window print approach hai isliye
+// kisi bhi existing screen ke CSS pe ZERO impact.
+// ═══════════════════════════════════════════════════════════
+
+/** Number → words (Indian format) — govt receipts ke liye */
+export const numberToWordsINR = (amount: number): string => {
+  const n = Math.round(Math.abs(amount));
+  if (n === 0) return 'Zero';
+  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
+    'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+  const two = (x: number): string =>
+    x < 20 ? ones[x] : `${tens[Math.floor(x / 10)]}${x % 10 ? ' ' + ones[x % 10] : ''}`;
+  const three = (x: number): string =>
+    `${x >= 100 ? ones[Math.floor(x / 100)] + ' Hundred' : ''}${x % 100 ? (x >= 100 ? ' ' : '') + two(x % 100) : ''}`.trim();
+  const parts: string[] = [];
+  const crore = Math.floor(n / 1e7), lakh = Math.floor((n % 1e7) / 1e5),
+        thousand = Math.floor((n % 1e5) / 1e3), rest = n % 1e3;
+  if (crore)    parts.push(`${three(crore)} Crore`);
+  if (lakh)     parts.push(`${two(lakh)} Lakh`);
+  if (thousand) parts.push(`${two(thousand)} Thousand`);
+  if (rest)     parts.push(three(rest));
+  return parts.join(' ');
+};
+
+const BASE_CSS = `
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; color:#111; padding:24px; }
+    .doc { max-width:720px; margin:0 auto; border:2px solid #1a2e14; padding:20px 24px; }
+    .h-row { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #1a2e14; padding-bottom:10px; }
+    .unit { font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:1px; }
+    .doc-type { font-size:16px; font-weight:900; text-transform:uppercase; background:#1a2e14; color:#fff; padding:4px 14px; }
+    .meta { font-size:11px; margin-top:10px; display:grid; grid-template-columns:1fr 1fr; gap:4px 20px; }
+    .meta b { font-weight:800; }
+    table { width:100%; border-collapse:collapse; margin-top:14px; font-size:12px; }
+    th { background:#eef2e9; text-transform:uppercase; font-size:9px; letter-spacing:0.5px; }
+    th, td { border:1px solid #888; padding:6px 8px; text-align:left; }
+    .amt-row { margin-top:12px; font-size:12px; }
+    .words { font-style:italic; font-size:11px; border:1px dashed #888; padding:6px 8px; margin-top:6px; }
+    .sig { display:flex; justify-content:space-between; margin-top:64px; font-size:11px; font-weight:700; }
+    .sig div { border-top:1px solid #111; padding-top:4px; width:30%; text-align:center; }
+    .foot { margin-top:16px; font-size:9px; color:#555; text-align:center; border-top:1px solid #ccc; padding-top:6px; }
+    @media print { body { padding:0; } }
+  </style>
+`;
+
+/** Naye window mein formal document khol ke print dialog laga do */
+export const printDocument = (title: string, bodyHtml: string): void => {
+  const w = window.open('', '_blank', 'width=820,height=700');
+  if (!w) {
+    alert('Popup blocked! Browser mein popup allow karein phir retry karein.');
+    return;
+  }
+  w.document.write(`<html><head><title>${title}</title>${BASE_CSS}</head><body>${bodyHtml}<script>window.onload=function(){window.print();}</script></body></html>`);
+  w.document.close();
+};
+
+const fmtDateTime = (iso: string): string => {
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? iso : d.toLocaleString('en-IN', {
+    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+};
+
+// ─────────────────────────────────────────────
+// M7 — KIT ISSUE / RETURN SLIP
+// ─────────────────────────────────────────────
+export interface KitSlipItem {
+  itemName: string;
+  assignedSize?: string;
+  quantity: number;
+  unitPrice?: number;
+}
+
+export interface KitSlipData {
+  kind: 'ISSUE' | 'RETURN';
+  slipNo: string;
+  dateISO: string;
+  unitName: string;
+  coyName: string;
+  traineeName: string;
+  chestNo?: string;
+  platoon?: string;
+  batchNumber?: string;
+  items: KitSlipItem[];
+  totalValue?: number;
+  actionBy: string;
+  condition?: string;
+  reason?: string;
+}
+
+export const buildKitSlipHtml = (d: KitSlipData): string => {
+  const isIssue = d.kind === 'ISSUE';
+  const rows = d.items.map((it, i) => `
+    <tr>
+      <td style="text-align:center">${i + 1}</td>
+      <td><b>${it.itemName}</b></td>
+      <td style="text-align:center">${it.assignedSize && it.assignedSize !== 'N/A' ? it.assignedSize : '—'}</td>
+      <td style="text-align:center">${it.quantity}</td>
+      ${isIssue ? `<td style="text-align:right">${it.unitPrice ? '₹' + (it.unitPrice * it.quantity).toLocaleString('en-IN') : '—'}</td>` : ''}
+    </tr>`).join('');
+
+  return `
+  <div class="doc">
+    <div class="h-row">
+      <div>
+        <div class="unit">${d.unitName}</div>
+        <div style="font-size:11px;font-weight:700">${d.coyName}</div>
+        <div style="font-size:10px;color:#444">Training Essentials Store</div>
+      </div>
+      <div class="doc-type">${isIssue ? 'KIT ISSUE SLIP' : 'KIT RETURN RECEIPT'}</div>
+    </div>
+    <div class="meta">
+      <div><b>Slip No:</b> ${d.slipNo}</div>
+      <div><b>Date &amp; Time:</b> ${fmtDateTime(d.dateISO)}</div>
+      <div><b>Trainee:</b> ${d.traineeName}</div>
+      <div><b>Chest No:</b> ${d.chestNo || '—'}</div>
+      <div><b>Platoon:</b> ${d.platoon || '—'}</div>
+      <div><b>Batch:</b> ${d.batchNumber || '—'}</div>
+      ${!isIssue ? `<div><b>Condition:</b> ${d.condition || 'Good'}</div>` : ''}
+      ${!isIssue && d.reason ? `<div><b>Reason:</b> ${d.reason}</div>` : ''}
+    </div>
+    <table>
+      <thead><tr>
+        <th style="width:36px">#</th><th>Item</th>
+        <th style="width:70px;text-align:center">Size</th>
+        <th style="width:60px;text-align:center">Qty</th>
+        ${isIssue ? '<th style="width:90px;text-align:right">Value</th>' : ''}
+      </tr></thead>
+      <tbody>${rows}</tbody>
+      ${isIssue && d.totalValue !== undefined ? `
+      <tfoot><tr>
+        <td colspan="${isIssue ? 4 : 3}" style="text-align:right;font-weight:800">TOTAL</td>
+        <td style="text-align:right;font-weight:800">₹${d.totalValue.toLocaleString('en-IN')}</td>
+      </tr></tfoot>` : ''}
+    </table>
+    ${isIssue && d.totalValue ? `<div class="words">Rupees: <b>${numberToWordsINR(d.totalValue)} Only</b></div>` : ''}
+    <div class="sig">
+      <div>Receiver's Signature<br/><span style="font-weight:400;font-size:9px">(Trainee)</span></div>
+      <div>${isIssue ? 'Issued By' : 'Returned By'}<br/><span style="font-weight:400;font-size:9px">${d.actionBy}</span></div>
+      <div>Quarter Master<br/><span style="font-weight:400;font-size:9px">(Store In-charge)</span></div>
+    </div>
+    <div class="foot">Ye ${isIssue ? 'issue slip' : 'return receipt'} computer-generated hai — F Coy ERP · ${fmtDateTime(d.dateISO)}</div>
+  </div>`;
+};
+
+// ─────────────────────────────────────────────
+// M8 — FUND RECEIPT / PAYMENT VOUCHER
+// ─────────────────────────────────────────────
+export interface FundVoucherData {
+  type: 'collection' | 'expense' | 'vendor_payment' | 'salary' | 'transfer';
+  voucherNo: string;
+  date: string;
+  fundLabel: string;
+  label: string;
+  amount: number;
+  unitName: string;
+  coyName: string;
+  generatedBy: string;
+}
+
+export const buildFundVoucherHtml = (d: FundVoucherData): string => {
+  const isReceipt = d.type === 'collection';
+  const title =
+    d.type === 'collection'      ? 'MONEY RECEIPT'          :
+    d.type === 'transfer'        ? 'FUND TRANSFER VOUCHER'  :
+    d.type === 'salary'          ? 'SALARY PAYMENT VOUCHER' :
+    d.type === 'vendor_payment'  ? 'VENDOR PAYMENT VOUCHER' :
+                                   'PAYMENT VOUCHER';
+  return `
+  <div class="doc">
+    <div class="h-row">
+      <div>
+        <div class="unit">${d.unitName}</div>
+        <div style="font-size:11px;font-weight:700">${d.coyName}</div>
+        <div style="font-size:10px;color:#444">Accounts Section</div>
+      </div>
+      <div class="doc-type">${title}</div>
+    </div>
+    <div class="meta">
+      <div><b>Voucher No:</b> ${d.voucherNo}</div>
+      <div><b>Date:</b> ${fmtDateTime(d.date)}</div>
+      <div><b>Fund:</b> ${d.fundLabel}</div>
+      <div><b>Mode:</b> ${isReceipt ? 'RECEIVED' : 'PAID'}</div>
+      <div style="grid-column:1/3"><b>Particulars:</b> ${d.label}</div>
+    </div>
+    <table>
+      <thead><tr><th>Description</th><th style="width:140px;text-align:right">Amount</th></tr></thead>
+      <tbody><tr>
+        <td>${d.label}</td>
+        <td style="text-align:right;font-weight:800">₹${d.amount.toLocaleString('en-IN')}</td>
+      </tr></tbody>
+      <tfoot><tr>
+        <td style="text-align:right;font-weight:800">TOTAL</td>
+        <td style="text-align:right;font-weight:800">₹${d.amount.toLocaleString('en-IN')}</td>
+      </tr></tfoot>
+    </table>
+    <div class="words">Rupees: <b>${numberToWordsINR(d.amount)} Only</b> ${isReceipt ? 'received' : 'paid'}.</div>
+    <div class="sig">
+      <div>${isReceipt ? "Depositor's Signature" : "Receiver's Signature"}</div>
+      <div>Prepared By<br/><span style="font-weight:400;font-size:9px">${d.generatedBy}</span></div>
+      <div>${isReceipt ? 'Cashier / QM' : 'Authorised Signatory'}</div>
+    </div>
+    <div class="foot">Ye computer-generated ${title.toLowerCase()} hai — F Coy ERP</div>
+  </div>`;
+};
