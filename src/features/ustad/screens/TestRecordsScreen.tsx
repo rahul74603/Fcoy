@@ -19,7 +19,7 @@ import { db } from '../../../config/firebase';
 import { useBatch } from '../../../contexts/BatchContext';
 import { useAuth } from '../../../contexts/AuthContext';                 // ★
 import { useUnitConfig } from '../../../contexts/UnitConfigContext';     // ★
-import { buildTestResultHtml, printDocument } from '../../shared/printDocuments'; // ★
+import { buildTestResultHtml, buildTraineeTranscriptHtml, printDocument } from '../../shared/printDocuments'; // ★
 import {
   TestRecord, TestFormData, TestType, TraineeResult, FPTEvent,
   RunningGrade, DEFAULT_TEST_FORM, TEST_TYPE_INFO,
@@ -689,12 +689,129 @@ const TestRecordsScreen: React.FC = () => {
     .slice(0, 5);
 
   // ═══════════════════════════════════════════
+  // ★ M13-R2 — INDIVIDUAL REPORT CARD (cumulative marksheet)
+  // ═══════════════════════════════════════════
+  const [reportCardTraineeId, setReportCardTraineeId] = useState('');
+  const [reportCardSearch, setReportCardSearch] = useState('');
+
+  const handlePrintReportCard = () => {
+    if (!reportCardTraineeId) {
+      alert('Pehle trainee select karein');
+      return;
+    }
+    const trainee = trainees.find((t: any) => t.id === reportCardTraineeId);
+    if (!trainee) return;
+
+    // Is trainee ki saari completed-test entries collect karo
+    const completed = tests
+      .filter(t => t.status === 'completed')
+      .sort((a, b) => (a.testDate?.getTime() ?? 0) - (b.testDate?.getTime() ?? 0));
+
+    const rows: {
+      testName: string; testTypeLabel: string; dateStr: string; venue?: string;
+      weekNumber?: number; obtained: number; maxMarks: number; passingMarks: number;
+      grade?: string; status: 'pass' | 'fail' | 'absent';
+    }[] = [];
+
+    completed.forEach(t => {
+      const r = t.results.find(x => x.traineeId === reportCardTraineeId);
+      if (!r) return;   // is test mein trainee tha hi nahi
+      const maxM = t.testType === 'fpt' && r.events
+        ? r.events.reduce((s, e) => s + e.maxMarks, 0)
+        : t.totalMarks;
+      rows.push({
+        testName: t.testName,
+        testTypeLabel: TEST_TYPE_INFO[t.testType]?.label ?? t.testType,
+        dateStr: t.testDate
+          ? t.testDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+          : '—',
+        venue: t.venue,
+        weekNumber: t.weekNumber,
+        obtained: Number(r.marks || 0),
+        maxMarks: maxM,
+        passingMarks: t.passingMarks,
+        grade: r.grade,
+        status: r.status,
+      });
+    });
+
+    if (rows.length === 0) {
+      alert(`${trainee.name} ka koi completed test record nahi mila`);
+      return;
+    }
+
+    const appeared = rows.filter(r => r.status !== 'absent');
+    const overallAvgPct = appeared.length > 0
+      ? Math.round(appeared.reduce((s, r) => s + (r.maxMarks > 0 ? (r.obtained / r.maxMarks) * 100 : 0), 0) / appeared.length)
+      : 0;
+
+    // Batch-wide avg% DENSE ranking — same avg% = same position
+    const ranking = Object.entries(traineeScoreMap)
+      .filter(([, d]) => d.tests > 0)
+      .map(([id, d]) => ({ id, avgPct: Math.round(d.totalPct / d.tests) }))
+      .sort((a, b) => b.avgPct - a.avgPct);
+    let batchRank = 0;
+    let lastAvg = -1;
+    let lastRank = 0;
+    ranking.forEach((r, i) => {
+      if (r.avgPct !== lastAvg) { lastRank = i + 1; lastAvg = r.avgPct; }
+      if (r.id === reportCardTraineeId) batchRank = lastRank;
+    });
+
+    // Best + weak subjects
+    const best = appeared.length > 0
+      ? appeared.reduce((mx, r) =>
+          (r.maxMarks > 0 && (r.obtained / r.maxMarks) * 100 > (mx.maxMarks > 0 ? (mx.obtained / mx.maxMarks) * 100 : -1)) ? r : mx,
+          appeared[0])
+      : null;
+    const weakLabels = Array.from(new Set(
+      appeared
+        .filter(r => r.maxMarks > 0 && (r.obtained / r.maxMarks) * 100 < 50)
+        .map(r => r.testTypeLabel)
+    ));
+
+    const html = buildTraineeTranscriptHtml({
+      traineeName: trainee.name || '',
+      chestNo: trainee.chestNo || '',
+      regNo: trainee.regNo || '',
+      platoon: trainee.platoon || '',
+      unitName: unitConfig.parentUnit,
+      coyName: unitConfig.companyShort,
+      batchNumber: activeBatch?.batchNumber,
+      rows,
+      overallAvgPct,
+      testsAppeared: appeared.length,
+      testsAbsent: rows.filter(r => r.status === 'absent').length,
+      bestSubject: best ? best.testTypeLabel : undefined,
+      weakSubjects: weakLabels,
+      batchRank: batchRank || undefined,
+      batchSize: ranking.length || undefined,
+      printedBy: user?.displayName ?? user?.email ?? '',
+    });
+    printDocument(`Marksheet — ${trainee.name}`, html);
+  };
+
+  // ═══════════════════════════════════════════
   // ★ M13 — WEAK SUBJECT DETECTION
   //   Sabse kam pass-rate wale subjects (min 1 completed test)
   // ═══════════════════════════════════════════
   const weakSubjects = typeStats
     .filter(s => s.passRate < 50 && s.count > 0)
     .sort((a, b) => a.passRate - b.passRate);
+
+  // ═══════════════════════════════════════════
+  // ★ M13-R2 — UPCOMING EXAMS (scheduled, aaj ya aage)
+  // ═══════════════════════════════════════════
+  const upcomingExams = tests
+    .filter(t => t.status === 'scheduled' || t.status === 'in_progress')
+    .filter(t => {
+      if (!t.testDate) return true;
+      const d = new Date(t.testDate);
+      d.setHours(23, 59, 59, 999);
+      return d >= new Date(new Date().setHours(0, 0, 0, 0));
+    })
+    .sort((a, b) => (a.testDate?.getTime() ?? 0) - (b.testDate?.getTime() ?? 0))
+    .slice(0, 5);
 
   // ═══════════════════════════════════════════
   // ★ M13 — PRINT RESULT SHEET / MERIT LIST
@@ -838,6 +955,42 @@ const TestRecordsScreen: React.FC = () => {
                 {new Set(tests.map(t => t.testType)).size}
               </p>
               <p className="text-[10px] text-slate-500">Active types</p>
+            </div>
+          </div>
+        )}
+
+        {/* ★ M13-R2 — UPCOMING EXAMS STRIP */}
+        {hasBatch && upcomingExams.length > 0 && (
+          <div className="bg-white rounded-xl border border-blue-200 p-4">
+            <h3 className="text-xs font-black text-blue-700 uppercase mb-3 flex items-center gap-2">
+              📅 Upcoming Exams ({upcomingExams.length})
+            </h3>
+            <div className="flex flex-wrap gap-2">
+              {upcomingExams.map(t => {
+                const info = TEST_TYPE_INFO[t.testType];
+                const isToday = t.testDate
+                  && new Date(t.testDate).toDateString() === new Date().toDateString();
+                return (
+                  <div key={t.id} className={`flex items-center gap-2 border-2 rounded-lg px-3 py-2 ${
+                    isToday ? 'bg-green-50 border-green-400' : 'bg-slate-50 border-slate-200'
+                  }`}>
+                    <span className="text-xl">{info?.icon}</span>
+                    <div>
+                      <p className="text-xs font-black text-slate-800">
+                        {t.testName}
+                        {isToday && <span className="ml-1 text-[9px] font-black text-green-700 bg-green-200 px-1.5 py-0.5 rounded">AAJ HAI!</span>}
+                        {t.status === 'in_progress' && <span className="ml-1 text-[9px] font-black text-amber-700 bg-amber-200 px-1.5 py-0.5 rounded">CHAL RAHA</span>}
+                      </p>
+                      <p className="text-[10px] text-slate-500">
+                        {t.testDate
+                          ? t.testDate.toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' })
+                          : 'Date TBD'} · {t.startTime}
+                        {t.venue ? ` · ${t.venue}` : ''}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -1071,6 +1224,53 @@ const TestRecordsScreen: React.FC = () => {
                   </div>
                 </div>
               )}
+
+              {/* ★ M13-R2 — INDIVIDUAL REPORT CARD (per-trainee marksheet print) */}
+              <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border-2 border-indigo-200 rounded-xl p-4">
+                <h4 className="text-xs font-black text-indigo-800 uppercase mb-1 flex items-center gap-2">
+                  🎓 Individual Report Card
+                </h4>
+                <p className="text-[10px] text-indigo-600 mb-3">
+                  Kisi bhi trainee ki poori cumulative marksheet print karein — saare tests, avg%, batch position, strong/weak areas ke saath
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="relative flex-1 min-w-[180px]">
+                    <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      value={reportCardSearch}
+                      onChange={e => setReportCardSearch(e.target.value)}
+                      placeholder="Chest / naam se filter..."
+                      className="w-full pl-7 pr-2 py-2 text-xs border border-indigo-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
+                    />
+                  </div>
+                  <select
+                    value={reportCardTraineeId}
+                    onChange={e => setReportCardTraineeId(e.target.value)}
+                    className="flex-1 min-w-[220px] px-3 py-2 text-xs border border-indigo-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  >
+                    <option value="">-- Trainee Select Karein --</option>
+                    {trainees
+                      .filter((t: any) => {
+                        const q = reportCardSearch.trim().toLowerCase();
+                        return !q || (t.name || '').toLowerCase().includes(q) || String(t.chestNo || '').includes(q);
+                      })
+                      .sort((a: any, b: any) => String(a.chestNo || '').localeCompare(String(b.chestNo || '')))
+                      .map((t: any) => (
+                        <option key={t.id} value={t.id}>
+                          Chest {t.chestNo || '—'} — {t.name} ({t.platoon || '—'})
+                        </option>
+                      ))}
+                  </select>
+                  <button
+                    onClick={handlePrintReportCard}
+                    disabled={!reportCardTraineeId}
+                    className="px-4 py-2 bg-indigo-600 text-white text-xs font-black rounded-lg hover:bg-indigo-700 disabled:opacity-40 flex items-center gap-1.5 uppercase"
+                  >
+                    <Printer size={14} /> Marksheet Print
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}

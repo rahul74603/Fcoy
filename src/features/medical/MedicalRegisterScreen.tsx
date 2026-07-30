@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import {
   HeartPulse, Plus, Trash2,
   AlertCircle, Layers, CheckCircle2, X, Loader2, Activity,
-  Stethoscope, BedDouble, Printer, Search
+  Stethoscope, BedDouble, Printer, Search, Pill, PackagePlus, PackageMinus
 } from 'lucide-react';
 import { collection, addDoc, getDocs, getDoc, updateDoc, deleteDoc, doc, query, where, orderBy, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../config/firebase';
@@ -78,6 +78,29 @@ const daysSince = (dateStr: string): number => {
 };
 
 // ═══════════════════════════════════════════════════════════
+// ★ M14-R2 — MEDICINE STORE (Stock = Receive − Issue, computed)
+//   M6 kit-stock pattern hi reuse: stock kabhi STORE nahi hota,
+//   transactions se compute hota hai → mismatch impossible.
+// ═══════════════════════════════════════════════════════════
+interface MedicineTxn {
+  id?: string;
+  batchId: string;
+  item: string;             // medicine name
+  unit: string;             // Tab/Cap/Bottle/Syrup ml/Inj...
+  kind: 'RECEIVE' | 'ISSUE';
+  qty: number;
+  date: string;
+  expiry?: string;          // optional — receive pe
+  issuedFor?: string;       // optional — patient / purpose
+  remarks?: string;
+  entryBy?: string;
+  entryByName?: string;
+}
+
+const MEDICINE_UNITS = ['Tablet', 'Capsule', 'Bottle', 'Syrup (ml)', 'Injection', 'Ointment', 'Drops', 'Strip', 'Packet', 'Box'];
+const LOW_STOCK_LIMIT = 10;
+
+// ═══════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════
 export const MedicalRegisterScreen = () => {
@@ -103,6 +126,17 @@ export const MedicalRegisterScreen = () => {
 
   // ★ Sick report date (print)
   const [reportDate, setReportDate] = useState(todayDate);
+
+  // ★ MEDICINE STORE state
+  const [showMedStore, setShowMedStore] = useState(false);
+  const [medicineTxns, setMedicineTxns] = useState<MedicineTxn[]>([]);
+  const [medSaving, setMedSaving] = useState(false);
+  const getEmptyMedForm = (kind: 'RECEIVE' | 'ISSUE') => ({
+    item: '', unit: 'Tablet', kind, qty: 1, date: todayDate,
+    expiry: '', issuedFor: '', remarks: '',
+  });
+  const [receiveForm, setReceiveForm] = useState(getEmptyMedForm('RECEIVE'));
+  const [issueForm, setIssueForm] = useState(getEmptyMedForm('ISSUE'));
 
   const getEmptyForm = (): Omit<MedicalRecord, 'id' | 'batchId'> => ({
     traineeId: '', chestNo: '', name: '', platoon: '',
@@ -165,6 +199,16 @@ export const MedicalRegisterScreen = () => {
       });
       mList.sort((a, b) => String(b.date).localeCompare(String(a.date)));
       setRecords(mList);
+
+      // ★ Medicine transactions (batch-scoped; client-side sort — composite index ki zaroorat nahi)
+      const medSnap = await getDocs(query(
+        collection(db, 'medicine_txns'),
+        where('batchId', '==', activeBatch.id)
+      ));
+      const medList: MedicineTxn[] = [];
+      medSnap.forEach(d => medList.push({ id: d.id, ...d.data() } as MedicineTxn));
+      medList.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+      setMedicineTxns(medList);
     } catch (err) {
       console.error(err);
       setMessage('ERROR: Data fetch fail ho gaya.');
@@ -345,6 +389,124 @@ export const MedicalRegisterScreen = () => {
     printDocument(`Daily Sick Parade State — ${reportDate}`, html);
   };
 
+  // ═══════════════════════════════════════════
+  // ★ MEDICINE STOCK — computed (receive − issue per item)
+  // ═══════════════════════════════════════════
+  interface StockRow {
+    key: string; item: string; unit: string;
+    received: number; issued: number; stock: number;
+    nearestExpiry?: string; expired: boolean; expiringSoon: boolean; low: boolean;
+  }
+  const stockMap: Record<string, StockRow> = {};
+  medicineTxns.forEach(t => {
+    const key = t.item.trim().toLowerCase();
+    if (!key) return;
+    if (!stockMap[key]) {
+      stockMap[key] = {
+        key, item: t.item.trim(), unit: t.unit,
+        received: 0, issued: 0, stock: 0,
+        expired: false, expiringSoon: false, low: false,
+      };
+    }
+    const row = stockMap[key];
+    if (t.kind === 'RECEIVE') row.received += Number(t.qty || 0);
+    else row.issued += Number(t.qty || 0);
+    row.stock = row.received - row.issued;
+    row.unit = t.unit || row.unit;
+    if (t.kind === 'RECEIVE' && t.expiry) {
+      if (!row.nearestExpiry || t.expiry < row.nearestExpiry) row.nearestExpiry = t.expiry;
+    }
+  });
+  const todayYmd = todayDate;
+  const soonYmd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const stockRows = Object.values(stockMap)
+    .map(r => ({
+      ...r,
+      expired: !!r.nearestExpiry && r.nearestExpiry < todayYmd,
+      expiringSoon: !!r.nearestExpiry && r.nearestExpiry >= todayYmd && r.nearestExpiry <= soonYmd,
+      low: r.stock < LOW_STOCK_LIMIT,
+    }))
+    .sort((a, b) => a.item.localeCompare(b.item));
+  const knownItems = stockRows.map(r => r.item);
+  const lowStockCount = stockRows.filter(r => r.low).length;
+  const expiredCount = stockRows.filter(r => r.expired).length;
+
+  // ★ RECEIVE — store mein naya stock
+  const handleMedicineReceive = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeBatch) return;
+    if (!receiveForm.item.trim() || receiveForm.qty <= 0) {
+      setMessage('ERROR: Medicine name aur sahi quantity bharna zaroori hai!');
+      return;
+    }
+    setMedSaving(true);
+    try {
+      await addDoc(collection(db, 'medicine_txns'), {
+        batchId: activeBatch.id,
+        item: receiveForm.item.trim(),
+        unit: receiveForm.unit,
+        kind: 'RECEIVE',
+        qty: Number(receiveForm.qty),
+        date: receiveForm.date,
+        expiry: receiveForm.expiry || '',
+        issuedFor: '',
+        remarks: receiveForm.remarks,
+        entryBy: user?.uid ?? '',
+        entryByName: user?.displayName ?? user?.email ?? '',
+        createdAt: serverTimestamp(),
+      });
+      setMessage(`SUCCESS: ${receiveForm.item} ki ${receiveForm.qty} ${receiveForm.unit} stock mein receive ho gayi!`);
+      setReceiveForm(getEmptyMedForm('RECEIVE'));
+      fetchData();
+    } catch (err: any) {
+      setMessage(`ERROR: ${err.message}`);
+    } finally {
+      setMedSaving(false);
+      setTimeout(() => setMessage(''), 3000);
+    }
+  };
+
+  // ★ ISSUE — patient/MI use ke liye nikaali gayi dawa (stock guard ke saath)
+  const handleMedicineIssue = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeBatch) return;
+    if (!issueForm.item.trim() || issueForm.qty <= 0) {
+      setMessage('ERROR: Medicine select karke sahi quantity bharein!');
+      return;
+    }
+    const row = stockMap[issueForm.item.trim().toLowerCase()];
+    const available = row?.stock ?? 0;
+    if (issueForm.qty > available) {
+      setMessage(`ERROR: Stock mein sirf ${available} ${row?.unit ?? ''} hai — ${issueForm.qty} issue nahi ho sakta!`);
+      return;
+    }
+    setMedSaving(true);
+    try {
+      await addDoc(collection(db, 'medicine_txns'), {
+        batchId: activeBatch.id,
+        item: issueForm.item.trim(),
+        unit: row?.unit ?? issueForm.unit,
+        kind: 'ISSUE',
+        qty: Number(issueForm.qty),
+        date: issueForm.date,
+        expiry: '',
+        issuedFor: issueForm.issuedFor.trim(),   // optional patient/purpose
+        remarks: issueForm.remarks,
+        entryBy: user?.uid ?? '',
+        entryByName: user?.displayName ?? user?.email ?? '',
+        createdAt: serverTimestamp(),
+      });
+      setMessage(`SUCCESS: ${issueForm.item} × ${issueForm.qty} issue ho gaya (balance: ${available - issueForm.qty})`);
+      setIssueForm(getEmptyMedForm('ISSUE'));
+      fetchData();
+    } catch (err: any) {
+      setMessage(`ERROR: ${err.message}`);
+    } finally {
+      setMedSaving(false);
+      setTimeout(() => setMessage(''), 3000);
+    }
+  };
+
   const inputCls = "w-full text-xs px-2 py-1.5 border border-slate-300 focus:outline-none focus:border-military-700 bg-white";
   const labelCls = "text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1";
 
@@ -403,6 +565,218 @@ export const MedicalRegisterScreen = () => {
             </div>
             <Stethoscope size={28} className="text-military-100" />
           </div>
+        </div>
+      )}
+
+      {/* ★ M14-R2 — MEDICINE STORE PANEL */}
+      {hasBatch && (
+        <div className="bg-white border border-slate-300 shadow-flat">
+          <div
+            className="px-4 py-3 bg-gradient-to-r from-emerald-800 to-teal-800 flex items-center justify-between cursor-pointer"
+            onClick={() => setShowMedStore(!showMedStore)}
+          >
+            <h3 className="text-xs font-black text-white uppercase flex items-center gap-2">
+              <Pill size={14} /> Medicine Store (Stock Register)
+              <span className="text-[9px] font-bold text-emerald-200 normal-case">
+                — Receive − Issue = Stock (auto-computed)
+              </span>
+            </h3>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold text-emerald-100 bg-white/10 px-2 py-0.5">
+                {stockRows.length} items
+              </span>
+              {lowStockCount > 0 && (
+                <span className="text-[10px] font-black text-amber-200 bg-amber-600/60 px-2 py-0.5 animate-pulse">
+                  ⚠ {lowStockCount} LOW STOCK
+                </span>
+              )}
+              {expiredCount > 0 && (
+                <span className="text-[10px] font-black text-red-100 bg-red-600/70 px-2 py-0.5 animate-pulse">
+                  ⛔ {expiredCount} EXPIRED
+                </span>
+              )}
+              <span className="text-white text-xs font-bold">{showMedStore ? '▲' : '▼'}</span>
+            </div>
+          </div>
+
+          {showMedStore && (
+            <div className="p-4 space-y-4">
+              {/* STOCK TABLE */}
+              {stockRows.length === 0 ? (
+                <p className="text-xs text-slate-400 italic text-center py-4">
+                  Abhi koi medicine entry nahi — neeche RECEIVE form se stock add karein.
+                </p>
+              ) : (
+                <div className="overflow-x-auto border border-slate-200">
+                  <table className="w-full text-xs">
+                    <thead className="bg-emerald-50">
+                      <tr>
+                        {['Medicine', 'Unit', 'Received', 'Issued', 'Stock', 'Nearest Expiry', 'Status'].map(h => (
+                          <th key={h} className="px-3 py-2 text-left text-[10px] font-bold text-emerald-800 uppercase">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {stockRows.map(r => (
+                        <tr key={r.key} className={r.stock <= 0 ? 'bg-red-50/40' : r.low ? 'bg-amber-50/40' : ''}>
+                          <td className="px-3 py-2 font-bold text-slate-800">{r.item}</td>
+                          <td className="px-3 py-2 text-slate-500">{r.unit}</td>
+                          <td className="px-3 py-2 text-green-700 font-bold">+{r.received}</td>
+                          <td className="px-3 py-2 text-red-600 font-bold">−{r.issued}</td>
+                          <td className={`px-3 py-2 font-black ${r.stock <= 0 ? 'text-red-600' : r.low ? 'text-amber-600' : 'text-emerald-700'}`}>
+                            {r.stock}
+                          </td>
+                          <td className="px-3 py-2 font-mono text-[10px] text-slate-500">{r.nearestExpiry || '—'}</td>
+                          <td className="px-3 py-2">
+                            {r.expired ? (
+                              <span className="text-[9px] font-black bg-red-600 text-white px-2 py-0.5">⛔ EXPIRED</span>
+                            ) : r.stock <= 0 ? (
+                              <span className="text-[9px] font-black bg-red-100 text-red-700 px-2 py-0.5">OUT OF STOCK</span>
+                            ) : (
+                              <span className="flex flex-wrap gap-1">
+                                {r.low && <span className="text-[9px] font-black bg-amber-100 text-amber-700 px-2 py-0.5">⚠ LOW</span>}
+                                {r.expiringSoon && <span className="text-[9px] font-black bg-orange-100 text-orange-700 px-2 py-0.5">⏳ 30D EXPIRY</span>}
+                                {!r.low && !r.expiringSoon && <span className="text-[9px] font-bold bg-green-100 text-green-700 px-2 py-0.5">✓ OK</span>}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* RECEIVE + ISSUE FORMS */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* RECEIVE */}
+                <form onSubmit={handleMedicineReceive} className="bg-emerald-50 border border-emerald-200 p-3 space-y-2">
+                  <p className="text-[11px] font-black text-emerald-800 uppercase flex items-center gap-1">
+                    <PackagePlus size={13} /> Receive (Stock In)
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className={labelCls}>Medicine Name *</label>
+                      <input required list="med-items" type="text" value={receiveForm.item}
+                        onChange={e => setReceiveForm({ ...receiveForm, item: e.target.value })}
+                        placeholder="e.g. Paracetamol 500mg" className={inputCls} />
+                      <datalist id="med-items">
+                        {knownItems.map(i => <option key={i} value={i} />)}
+                      </datalist>
+                    </div>
+                    <div>
+                      <label className={labelCls}>Unit</label>
+                      <select value={receiveForm.unit} onChange={e => setReceiveForm({ ...receiveForm, unit: e.target.value })} className={inputCls}>
+                        {MEDICINE_UNITS.map(u => <option key={u}>{u}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className={labelCls}>Quantity *</label>
+                      <input required type="number" min={1} value={receiveForm.qty}
+                        onChange={e => setReceiveForm({ ...receiveForm, qty: Number(e.target.value) })} className={inputCls} />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Date</label>
+                      <input type="date" value={receiveForm.date}
+                        onChange={e => setReceiveForm({ ...receiveForm, date: e.target.value })} className={inputCls} />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Expiry (optional)</label>
+                      <input type="date" value={receiveForm.expiry}
+                        onChange={e => setReceiveForm({ ...receiveForm, expiry: e.target.value })} className={inputCls} />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Remarks</label>
+                      <input type="text" value={receiveForm.remarks}
+                        onChange={e => setReceiveForm({ ...receiveForm, remarks: e.target.value })}
+                        placeholder="Supplier / batch no..." className={inputCls} />
+                    </div>
+                  </div>
+                  <button type="submit" disabled={medSaving}
+                    className="w-full bg-emerald-700 text-white py-1.5 text-[11px] font-black uppercase hover:bg-emerald-800 disabled:opacity-50">
+                    {medSaving ? 'Saving...' : '+ Receive Stock'}
+                  </button>
+                </form>
+
+                {/* ISSUE */}
+                <form onSubmit={handleMedicineIssue} className="bg-red-50 border border-red-200 p-3 space-y-2">
+                  <p className="text-[11px] font-black text-red-800 uppercase flex items-center gap-1">
+                    <PackageMinus size={13} /> Issue (Patient / MI Use)
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className={labelCls}>Medicine *</label>
+                      <select required value={issueForm.item}
+                        onChange={e => setIssueForm({ ...issueForm, item: e.target.value })} className={inputCls}>
+                        <option value="">-- Select (stock mein jo hai) --</option>
+                        {stockRows.filter(r => r.stock > 0).map(r => (
+                          <option key={r.key} value={r.item}>{r.item} (stock: {r.stock})</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className={labelCls}>Quantity *</label>
+                      <input required type="number" min={1}
+                        max={stockMap[issueForm.item.trim().toLowerCase()]?.stock ?? 9999}
+                        value={issueForm.qty}
+                        onChange={e => setIssueForm({ ...issueForm, qty: Number(e.target.value) })} className={inputCls} />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Date</label>
+                      <input type="date" value={issueForm.date}
+                        onChange={e => setIssueForm({ ...issueForm, date: e.target.value })} className={inputCls} />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Issued For (optional)</label>
+                      <select value={issueForm.issuedFor}
+                        onChange={e => setIssueForm({ ...issueForm, issuedFor: e.target.value })} className={inputCls}>
+                        <option value="">-- Patient select (optional) --</option>
+                        {trainees.map((t: any) => (
+                          <option key={t.id} value={`${t.chestNo || ''} ${t.name || ''}`}>
+                            {t.chestNo} — {t.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="col-span-2">
+                      <label className={labelCls}>Remarks</label>
+                      <input type="text" value={issueForm.remarks}
+                        onChange={e => setIssueForm({ ...issueForm, remarks: e.target.value })}
+                        placeholder="Prescription ref / purpose..." className={inputCls} />
+                    </div>
+                  </div>
+                  <button type="submit" disabled={medSaving || stockRows.filter(r => r.stock > 0).length === 0}
+                    className="w-full bg-red-700 text-white py-1.5 text-[11px] font-black uppercase hover:bg-red-800 disabled:opacity-50">
+                    {medSaving ? 'Saving...' : '− Issue Medicine'}
+                  </button>
+                </form>
+              </div>
+
+              {/* RECENT TRANSACTIONS */}
+              {medicineTxns.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-black text-slate-500 uppercase mb-1">Recent Transactions</p>
+                  <div className="max-h-40 overflow-y-auto border border-slate-200 divide-y divide-slate-100">
+                    {medicineTxns.slice(0, 8).map(t => (
+                      <div key={t.id} className="px-3 py-1.5 flex items-center justify-between text-[11px]">
+                        <span>
+                          <span className={`font-black ${t.kind === 'RECEIVE' ? 'text-green-700' : 'text-red-600'}`}>
+                            {t.kind === 'RECEIVE' ? '+' : '−'}{t.qty} {t.unit}
+                          </span>
+                          <span className="font-bold text-slate-800 ml-2">{t.item}</span>
+                          {t.issuedFor && <span className="text-slate-500 ml-1">→ {t.issuedFor}</span>}
+                          {t.remarks && <span className="text-slate-400 ml-1">({t.remarks})</span>}
+                        </span>
+                        <span className="text-slate-400 text-[10px]">
+                          {t.date}{t.entryByName ? ` · ${t.entryByName}` : ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

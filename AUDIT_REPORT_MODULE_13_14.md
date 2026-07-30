@@ -1,8 +1,9 @@
 # 🛡️ F COY ERP — MASTER AUDIT REPORT (Module 13 & 14)
 
-**Audit Date:** 31 July 2026
+**Audit Date:** 30-31 July 2026
 **Golden Rule Applied:** Har feature evidence-checked (code padh kar). Recommendation: **✅ KEEP / 🔄 UPDATE / ♻️ REFACTOR / ➕ ADD NEW**
-**★ = Is audit ke saath hi implement ho gaya** — TSC clean ✅ Build pass ✅
+**★ = Audit ke saath hi implement ho gaya** — TSC clean ✅ Build pass ✅
+**★★ = ROUND 2 (31 July) mein implement** — remaining High items close kiye; duplicate prompt ke response mein same modules ke gaps poore kiye (koi dobara kaam nahi)
 
 ---
 
@@ -23,7 +24,7 @@
 | 1 | Examination Dashboard | ✅ | **✅ KEEP** | 5 summary cards: Total Tests / Passed / Failed / Completed / Test Types + pass-rate |
 | 2 | Assessment Dashboard | 🟡 | **🔄 UPDATE** | Analytics panel toggle hai (week stats, top failers, running grades, type-wise); dedicated assessment page nahi |
 | 3 | Exam Calendar | 🟡 | **🔄 UPDATE (Medium)** | `testDate` + scheduled status hai, lekin calendar-grid view nahi. List = date-sorted |
-| 4 | Upcoming Exams | 🟡 | **🔄 UPDATE** | `status: 'scheduled'` tests list mein dikhte hain, dedicated "upcoming" section nahi |
+| 4 | Upcoming Exams | 🟡→✅ ★★ | **➕ ADDED (R2)** | ★★ "📅 Upcoming Exams" strip — scheduled tests (aaj/aage ki date), "AAJ HAI!" + "CHAL RAHA" badges |
 
 ### Examination
 | # | Feature | Status | Recommendation | Evidence |
@@ -70,7 +71,7 @@
 ### Reports
 | # | Feature | Status | Recommendation | Evidence |
 |---|---------|--------|----------------|----------|
-| 31 | Marksheet | ❌→🟡 ★ | **➕ ADDED ★ (consolidated)** | ★ Result sheet sab trainees ka consolidated marksheet hai; per-trainee individual marksheet backlog |
+| 31 | Marksheet | ❌→✅ ★★ | **➕ ADDED (R2 — full)** | ★★ **Per-trainee cumulative marksheet**: analytics mein "🎓 Individual Report Card" — chest/naam search + dropdown → saare tests (ascending date), overall avg%, **batch position (dense rank)**, strong/weak areas, verdict line, signatures (`buildTraineeTranscriptHtml`) |
 | 32 | Result Sheet | ❌→✅ ★ | **➕ ADDED ★** | `buildTestResultHtml` — govt format (unit/coy header, max/pass marks, examiner, pass-rate, signatures) |
 | 33 | Merit List | ❌→✅ ★ | **➕ ADDED ★** | Same document — dense-rank table medals ke saath |
 | 34 | Failed Candidates | ❌→✅ ★ | **➕ ADDED ★** | Report ke andar dedicated "⚠ FAILED CANDIDATES — improvement required" section + absent section |
@@ -224,10 +225,10 @@
 ### Medicine Management
 | # | Feature | Status | Recommendation | Evidence |
 |---|---------|--------|----------------|----------|
-| 18 | Medicine Stock | ❌ | **➕ ADD NEW (High)** | Koi medicine inventory nahi |
-| 19 | Medicine Issue | ❌ | **➕ ADD NEW (High)** | Issue register nahi |
-| 20 | Prescription | ❌ | **➕ ADD NEW (Medium)** | remarks text mein plausible; dedicated nahi |
-| 21 | Treatment History | 🟡 | **🔄 UPDATE** | Records + remarks = treatment trail; medicine-level nahi |
+| 18 | Medicine Stock | ❌→✅ ★★ | **➕ ADDED (R2)** | ★★ **Medicine Store panel** — `medicine_txns` collection; Stock = Receive − Issue (computed, M6 pattern); per-item Received/Issued/Stock/nearest-expiry table |
+| 19 | Medicine Issue | ❌→✅ ★★ | **➕ ADDED (R2)** | ★★ Issue form — stock guard (**available se zyada issue BLOCKED**), optional patient (trainee dropdown), purpose remarks; recent transactions list |
+| 20 | Prescription | ❌→🟡 ★★ | **🔄 PARTIAL (R2)** | ★★ Issue remarks = prescription ref capture; dedicated Rx document backlog |
+| 21 | Treatment History | 🟡→✅ ★★ | **🔄 UPDATED (R2)** | ★★ Medicine-level trail bhi (issue txns per patient in "Issued For") + medical records history |
 
 ### Medical Leave
 | # | Feature | Status | Recommendation | Evidence |
@@ -356,8 +357,15 @@
 
 | Module | Completion % | Existing Features | Update Required | New Features Required | Production Ready |
 |---|---|---|---|---|---|
-| 13. Examination & Assessment | **72%** | 24 | 15 (5 ★ done) | 9 (4 ★ done) | 🟡 Final assessment + hazri sync ke baad |
-| 14. Medical Management | **64%** | 18 | 12 (5 ★ done) | 15 (5 ★ done) | ❌ Medicine stock + certificates ke bina nahi |
+| 13. Examination & Assessment | **78%** (↑ R2) | 27 | 12 (7 ★ done) | 6 (6 ★★ done) | 🟡 Final assessment + hazri sync ke baad |
+| 14. Medical Management | **74%** (↑ R2) | 23 | 9 (7 ★ done) | 10 (8 ★★ done) | 🟡 Certificates + approval ke baad (medicine store ★★ ho gaya) |
+
+### Revised Scores (after Round 2)
+| Metric | M13 | M14 |
+|---|---|---|
+| Overall | 80 (↑6) | 72 (↑6) |
+| Completion | 78% | 74% |
+| Government ERP | 82 (↑6) — merit + marksheet dono printable | 74 (↑6) — medicine register + sick state printable |
 
 ## PRIORITY TABLE
 | Bucket | Items |
@@ -430,3 +438,19 @@
 | ★10 | **Day-counter** — active case "Day N" badge (chronic case instantly dikhe) | 14 | ➕ Add New | `MedicalRegisterScreen.tsx` |
 
 > **Golden rule verify:** koi feature remove/replace nahi. Purane tests bina rank ke the — wo automatically merit sheet + rank pa gaye (computed on read). Purane medical records bina createdBy ke — gracefully display hota hai. Migration: **zero**. TSC clean ✅ Vite build pass ✅
+
+---
+
+# ★★ ROUND 2 UPDATE (31 July 2026)
+
+Duplicate M13-14 prompt ke response mein same kaam dobara NAHI kiya — audit ke **remaining High backlog items** close kiye:
+
+| # | Feature | Module | Type | Files |
+|---|---------|--------|------|-------|
+| ★★1 | **Per-Trainee Cumulative Marksheet** — "🎓 Individual Report Card": chest/naam search + dropdown → ascending-date saare tests, avg%, dense-rank **batch position**, strong area, weak areas, assessment verdict, signatures | 13 | ➕ Add New | `printDocuments.ts` (+`buildTraineeTranscriptHtml`), `TestRecordsScreen.tsx` |
+| ★★2 | **📅 Upcoming Exams strip** — scheduled tests sorted, "AAJ HAI!" / "CHAL RAHA" badges, dashboard-level visibility | 13 | ➕ Add New | `TestRecordsScreen.tsx` |
+| ★★3 | **💊 Medicine Store (Stock Register)** — `medicine_txns` collection; **Stock = Receive − Issue (computed)**; stock table (received/issued/stock/nearest expiry); **LOW <10 flag, 30-day expiry warning, EXPIRED block**; header badges | 14 | ➕ Add New | `MedicalRegisterScreen.tsx` |
+| ★★4 | **Medicine Issue with Stock Guard** — available se zyada issue BLOCKED; optional patient (trainee dropdown); balance message post-issue; entryBy audit stamps | 14 | ➕ Add New | `MedicalRegisterScreen.tsx` |
+| ★★5 | **Receive Form** — item/unit (10 units list)/qty/date/expiry/supplier remarks; known-items datalist (consistent naming) | 14 | ➕ Add New | `MedicalRegisterScreen.tsx` |
+
+> Round-2 golden rule verify: wahi proven **computed-stock pattern** (M6 kit → M14 medicine) reuse hua — koi naya risky architecture nahi. Purana medicine data exist hi nahi karta tha, isliye backward-compat question hi nahi. Batch-scoped (screen ke pattern jaisa; cross-batch MI store future note). TSC clean ✅ Build pass ✅

@@ -550,3 +550,111 @@ export const buildSickReportHtml = (d: SickReportData): string => {
     <div class="foot">Computer-generated daily sick state — MI Room register se — F Coy ERP</div>
   </div>`;
 };
+
+// ─────────────────────────────────────────────
+// M13-R2 — PER-TRAINEE CUMULATIVE MARKSHEET (TRANSCRIPT)
+//   Ek trainee ki SAARI completed tests ka report card.
+//   Data screen se compute ho ke aata hai — pure printer.
+// ─────────────────────────────────────────────
+export interface TranscriptRow {
+  testName: string;
+  testTypeLabel: string;
+  dateStr: string;
+  venue?: string;
+  weekNumber?: number;
+  obtained: number;
+  maxMarks: number;
+  passingMarks: number;
+  grade?: string;
+  status: 'pass' | 'fail' | 'absent';
+}
+
+export interface TraineeTranscriptData {
+  traineeName: string;
+  chestNo: string;
+  regNo?: string;
+  platoon: string;
+  unitName: string;
+  coyName: string;
+  batchNumber?: string;
+  rows: TranscriptRow[];
+  overallAvgPct: number;     // appeared tests ka avg %
+  testsAppeared: number;
+  testsAbsent: number;
+  bestSubject?: string;      // sabse high % wali test
+  weakSubjects?: string[];   // <50% wali tests (labels)
+  batchRank?: number;        // pure batch mein position (avg% se)
+  batchSize?: number;
+  printedBy?: string;
+}
+
+export const buildTraineeTranscriptHtml = (d: TraineeTranscriptData): string => {
+  const pct = (r: TranscriptRow): number =>
+    r.maxMarks > 0 ? Math.round((r.obtained / r.maxMarks) * 100) : 0;
+
+  const rows = d.rows.map((r, i) => `
+    <tr ${r.status === 'fail' ? 'style="background:#fdecec"' : r.status === 'absent' ? 'style="background:#f3f3f3;color:#777"' : ''}>
+      <td style="text-align:center">${i + 1}</td>
+      <td><b>${r.testName}</b><br/><span style="font-size:9px;color:#555">${r.testTypeLabel}${r.weekNumber ? ` · W${r.weekNumber}` : ''}</span></td>
+      <td style="text-align:center">${r.dateStr}</td>
+      <td style="text-align:center;font-weight:800">${r.status === 'absent' ? 'AB' : r.obtained}</td>
+      <td style="text-align:center">${r.maxMarks}</td>
+      <td style="text-align:center">${r.status === 'absent' ? '—' : pct(r) + '%'}</td>
+      <td style="text-align:center">${r.status === 'absent' ? '—' : (r.grade ?? '—')}</td>
+      <td style="text-align:center;font-weight:800;color:${r.status === 'pass' ? '#116b1e' : r.status === 'fail' ? '#b00000' : '#777'}">
+        ${r.status === 'absent' ? 'ABSENT' : r.status.toUpperCase()}
+      </td>
+    </tr>`).join('');
+
+  const verdict =
+    d.overallAvgPct >= 70 ? '🏆 EXCELLENT — top performance' :
+    d.overallAvgPct >= 50 ? '✅ SATISFACTORY — aur mehnat se top tak pahunch sakta hai' :
+    d.overallAvgPct >= 40 ? '⚠ AVERAGE — improvement required' :
+    '🚨 WEAK — special attention / remedial classes required';
+
+  return `
+  <div class="doc">
+    <div class="h-row">
+      <div>
+        <div class="unit">${d.unitName}</div>
+        <div style="font-size:11px;font-weight:700">${d.coyName}${d.batchNumber ? ` · Batch ${d.batchNumber}` : ''}</div>
+        <div style="font-size:10px;color:#444">Examination & Assessment Cell</div>
+      </div>
+      <div class="doc-type">TRAINEE MARKSHEET</div>
+    </div>
+
+    <div class="meta">
+      <div><b>Name:</b> ${d.traineeName}</div>
+      <div><b>Chest No:</b> ${d.chestNo}${d.regNo ? ` · Reg: ${d.regNo}` : ''}</div>
+      <div><b>Platoon:</b> ${d.platoon || '—'}</div>
+      <div><b>Tests Appeared:</b> ${d.testsAppeared} (Absent: ${d.testsAbsent})</div>
+      <div><b>Overall Average:</b> ${d.overallAvgPct}%</div>
+      ${d.batchRank ? `<div><b>Batch Position:</b> #${d.batchRank} of ${d.batchSize ?? '—'}</div>` : ''}
+      ${d.bestSubject ? `<div><b>Strong Area:</b> ${d.bestSubject}</div>` : ''}
+      <div><b>Overall Assessment:</b> ${verdict}</div>
+      ${d.weakSubjects && d.weakSubjects.length > 0
+        ? `<div style="grid-column:1/3"><b>⚠ Needs Improvement:</b> ${d.weakSubjects.join(', ')}</div>`
+        : ''}
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width:28px">#</th><th>Test / Exam</th><th style="width:64px">Date</th>
+          <th style="width:44px">Marks</th><th style="width:38px">Max</th>
+          <th style="width:38px">%</th><th style="width:38px">Grade</th><th style="width:56px">Result</th>
+        </tr>
+      </thead>
+      <tbody>${rows || '<tr><td colspan="8" style="text-align:center;color:#777">Is trainee ka koi completed test record nahi mila</td></tr>'}</tbody>
+    </table>
+
+    <div class="words">Ye marksheet computer calc se bani hai — percentage auto-computed, grades standard scale (A+ ≥ 90%, F &lt; 40%) ke anusaar.</div>
+
+    <div class="sig">
+      <div>Class Instructor / Ustad</div>
+      <div>Checked By (Clerk)<br/><span style="font-weight:400;font-size:9px">${d.printedBy || ''}</span></div>
+      <div>Company Commander</div>
+    </div>
+    <div class="foot">Computer-generated cumulative marksheet — F Coy ERP</div>
+  </div>`;
+};
