@@ -185,9 +185,15 @@ export const getSchedulesByUstad = async (
 // ═══════════════════════════════════════════
 // UPDATE SCHEDULE
 // ═══════════════════════════════════════════
+// ★ extras: ustad/subject change hua to denormalized name/rank/code bhi
+//   saath update honge (warna purana naam stale reh jaata)
 export const updateSchedule = async (
   scheduleId: string,
-  formData: Partial<ScheduleFormData>
+  formData: Partial<ScheduleFormData>,
+  extras?: {
+    ustadDetails?: { name: string; rank: string; forceNumber: string };
+    subjectDetails?: { name: string; code: string };
+  }
 ): Promise<void> => {
   try {
     const docRef = doc(db, COLLECTION, scheduleId);
@@ -203,6 +209,17 @@ export const updateSchedule = async (
 
     if (formData.startTime && formData.endTime) {
       payload.duration = calculateDuration(formData.startTime, formData.endTime);
+    }
+
+    // ★ Denormalized fields sync (backward compatible — optional)
+    if (extras?.ustadDetails) {
+      payload.ustadName = extras.ustadDetails.name;
+      payload.ustadRank = extras.ustadDetails.rank;
+      payload.ustadForceNumber = extras.ustadDetails.forceNumber;
+    }
+    if (extras?.subjectDetails) {
+      payload.subjectName = extras.subjectDetails.name;
+      payload.subjectCode = extras.subjectDetails.code;
     }
 
     await updateDoc(docRef, payload);

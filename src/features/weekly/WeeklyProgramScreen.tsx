@@ -108,6 +108,103 @@ const SUBJECTS = [
   'Games/Recreation',
 ];
 
+// ═══════════════════════════════════════════════════════════
+// ★ INSTRUCTOR CONFLICT DETECTION ENGINE
+//   Same din + overlapping time + same person = CONFLICT
+//   (Weekly program mein persons free-text hain, isliye
+//    name-normalization se match karte hain)
+// ═══════════════════════════════════════════════════════════
+interface TimeRange { start: number; end: number }  // minutes since midnight
+
+interface InstructorConflict {
+  sessionId: string;
+  day: string;
+  person: string;          // display name
+  otherSubject: string;
+  otherTime: string;
+}
+
+// "0530-0650", "05:30-06:50", "0530 TO 0650" sab parse karta hai
+export const parseTimeRange = (timeStr: string): TimeRange | null => {
+  if (!timeStr) return null;
+  const norm = timeStr.replace(/\s*(to|TO|To|–|—)\s*/g, '-').trim();
+  const parts = norm.split('-');
+  if (parts.length !== 2) return null;
+
+  const toMinutes = (raw: string): number | null => {
+    const clean = raw.trim().replace(/[^\d:]/g, '');
+    if (!clean) return null;
+    if (clean.includes(':')) {
+      const [h, m] = clean.split(':').map(Number);
+      if (isNaN(h) || isNaN(m) || m >= 60) return null;
+      return h * 60 + m;
+    }
+    if (clean.length < 3 || clean.length > 4) return null;
+    const num = Number(clean);
+    if (isNaN(num)) return null;
+    const h = Math.floor(num / 100);
+    const m = num % 100;
+    if (h > 23 || m >= 60) return null;
+    return h * 60 + m;
+  };
+
+  const start = toMinutes(parts[0]);
+  const end = toMinutes(parts[1]);
+  if (start === null || end === null || end <= start) return null;
+  return { start, end };
+};
+
+// Session → list of conflicts (empty agar sab clean)
+export const findInstructorConflicts = (
+  schedule: DailySchedule[]
+): Record<string, InstructorConflict[]> => {
+  const conflicts: Record<string, InstructorConflict[]> = {};
+  const add = (id: string, c: InstructorConflict) => {
+    conflicts[id] = [...(conflicts[id] ?? []), c];
+  };
+
+  schedule.forEach(dayData => {
+    const sessions = dayData.sessions;
+    for (let i = 0; i < sessions.length; i++) {
+      for (let j = i + 1; j < sessions.length; j++) {
+        const a = sessions[i];
+        const b = sessions[j];
+        // NOTE: platoon alag ho tab bhi EK ustad do jagah nahi ho sakta —
+        // isliye platoon-se-scope nahi karte, pure-day overlap check hota hai.
+
+        const ta = parseTimeRange(a.time);
+        const tb = parseTimeRange(b.time);
+        if (!ta || !tb) continue;
+        const overlap = ta.start < tb.end && tb.start < ta.end;
+        if (!overlap) continue;
+
+        const personsOf = (s: ClassSession) =>
+          (s.assignedPersons ?? [])
+            .filter(p => p.name.trim())
+            .map(p => ({ norm: p.name.trim().toLowerCase(), display: `${p.rank ? p.rank + ' ' : ''}${p.name.trim()}` }));
+
+        const pa = personsOf(a);
+        const pb = personsOf(b);
+        const common = pa.filter(x => pb.some(y => y.norm === x.norm));
+
+        common.forEach(p => {
+          add(a.id, {
+            sessionId: a.id, day: dayData.day, person: p.display,
+            otherSubject: b.customSubject && b.subject === 'Other (Manual)' ? b.customSubject : b.subject,
+            otherTime: b.time,
+          });
+          add(b.id, {
+            sessionId: b.id, day: dayData.day, person: p.display,
+            otherSubject: a.customSubject && a.subject === 'Other (Manual)' ? a.customSubject : a.subject,
+            otherTime: a.time,
+          });
+        });
+      }
+    }
+  });
+  return conflicts;
+};
+
 // ─────────────────────────────────────────────
 // PRINT STYLES  (A4 Landscape)
 // ─────────────────────────────────────────────
@@ -505,6 +602,10 @@ export const WeeklyProgramScreen = () => {
 
   const [formData, setFormData] = useState(getEmptyForm());
 
+  // ★ Live instructor conflicts (form schedule se har render pe computed)
+  const instructorConflicts = findInstructorConflicts(formData.schedule);
+  const conflictSessionCount = Object.keys(instructorConflicts).length;
+
   // ── Auto displayDateRange ──
   useEffect(() => {
     if (formData.fromDate && formData.toDate) {
@@ -703,6 +804,31 @@ const handleSave = async () => {
     setMessage('ERROR: Week Name, From Date aur To Date required hain!');
     return;
   }
+
+  // ★ INSTRUCTOR CONFLICT GUARD — warn karo, user confirm kare to save
+  const conflicts = findInstructorConflicts(formData.schedule);
+  const conflictList = Object.values(conflicts).flat();
+  if (conflictList.length > 0) {
+    const seen = new Set<string>();
+    const lines: string[] = [];
+    conflictList.forEach(c => {
+      const key = `${c.day}|${c.person}|${c.otherTime}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      lines.push(`• ${c.day}: ${c.person} → "${c.otherSubject}" (${c.otherTime}) se bhi clash`);
+    });
+    const proceed = window.confirm(
+      `⚠️ INSTRUCTOR CONFLICT DETECTED!\n\n` +
+      `${lines.slice(0, 8).join('\n')}${lines.length > 8 ? `\n...aur ${lines.length - 8} clashes` : ''}\n\n` +
+      `Ek ustad ek hi time pe do classes nahi le sakta.\n` +
+      `OK = phir bhi save karo | Cancel = wapas jaake time/person theek karo`
+    );
+    if (!proceed) {
+      setMessage('ERROR: Save roka gaya — instructor conflicts pehle resolve karein.');
+      return;
+    }
+  }
+
   setSaving(true);
   setMessage('');
   try {
@@ -1245,6 +1371,23 @@ const handleSave = async () => {
                                 </button>
                               </div>
 
+                              {/* ★ INLINE CONFLICT WARNING */}
+                              {instructorConflicts[session.id] && (
+                                <div className="bg-red-50 border-2 border-red-400 p-2 flex items-start gap-2">
+                                  <AlertCircle size={14} className="text-red-600 flex-shrink-0 mt-0.5" />
+                                  <div className="text-[10px]">
+                                    <p className="font-black text-red-700 uppercase">
+                                      ⚠ Instructor Conflict ({dayData.day})
+                                    </p>
+                                    {instructorConflicts[session.id].map((c, ci) => (
+                                      <p key={ci} className="text-red-600 font-bold mt-0.5">
+                                        {c.person} → isi time "{c.otherSubject}" ({c.otherTime}) bhi assigned hai
+                                      </p>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
                               {/* ── ROW: Time · PDS · Code · Subject · Method · Area · Platoon ── */}
                               <div className="grid grid-cols-2 md:grid-cols-12 gap-2 items-end">
 
@@ -1511,6 +1654,22 @@ const handleSave = async () => {
                 ))}
               </div>
             </div>
+
+            {/* ★ CONFLICT SUMMARY PANEL (Save ke pehle) */}
+            {conflictSessionCount > 0 && (
+              <div className="bg-red-600 text-white p-3 flex items-center gap-3 border-2 border-red-700">
+                <AlertCircle size={18} className="flex-shrink-0 animate-pulse" />
+                <div className="flex-1">
+                  <p className="text-[11px] font-black uppercase tracking-wide">
+                    {conflictSessionCount} session(s) mein Instructor Conflict!
+                  </p>
+                  <p className="text-[10px] text-red-100 mt-0.5">
+                    Ek hi ustad same day + same time pe do alag classes mein hai.
+                    Red-boxed sessions check karke time ya responsibility theek karein.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* ── SAVE / UPDATE BUTTON ── */}
             <div className="pt-4 border-t border-slate-200 flex items-center justify-between">

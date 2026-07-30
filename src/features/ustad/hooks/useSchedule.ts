@@ -30,7 +30,14 @@ interface UseScheduleReturn {
     ustadDetails: { name: string; rank: string; forceNumber: string },
     subjectDetails: { name: string; code: string }
   ) => Promise<boolean>;
-  handleUpdate: (id: string, formData: Partial<ScheduleFormData>) => Promise<boolean>;
+  handleUpdate: (
+    id: string,
+    formData: Partial<ScheduleFormData>,
+    extras?: {
+      ustadDetails?: { name: string; rank: string; forceNumber: string };
+      subjectDetails?: { name: string; code: string };
+    }
+  ) => Promise<boolean>;
   handleUpdateStatus: (id: string, status: ScheduleStatus) => Promise<boolean>;
   handleDelete: (id: string) => Promise<boolean>;
   checkConflict: (
@@ -133,12 +140,33 @@ export const useSchedule = (): UseScheduleReturn => {
 
   const handleUpdate = async (
     id: string,
-    formData: Partial<ScheduleFormData>
+    formData: Partial<ScheduleFormData>,
+    extras?: {
+      ustadDetails?: { name: string; rank: string; forceNumber: string };
+      subjectDetails?: { name: string; code: string };
+    }
   ): Promise<boolean> => {
     setSubmitting(true);
     setError(null);
     try {
-      await updateSchedule(id, formData);
+      await updateSchedule(id, formData, extras);   // ★ extras pass-through
+
+      // ★ Activity log (reschedule/edit auditable rahe)
+      await logActivity(
+        user?.uid ?? '',
+        user?.displayName ?? user?.email ?? '',
+        user?.role ?? 'staff',
+        'Schedule',
+        'Class Rescheduled/Updated',
+        {
+          date: formData.date ?? '',
+          time: `${formData.startTime ?? ''}-${formData.endTime ?? ''}`,
+          ustad: extras?.ustadDetails?.name ?? '',
+          subject: extras?.subjectDetails?.name ?? '',
+        },
+        id
+      );
+
       if (formData.date) await fetchDaily(formData.date);
       return true;
     } catch (err) {

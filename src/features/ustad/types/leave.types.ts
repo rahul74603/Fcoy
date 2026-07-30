@@ -38,6 +38,10 @@ export interface StaffLeave {
   reason: string;
   leaveAddress: string;
   contactNumber: string;
+  // ★ Emergency contact during leave (backward compatible — old docs: '')
+  emergencyContactName: string;
+  emergencyContactPhone: string;
+  emergencyContactRelation: string;
   status: LeaveStatus;
   appliedAt: Date | null;
   appliedBy: string;                   // userId - self or clerk
@@ -60,6 +64,9 @@ export interface LeaveFormData {
   reason: string;
   leaveAddress: string;
   contactNumber: string;
+  emergencyContactName: string;    // ★
+  emergencyContactPhone: string;   // ★
+  emergencyContactRelation: string;// ★
   remarks: string;
 }
 
@@ -94,6 +101,9 @@ export const DEFAULT_LEAVE_FORM: LeaveFormData = {
   reason: '',
   leaveAddress: '',
   contactNumber: '',
+  emergencyContactName: '',
+  emergencyContactPhone: '',
+  emergencyContactRelation: '',
   remarks: '',
 };
 

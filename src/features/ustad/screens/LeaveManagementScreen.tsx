@@ -22,8 +22,28 @@ const TABS = [
   { key: 'all', label: 'All Leaves', icon: '📋' },
   { key: 'pending', label: 'Pending Approval', icon: '⏳' },
   { key: 'current', label: 'Currently On Leave', icon: '🏖️' },
+  { key: 'overstay', label: 'Overstay (Late Return)', icon: '🚨' },   // ★
   { key: 'types', label: 'Leave Types', icon: '⚙️' },
 ];
+
+// ★ Overstay detector: approved, return recorded nahi, toDate beet chuki
+export const isOverstayed = (leave: StaffLeave): boolean => {
+  if (leave.status !== 'approved' || leave.returnDate || !leave.toDate) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(leave.toDate);
+  due.setHours(23, 59, 59, 999);
+  return today > due;
+};
+
+export const overstayDays = (leave: StaffLeave): number => {
+  if (!isOverstayed(leave) || !leave.toDate) return 0;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(leave.toDate);
+  due.setHours(0, 0, 0, 0);
+  return Math.round((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
+};
 
 const LeaveQuotaModal: React.FC<{
   leave: StaffLeave;
@@ -265,11 +285,16 @@ const LeaveManagementScreen: React.FC = () => {
     });
   };
 
+  // ★ Overstay list (computed from already-fetched data — no extra read)
+  const overstayedLeaves = allLeaves.filter(isOverstayed);
+
   const displayLeaves =
     activeTab === 'pending'
       ? getFilteredLeaves(pendingLeaves)
       : activeTab === 'current'
       ? getFilteredLeaves(currentLeaves)
+      : activeTab === 'overstay'
+      ? getFilteredLeaves(overstayedLeaves)
       : getFilteredLeaves(allLeaves);
 
   // ─── Calculate Leave Days ─────────────────
@@ -425,6 +450,20 @@ const LeaveManagementScreen: React.FC = () => {
       .reduce((sum, l) => sum + l.numberOfDays, 0);
   };
 
+  // ★ PENDING days (approved hone ka wait kar rahi applications) —
+  //   double-booking guard: inko bhi balance se ghataana zaroori hai
+  const calculatePendingDays = (staffId: string, leaveTypeId: string): number => {
+    const currentYear = new Date().getFullYear();
+    return allLeaves
+      .filter(l =>
+        l.staffId === staffId &&
+        l.leaveTypeId === leaveTypeId &&
+        l.status === 'pending' &&
+        l.fromDate?.getFullYear() === currentYear
+      )
+      .reduce((sum, l) => sum + l.numberOfDays, 0);
+  };
+
   // Get selected leave type details
   const selectedLeaveType = leaveTypes.find(lt => lt.id === leaveForm.leaveTypeId);
 
@@ -438,9 +477,14 @@ const LeaveManagementScreen: React.FC = () => {
     ? calculateUsedDays(leaveForm.staffId, leaveForm.leaveTypeId)
     : 0;
 
-  // Available balance
+  // ★ Pending days (pehle se applied, approval pending) — double-booking guard
+  const pendingDays = leaveForm.staffId && leaveForm.leaveTypeId
+    ? calculatePendingDays(leaveForm.staffId, leaveForm.leaveTypeId)
+    : 0;
+
+  // ★ Available balance (approved used + pending dono ghata kar)
   const availableDays = selectedLeaveType
-    ? selectedLeaveType.maxDaysPerYear - usedDays
+    ? selectedLeaveType.maxDaysPerYear - usedDays - pendingDays
     : 0;
 
   // Will this exceed limit?
@@ -535,6 +579,40 @@ const LeaveManagementScreen: React.FC = () => {
             <button onClick={clearError} className="text-amber-400">✕</button>
           </div>
         )}
+        {/* ★ OVERSTAY ALERT BANNER */}
+        {overstayedLeaves.length > 0 && (
+          <div className="bg-red-600 text-white rounded-xl p-4 flex items-start gap-3 shadow-lg shadow-red-200">
+            <span className="text-2xl animate-pulse">🚨</span>
+            <div className="flex-1">
+              <p className="text-sm font-black uppercase tracking-wider">
+                {overstayedLeaves.length} Staff Overstay Par Hai!
+              </p>
+              <p className="text-xs text-red-100 mt-0.5">
+                Leave ki wapsi date beet chuki hai lekin return record nahi hua.
+                Turant "Record Return" karein ya duty officer ko inform karein.
+              </p>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {overstayedLeaves.slice(0, 4).map(l => (
+                  <span key={l.id} className="bg-white/15 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                    {l.rank} {l.staffName} — {overstayDays(l)} din late
+                  </span>
+                ))}
+                {overstayedLeaves.length > 4 && (
+                  <span className="bg-white/15 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                    +{overstayedLeaves.length - 4} aur
+                  </span>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={() => setActiveTab('overstay')}
+              className="bg-white text-red-700 text-xs font-black px-3 py-1.5 rounded-lg hover:bg-red-50 shrink-0"
+            >
+              View →
+            </button>
+          </div>
+        )}
+
         {/* ── Stats Cards ── */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {[
@@ -601,6 +679,12 @@ const LeaveManagementScreen: React.FC = () => {
               {tab.key === 'pending' && pendingLeaves.length > 0 && (
                 <span className="bg-orange-500 text-white text-xs px-1.5 py-0.5 rounded-full">
                   {pendingLeaves.length}
+                </span>
+              )}
+              {/* ★ Overstay badge */}
+              {tab.key === 'overstay' && overstayedLeaves.length > 0 && (
+                <span className="bg-red-600 text-white text-xs px-1.5 py-0.5 rounded-full animate-pulse">
+                  {overstayedLeaves.length}
                 </span>
               )}
             </button>
@@ -761,14 +845,22 @@ const LeaveManagementScreen: React.FC = () => {
                           </p>
                         </div>
                       </div>
-                      <span
-                        className={`
-                          text-xs font-medium px-2.5 py-1 rounded-full
-                          ${LEAVE_STATUS_COLORS[leave.status]}
-                        `}
-                      >
-                        {LEAVE_STATUS_LABELS[leave.status]}
-                      </span>
+                      <div className="flex flex-col items-end gap-1">
+                        <span
+                          className={`
+                            text-xs font-medium px-2.5 py-1 rounded-full
+                            ${LEAVE_STATUS_COLORS[leave.status]}
+                          `}
+                        >
+                          {LEAVE_STATUS_LABELS[leave.status]}
+                        </span>
+                        {/* ★ Overstay badge */}
+                        {isOverstayed(leave) && (
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-red-600 text-white animate-pulse">
+                            🚨 OVERSTAY {overstayDays(leave)} din
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     {/* Leave Details Grid */}
@@ -834,6 +926,24 @@ const LeaveManagementScreen: React.FC = () => {
                           <p className="text-xs text-gray-700 mt-0.5">
                             {leave.contactNumber}
                           </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ★ Emergency Contact display */}
+                    {(leave.emergencyContactName || leave.emergencyContactPhone) && (
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-2.5 mb-4 flex items-center gap-3">
+                        <span className="text-red-500 text-base">🚨</span>
+                        <div className="text-xs">
+                          <span className="font-bold text-red-800">
+                            {leave.emergencyContactName || '—'}
+                            {leave.emergencyContactRelation ? ` (${leave.emergencyContactRelation})` : ''}
+                          </span>
+                          {leave.emergencyContactPhone && (
+                            <span className="text-red-700 ml-2 font-mono font-bold">
+                              📞 {leave.emergencyContactPhone}
+                            </span>
+                          )}
                         </div>
                       </div>
                     )}
@@ -1045,7 +1155,15 @@ const LeaveManagementScreen: React.FC = () => {
               {/* Progress Bar */}
               <div>
                 <div className="flex items-center justify-between text-xs mb-1">
-                  <span className="text-slate-600">Used: <strong>{usedDays}</strong> days</span>
+                  <span className="text-slate-600">
+                    Used (Approved): <strong>{usedDays}</strong>
+                    {/* ★ Pending days — approval ke wait mein */}
+                    {pendingDays > 0 && (
+                      <span className="ml-2 text-orange-700 font-bold">
+                        + Pending: <strong>{pendingDays}</strong>
+                      </span>
+                    )}
+                  </span>
                   <span className="text-slate-600">Max: <strong>{selectedLeaveType.maxDaysPerYear}</strong> days</span>
                 </div>
                 <div className="w-full bg-white rounded-full h-3 overflow-hidden border border-slate-200">
@@ -1071,7 +1189,10 @@ const LeaveManagementScreen: React.FC = () => {
                   <p className={`text-lg font-black ${availableDays > 0 ? 'text-green-700' : 'text-red-700'}`}>
                     {availableDays}
                   </p>
-                  <p className="text-[9px] text-slate-500">days</p>
+                  {/* ★ pending pehle se booked hain to batayein */}
+                  <p className="text-[9px] text-slate-500">
+                    days{pendingDays > 0 ? ' (pending included)' : ''}
+                  </p>
                 </div>
                 <div className="bg-white rounded-lg p-2 text-center">
                   <p className="text-[9px] font-bold text-slate-500 uppercase">Requesting</p>
@@ -1181,6 +1302,79 @@ const LeaveManagementScreen: React.FC = () => {
                 placeholder="Mobile during leave"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
+            </div>
+          </div>
+
+          {/* ★ EMERGENCY CONTACT DURING LEAVE */}
+          <div className="bg-red-50 border border-red-200 rounded-xl p-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-black text-red-800 uppercase tracking-wider">
+                🚨 Emergency Contact (Leave Ke Dauraan)
+              </p>
+              <span className="text-[9px] font-bold text-red-500 uppercase">Optional lekin recommended</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-red-900 mb-1">
+                  Contact Person Name
+                </label>
+                <input
+                  type="text"
+                  value={leaveForm.emergencyContactName}
+                  onChange={(e) =>
+                    setLeaveForm((prev) => ({
+                      ...prev,
+                      emergencyContactName: e.target.value,
+                    }))
+                  }
+                  placeholder="e.g., Wife / Father name"
+                  className="w-full px-3 py-2 border border-red-200 bg-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-red-900 mb-1">
+                  Relation
+                </label>
+                <select
+                  value={leaveForm.emergencyContactRelation}
+                  onChange={(e) =>
+                    setLeaveForm((prev) => ({
+                      ...prev,
+                      emergencyContactRelation: e.target.value,
+                    }))
+                  }
+                  className="w-full px-3 py-2 border border-red-200 bg-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
+                >
+                  <option value="">-- Relation --</option>
+                  <option value="Father">Father</option>
+                  <option value="Mother">Mother</option>
+                  <option value="Spouse">Spouse</option>
+                  <option value="Brother">Brother</option>
+                  <option value="Sister">Sister</option>
+                  <option value="Son">Son</option>
+                  <option value="Daughter">Daughter</option>
+                  <option value="Friend">Friend</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-red-900 mb-1">
+                  Emergency Phone
+                </label>
+                <input
+                  type="tel"
+                  value={leaveForm.emergencyContactPhone}
+                  onChange={(e) =>
+                    setLeaveForm((prev) => ({
+                      ...prev,
+                      emergencyContactPhone: e.target.value.replace(/[^0-9+\-\s]/g, ''),
+                    }))
+                  }
+                  placeholder="10-digit mobile"
+                  maxLength={13}
+                  className="w-full px-3 py-2 border border-red-200 bg-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
+                />
+              </div>
             </div>
           </div>
 

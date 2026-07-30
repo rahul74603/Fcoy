@@ -7,7 +7,7 @@ import {
   Calendar, Plus, X, MapPin, Users,
   ChevronLeft, ChevronRight, AlertTriangle,
   CheckCircle2, XCircle, PlayCircle,
-  Loader2, Filter, Trash2,
+  Loader2, Filter, Trash2, Edit3, PauseCircle,
 } from 'lucide-react';
 import { useSchedule } from '../hooks/useSchedule';
 import { useStaff } from '../hooks/useStaff';
@@ -25,7 +25,7 @@ import ConfirmDialog from '../components/shared/ConfirmDialog';
 const TrainingScheduleScreen: React.FC = () => {
   const {
     schedules, weekSchedules, loading, submitting, error, hasBatch,
-    fetchDaily, fetchWeekly, handleAdd, handleUpdateStatus, handleDelete,
+    fetchDaily, fetchWeekly, handleAdd, handleUpdate, handleUpdateStatus, handleDelete,
     checkConflict, clearError,
   } = useSchedule();
 
@@ -38,6 +38,7 @@ const TrainingScheduleScreen: React.FC = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [selectedSchedule, setSelectedSchedule] = useState<TrainingSchedule | null>(null);
+  const [editingSchedule, setEditingSchedule] = useState<TrainingSchedule | null>(null); // ★ EDIT MODE
   const [filterUstad, setFilterUstad] = useState<string>('all');
   const [filterCompany, setFilterCompany] = useState<string>('all');
 
@@ -77,7 +78,8 @@ const TrainingScheduleScreen: React.FC = () => {
           scheduleForm.ustadId,
           scheduleForm.date,
           scheduleForm.startTime,
-          scheduleForm.endTime
+          scheduleForm.endTime,
+          editingSchedule?.id          // ★ edit mode mein apne aap ko conflict na maane
         );
         setConflict(conflictSchedule);
       } else {
@@ -86,9 +88,47 @@ const TrainingScheduleScreen: React.FC = () => {
     };
     const timer = setTimeout(checkForConflict, 500);
     return () => clearTimeout(timer);
-  }, [scheduleForm.ustadId, scheduleForm.date, scheduleForm.startTime, scheduleForm.endTime, checkConflict]);
+  }, [scheduleForm.ustadId, scheduleForm.date, scheduleForm.startTime, scheduleForm.endTime, checkConflict, editingSchedule]);
 
   // ─── Handlers ────────────────────────────
+  // ★ current view refresh (edit ke baad stale data na rahe)
+  const refreshView = async () => {
+    if (viewMode === 'daily') {
+      await fetchDaily(selectedDate);
+    } else {
+      const date = new Date(selectedDate);
+      const day = date.getDay();
+      const monday = new Date(date);
+      monday.setDate(date.getDate() - (day === 0 ? 6 : day - 1));
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+      await fetchWeekly(
+        monday.toISOString().split('T')[0],
+        sunday.toISOString().split('T')[0]
+      );
+    }
+  };
+
+  // ★ EDIT / RESCHEDULE — existing data form mein load karo
+  const handleEditClick = (schedule: TrainingSchedule) => {
+    setEditingSchedule(schedule);
+    setScheduleForm({
+      date: schedule.date
+        ? schedule.date.toISOString().split('T')[0]
+        : selectedDate,
+      startTime: schedule.startTime,
+      endTime: schedule.endTime,
+      ustadId: schedule.ustadId,
+      subjectId: schedule.subjectId,
+      company: schedule.company,
+      platoon: schedule.platoon,
+      venue: schedule.venue,
+      remarks: schedule.remarks,
+    });
+    setConflict(null);
+    setShowAddModal(true);
+  };
+
   const handleSubmit = async () => {
     if (conflict) {
       alert(`❌ Conflict! ${conflict.ustadName} is already scheduled for ${conflict.subjectName} at ${conflict.startTime}-${conflict.endTime}`);
@@ -103,6 +143,26 @@ const TrainingScheduleScreen: React.FC = () => {
       return;
     }
 
+    // ★ EDIT MODE — update + denormalized names sync
+    if (editingSchedule) {
+      const success = await handleUpdate(
+        editingSchedule.id,
+        scheduleForm,
+        {
+          ustadDetails: { name: ustad.name, rank: ustad.rank, forceNumber: ustad.forceNumber },
+          subjectDetails: { name: subject.name, code: subject.code },
+        }
+      );
+      if (success) {
+        await refreshView();
+        setShowAddModal(false);
+        setEditingSchedule(null);
+        setScheduleForm({ ...DEFAULT_SCHEDULE_FORM, date: selectedDate });
+      }
+      return;
+    }
+
+    // ADD MODE (existing flow — unchanged)
     const success = await handleAdd(
       scheduleForm,
       { name: ustad.name, rank: ustad.rank, forceNumber: ustad.forceNumber },
@@ -348,6 +408,7 @@ const TrainingScheduleScreen: React.FC = () => {
                       schedule.status === 'completed' ? 'border-l-green-500' :
                       schedule.status === 'cancelled' ? 'border-l-red-500' :
                       schedule.status === 'in_progress' ? 'border-l-amber-500' :
+                      schedule.status === 'postponed' ? 'border-l-orange-500' :
                       'border-l-blue-500'
                     }`}
                   >
@@ -416,6 +477,26 @@ const TrainingScheduleScreen: React.FC = () => {
                               className="p-1.5 bg-green-100 text-green-700 rounded hover:bg-green-200"
                             >
                               <CheckCircle2 size={14} />
+                            </button>
+                          )}
+                          {/* ★ POSTPONE — class hold pe (reschedule baad mein) */}
+                          {schedule.status === 'scheduled' && (
+                            <button
+                              onClick={() => handleUpdateStatus(schedule.id, 'postponed')}
+                              title="Postpone (baad mein reschedule karein)"
+                              className="p-1.5 bg-orange-100 text-orange-700 rounded hover:bg-orange-200"
+                            >
+                              <PauseCircle size={14} />
+                            </button>
+                          )}
+                          {/* ★ EDIT / RESCHEDULE */}
+                          {(schedule.status === 'scheduled' || schedule.status === 'postponed') && (
+                            <button
+                              onClick={() => handleEditClick(schedule)}
+                              title={schedule.status === 'postponed' ? 'Reschedule (naya date/time)' : 'Edit / Reschedule'}
+                              className="p-1.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+                            >
+                              <Edit3 size={14} />
                             </button>
                           )}
                           {(schedule.status === 'scheduled' || schedule.status === 'in_progress') && (
@@ -500,15 +581,21 @@ const TrainingScheduleScreen: React.FC = () => {
       </div>
 
       {/* ═══════════════════════════════════════
-          ADD SCHEDULE MODAL
+          ADD / ★EDIT-RESCHEDULE SCHEDULE MODAL
       ═══════════════════════════════════════ */}
       <FormModal
         isOpen={showAddModal}
-        title="Schedule a Class"
-        subtitle="Assign ustad, subject, time and company"
+        title={editingSchedule ? '✏️ Edit / Reschedule Class' : 'Schedule a Class'}
+        subtitle={
+          editingSchedule
+            ? `${editingSchedule.subjectName} — ${editingSchedule.ustadRank} ${editingSchedule.ustadName} (update kar rahe hain)`
+            : 'Assign ustad, subject, time and company'
+        }
         onClose={() => {
           setShowAddModal(false);
+          setEditingSchedule(null);   // ★ edit mode reset
           setConflict(null);
+          setScheduleForm({ ...DEFAULT_SCHEDULE_FORM, date: selectedDate });
         }}
         size="lg"
       >
@@ -658,7 +745,11 @@ const TrainingScheduleScreen: React.FC = () => {
           {/* Actions */}
           <div className="flex gap-3 justify-end pt-4 border-t border-gray-200">
             <button
-              onClick={() => setShowAddModal(false)}
+              onClick={() => {
+                setShowAddModal(false);
+                setEditingSchedule(null);   // ★
+                setScheduleForm({ ...DEFAULT_SCHEDULE_FORM, date: selectedDate });
+              }}
               className="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg"
             >
               Cancel
@@ -671,13 +762,19 @@ const TrainingScheduleScreen: React.FC = () => {
                 !scheduleForm.company || !scheduleForm.date
               }
               className={`px-6 py-2 text-sm font-medium text-white rounded-lg disabled:opacity-40 flex items-center gap-2 ${
-                conflict ? 'bg-red-600' : 'bg-blue-600 hover:bg-blue-700'
+                conflict
+                  ? 'bg-red-600'
+                  : editingSchedule
+                    ? 'bg-amber-600 hover:bg-amber-700'
+                    : 'bg-blue-600 hover:bg-blue-700'
               }`}
             >
               {submitting ? (
                 <><Loader2 size={14} className="animate-spin" /> Saving...</>
               ) : conflict ? (
                 <>❌ Conflict Detected</>
+              ) : editingSchedule ? (
+                <><Edit3 size={14} /> Update / Reschedule</>
               ) : (
                 <>✓ Schedule Class</>
               )}

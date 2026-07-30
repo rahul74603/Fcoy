@@ -73,6 +73,10 @@ const docToLeave = (
   reason: (data.reason as string) ?? '',
   leaveAddress: (data.leaveAddress as string) ?? '',
   contactNumber: (data.contactNumber as string) ?? '',
+  // ★ Emergency contact (old docs se '' aayega — backward compatible)
+  emergencyContactName: (data.emergencyContactName as string) ?? '',
+  emergencyContactPhone: (data.emergencyContactPhone as string) ?? '',
+  emergencyContactRelation: (data.emergencyContactRelation as string) ?? '',
   status: (data.status as LeaveStatus) ?? 'pending',
   appliedAt: data.appliedAt
     ? (data.appliedAt as Timestamp).toDate()
@@ -198,6 +202,9 @@ export const applyLeave = async (
       reason: formData.reason,
       leaveAddress: formData.leaveAddress,
       contactNumber: formData.contactNumber,
+      emergencyContactName: formData.emergencyContactName ?? '',
+      emergencyContactPhone: formData.emergencyContactPhone ?? '',
+      emergencyContactRelation: formData.emergencyContactRelation ?? '',
       status: 'pending',
       appliedAt: serverTimestamp(),
       appliedBy,
