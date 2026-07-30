@@ -8,8 +8,15 @@ import {
   TrendingDown, Wallet, Activity, Printer,
   IndianRupee, AlertCircle, BoxSelect, UserCheck,
   Award, Target, Layers,
-  ArrowDownToLine, ArrowUpFromLine
+  ArrowDownToLine, ArrowUpFromLine,
+  HeartPulse, CalendarCheck, GraduationCap, FileText, PieChart as PieChartIcon
 } from 'lucide-react';
+
+// ★ Analytics Dashboard charts (recharts — already a project dependency)
+import {
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  Tooltip, Legend, PieChart, Pie, Cell, LineChart, Line,
+} from 'recharts';
 
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../../config/firebase';
@@ -154,6 +161,49 @@ interface WeeklyTestRecord {
   result: string;
 }
 
+// ★ Medical case record (mirrors medicalRecords collection)
+interface MedicalCaseRec {
+  id: string;
+  chestNo: string;
+  name: string;
+  platoon: string;
+  category: string;
+  diagnosis: string;
+  date: string;
+  wardNo: string;
+  recommendedDays: number;
+  status: string;
+  batchId: string;
+}
+
+// ★ Trainee daily hazri doc (trainee_attendance collection — doc per batch+date+session)
+interface HazriDoc {
+  id: string;
+  batchId: string;
+  batchNumber: string;
+  date: string;
+  session: string;
+  records: { traineeId: string; name: string; chestNo: string; platoon: string; status: string }[];
+}
+
+// ★ Unified exam test doc (training_tests collection)
+interface ExamTestDoc {
+  id: string;
+  testName: string;
+  testType: string;
+  subjectCode: string;
+  platoon: string;
+  testDate: string;
+  weekNumber: number;
+  totalMarks: number;
+  averageScore: number;
+  passCount: number;
+  failCount: number;
+  absentCount: number;
+  status: string;
+  batchNumber: string;
+}
+
 interface BatchData {
   id: string;
   batchNumber: string;
@@ -182,6 +232,8 @@ const formatDate = (iso: string) =>
   }) : '—';
 const todayISO = () => new Date().toISOString().split('T')[0];
 const nowTime = () => new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+// ★ Report history persistence key
+const REPORT_HISTORY_KEY = 'fcoy_report_history';
 
 // ─────────────────────────────────────────────
 // CSV / PRINT GENERATORS
@@ -259,6 +311,207 @@ const printReport = (title: string, headers: string[], rows: string[][], summary
 };
 
 // ─────────────────────────────────────────────
+// ★ ANALYTICS DASHBOARD VIEW (Module 15 Audit)
+// Charts computed from the SAME live data — no extra Firestore reads
+// ─────────────────────────────────────────────
+const ATTN_CHART_META: Record<string, { label: string; color: string }> = {
+  P: { label: 'Present', color: '#16a34a' },
+  A: { label: 'Absent', color: '#dc2626' },
+  L: { label: 'Leave', color: '#2563eb' },
+  S: { label: 'Sick', color: '#d97706' },
+  H: { label: 'Hospital', color: '#7c3aed' },
+  R: { label: 'Rest', color: '#0891b2' },
+  M: { label: 'Med Board', color: '#be185d' },
+};
+
+interface AnalyticsProps {
+  trainees: TraineeData[];
+  collections: FundCollection[];
+  expenses: FundExpense[];
+  weeklyTests: WeeklyTestRecord[];
+  medicalCases: MedicalCaseRec[];
+}
+
+const AnalyticsDashboardView: React.FC<AnalyticsProps> = ({
+  trainees, collections, expenses, weeklyTests, medicalCases,
+}) => {
+  // 1. Fund-wise Collection vs Expense vs Balance (Bar)
+  const fundData = ['Mess', 'Training', 'Assets', 'General'].map(f => {
+    const col = collections.filter(c => c.fundType === f).reduce((s, c) => s + c.amount, 0);
+    const exp = expenses.filter(e => e.fundType === f).reduce((s, e) => s + e.amount, 0);
+    return { name: f, Collection: col, Expense: exp, Balance: col - exp };
+  });
+
+  // 2. Today's trainee status distribution (Pie)
+  const attnCounts: Record<string, number> = {};
+  trainees.forEach(t => {
+    const k = (t.attn || 'P').toUpperCase();
+    attnCounts[k] = (attnCounts[k] ?? 0) + 1;
+  });
+  const attnPie = Object.entries(attnCounts).map(([k, v]) => ({
+    name: ATTN_CHART_META[k]?.label ?? k,
+    value: v,
+    color: ATTN_CHART_META[k]?.color ?? '#64748b',
+  }));
+
+  // 3. Weekly test average % trend (Line)
+  const weekMap: Record<number, { total: number; n: number }> = {};
+  weeklyTests.forEach(r => {
+    if (!weekMap[r.weekNumber]) weekMap[r.weekNumber] = { total: 0, n: 0 };
+    weekMap[r.weekNumber].total += r.percentage;
+    weekMap[r.weekNumber].n += 1;
+  });
+  const testTrend = Object.entries(weekMap)
+    .map(([w, d]) => ({ name: `W${w}`, 'Avg %': Math.round(d.total / d.n) }))
+    .sort((a, b) => parseInt(a.name.slice(1)) - parseInt(b.name.slice(1)));
+
+  // 4. Platoon-wise strength (Bar)
+  const plMap: Record<string, number> = {};
+  trainees.forEach(t => {
+    const p = t.platoon || 'N/A';
+    plMap[p] = (plMap[p] ?? 0) + 1;
+  });
+  const platoonData = Object.entries(plMap).map(([p, n]) => ({ name: p, Trainees: n }));
+
+  // 5. Monthly Collection vs Expense trend — last 6 months (Line)
+  const monthlyData: { name: string; Collection: number; Expense: number }[] = [];
+  const nowD = new Date();
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(nowD.getFullYear(), nowD.getMonth() - i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    monthlyData.push({
+      name: d.toLocaleString('en-IN', { month: 'short' }),
+      Collection: collections.filter(c => (c.date ?? '').startsWith(key)).reduce((s, c) => s + c.amount, 0),
+      Expense: expenses.filter(e => (e.date ?? '').startsWith(key)).reduce((s, e) => s + e.amount, 0),
+    });
+  }
+
+  // 6. Active medical cases by category (Bar)
+  const medMap: Record<string, number> = {};
+  medicalCases.filter(m => m.status === 'Active').forEach(m => {
+    medMap[m.category] = (medMap[m.category] ?? 0) + 1;
+  });
+  const medData = Object.entries(medMap).map(([c, n]) => ({ name: c, Active: n }));
+
+  // Executive KPI strip
+  const presentToday = trainees.filter(t => t.attn === 'P').length;
+  const attnPct = trainees.length > 0 ? Math.round((presentToday / trainees.length) * 100) : 0;
+  const totalBal = collections.reduce((s, c) => s + c.amount, 0) -
+    expenses.reduce((s, e) => (e.vendorId ? s + e.paidAmount : s + e.amount), 0);
+  const activeMed = medicalCases.filter(m => m.status === 'Active').length;
+
+  const chartCard = (title: string, subtitle: string, children: React.ReactNode) => (
+    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+      <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200">
+        <p className="text-xs font-black text-slate-800 uppercase tracking-wider">{title}</p>
+        <p className="text-[9px] text-slate-400 font-bold uppercase">{subtitle}</p>
+      </div>
+      <div className="p-3" style={{ height: 260 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          {children as React.ReactElement}
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      {/* EXECUTIVE KPI STRIP */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        {[
+          { label: 'Strength', value: String(trainees.length), sub: `${new Set(trainees.map(t => t.batchNumber)).size} batches`, color: 'text-blue-700', bg: 'bg-blue-50' },
+          { label: "Today's Attendance", value: `${attnPct}%`, sub: `${presentToday}/${trainees.length} present`, color: attnPct >= 90 ? 'text-green-700' : 'text-amber-700', bg: attnPct >= 90 ? 'bg-green-50' : 'bg-amber-50' },
+          { label: 'Fund Balance', value: formatCurrency(totalBal), sub: 'All 4 funds', color: totalBal >= 0 ? 'text-green-700' : 'text-red-700', bg: totalBal >= 0 ? 'bg-green-50' : 'bg-red-50' },
+          { label: 'Active Medical', value: String(activeMed), sub: 'sick/hospital/rest', color: activeMed > 0 ? 'text-red-700' : 'text-green-700', bg: activeMed > 0 ? 'bg-red-50' : 'bg-green-50' },
+        ].map(k => (
+          <div key={k.label} className={`${k.bg} border border-slate-200 rounded p-3 text-center`}>
+            <p className={`text-xl font-black ${k.color}`}>{k.value}</p>
+            <p className="text-[9px] text-slate-500 font-bold uppercase">{k.label}</p>
+            <p className="text-[8px] text-slate-400 uppercase">{k.sub}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* FUND POSITION */}
+        {chartCard('Fund Position — 4 Funds', 'Collection vs Expense vs Balance', (
+          <BarChart data={fundData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+            <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+            <YAxis tick={{ fontSize: 10 }} />
+            <Tooltip formatter={(v: number) => formatCurrency(v)} />
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Bar dataKey="Collection" fill="#16a34a" radius={[2, 2, 0, 0]} />
+            <Bar dataKey="Expense" fill="#dc2626" radius={[2, 2, 0, 0]} />
+            <Bar dataKey="Balance" fill="#1d4ed8" radius={[2, 2, 0, 0]} />
+          </BarChart>
+        ))}
+
+        {/* TODAY'S STATUS PIE */}
+        {chartCard("Today's Trainee Status", 'Current attn code distribution', (
+          <PieChart>
+            <Pie data={attnPie} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={85} label={({ name, value }) => `${name}: ${value}`} labelLine={false} fontSize={10}>
+              {attnPie.map(entry => <Cell key={entry.name} fill={entry.color} />)}
+            </Pie>
+            <Tooltip />
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+          </PieChart>
+        ))}
+
+        {/* WEEKLY TEST TREND */}
+        {chartCard('Weekly Test Performance Trend', 'Average % per training week', (
+          <LineChart data={testTrend} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+            <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+            <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} />
+            <Tooltip formatter={(v: number) => `${v}%`} />
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Line type="monotone" dataKey="Avg %" stroke="#7c3aed" strokeWidth={2} dot={{ r: 3 }} />
+          </LineChart>
+        ))}
+
+        {/* PLATOON STRENGTH */}
+        {chartCard('Platoon-wise Strength', 'Trainees per platoon', (
+          <BarChart data={platoonData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+            <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+            <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
+            <Tooltip />
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Bar dataKey="Trainees" fill="#0891b2" radius={[2, 2, 0, 0]} />
+          </BarChart>
+        ))}
+
+        {/* MONTHLY FUNDS TREND */}
+        {chartCard('Monthly Funds Trend', 'Last 6 months — Collection vs Expense', (
+          <LineChart data={monthlyData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+            <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+            <YAxis tick={{ fontSize: 10 }} />
+            <Tooltip formatter={(v: number) => formatCurrency(v)} />
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Line type="monotone" dataKey="Collection" stroke="#16a34a" strokeWidth={2} dot={{ r: 3 }} />
+            <Line type="monotone" dataKey="Expense" stroke="#dc2626" strokeWidth={2} dot={{ r: 3 }} />
+          </LineChart>
+        ))}
+
+        {/* ACTIVE MEDICAL CASES */}
+        {chartCard('Active Medical Cases', 'Category-wise current load', (
+          <BarChart data={medData.length > 0 ? medData : [{ name: 'No Active Cases', Active: 0 }]} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+            <XAxis dataKey="name" tick={{ fontSize: 9 }} interval={0} angle={-20} textAnchor="end" height={55} />
+            <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
+            <Tooltip />
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Bar dataKey="Active" fill="#d97706" radius={[2, 2, 0, 0]} />
+          </BarChart>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────
 // MAIN COMPONENT
 // ─────────────────────────────────────────────
 export const ReportsScreen: React.FC = () => {
@@ -277,6 +530,13 @@ export const ReportsScreen: React.FC = () => {
   const [fptRecords, setFptRecords] = useState<FPTRecord[]>([]);
   const [weeklyTests, setWeeklyTests] = useState<WeeklyTestRecord[]>([]);
 
+  // ★ NEW MODULE DATA (Module 15 Audit)
+  const [medicalCases, setMedicalCases] = useState<MedicalCaseRec[]>([]);
+  const [hazriDocs, setHazriDocs] = useState<HazriDoc[]>([]);
+  const [examTests, setExamTests] = useState<ExamTestDoc[]>([]);
+  // ★ View tab: Report Center vs Analytics Dashboard
+  const [activeTab, setActiveTab] = useState<'reports' | 'analytics'>('reports');
+
   const [transferredOut, setTransferredOut] = useState<Record<string, number>>({});
 
     // ─── STAFF MODULE DATA STATES ────────────
@@ -291,7 +551,15 @@ export const ReportsScreen: React.FC = () => {
   const [subjectAssignments, setSubjectAssignments] = useState<StaffSubjectAssignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState<string | null>(null);
-  const [generatedReports, setGeneratedReports] = useState<GeneratedReport[]>([]);
+  // ★ PERSISTENT report history (localStorage — refresh ke baad bhi bani rehti hai)
+  const [generatedReports, setGeneratedReports] = useState<GeneratedReport[]>(() => {
+    try {
+      const saved = localStorage.getItem(REPORT_HISTORY_KEY);
+      return saved ? (JSON.parse(saved) as GeneratedReport[]) : [];
+    } catch {
+      return [];
+    }
+  });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -634,6 +902,70 @@ export const ReportsScreen: React.FC = () => {
       });
       setWeeklyTests(wtList);
 
+      // ── ★ MEDICAL RECORDS ──
+      const mDocs = await safeFetch('medicalRecords');
+      const mList: MedicalCaseRec[] = mDocs.map(d => {
+        const data = d.data();
+        return {
+          id: d.id,
+          chestNo: data.chestNo ?? '',
+          name: data.name ?? '',
+          platoon: data.platoon ?? '',
+          category: data.category ?? '',
+          diagnosis: data.diagnosis ?? '',
+          date: typeof data.date === 'string' ? data.date : (data.date?.toDate?.()?.toISOString?.().split('T')[0] ?? ''),
+          wardNo: data.wardNo ?? '',
+          recommendedDays: Number(data.recommendedDays ?? 0),
+          status: data.status ?? '',
+          batchId: data.batchId ?? '',
+        };
+      });
+      mList.sort((a, b) => b.date.localeCompare(a.date));
+      setMedicalCases(mList);
+
+      // ── ★ TRAINEE HAZRI (trainee_attendance) ──
+      const hDocs = await safeFetch('trainee_attendance');
+      const hList: HazriDoc[] = hDocs.map(d => {
+        const data = d.data();
+        return {
+          id: d.id,
+          batchId: data.batchId ?? '',
+          batchNumber: String(data.batchNumber ?? ''),
+          date: data.date ?? '',
+          session: data.session ?? '',
+          records: Array.isArray(data.records) ? data.records : [],
+        };
+      });
+      setHazriDocs(hList);
+
+      // ── ★ UNIFIED EXAM TESTS (training_tests) ──
+      const etDocs = await safeFetch('training_tests');
+      const etList: ExamTestDoc[] = etDocs.map(d => {
+        const data = d.data();
+        const rawDate = data.testDate;
+        const isoDate = typeof rawDate === 'string'
+          ? rawDate
+          : (rawDate?.toDate?.()?.toISOString?.().split('T')[0] ?? '');
+        return {
+          id: d.id,
+          testName: data.testName ?? '',
+          testType: data.testType ?? '',
+          subjectCode: data.subjectCode ?? '',
+          platoon: data.platoon ?? 'All',
+          testDate: isoDate,
+          weekNumber: Number(data.weekNumber ?? 0),
+          totalMarks: Number(data.totalMarks ?? 0),
+          averageScore: Number(data.averageScore ?? 0),
+          passCount: Number(data.passCount ?? 0),
+          failCount: Number(data.failCount ?? 0),
+          absentCount: Number(data.absentCount ?? 0),
+          status: data.status ?? '',
+          batchNumber: String(data.batchNumber ?? ''),
+        };
+      });
+      etList.sort((a, b) => b.testDate.localeCompare(a.testDate));
+      setExamTests(etList);
+
       // ── FUND TRANSFERS ──
       const ftDocs = await safeFetch('fund_transfers');
       const transferMap: Record<string, number> = {
@@ -850,13 +1182,24 @@ export const ReportsScreen: React.FC = () => {
   useEffect(() => { fetchAllData(); }, [fetchAllData]);
 
   // ─── HELPERS FOR REPORTS ────────────────
+  // ★ Persistent history — localStorage mein save (max 50), refresh-proof
   const addToHistory = (name: string, type: string, format: 'EXCEL' | 'PRINT', count: number) => {
-    setGeneratedReports(prev => [{
-      id: `RPT-${Date.now()}`,
-      reportName: name, reportType: type,
-      generatedBy: recordedBy, date: new Date().toISOString(),
-      format, recordCount: count,
-    }, ...prev]);
+    setGeneratedReports(prev => {
+      const next = [{
+        id: `RPT-${Date.now()}`,
+        reportName: name, reportType: type,
+        generatedBy: recordedBy, date: new Date().toISOString(),
+        format, recordCount: count,
+      }, ...prev].slice(0, 50);
+      try { localStorage.setItem(REPORT_HISTORY_KEY, JSON.stringify(next)); } catch { /* quota — ignore */ }
+      return next;
+    });
+  };
+
+  // ★ Clear history (button bhi yahi use karta hai)
+  const clearHistory = () => {
+    setGeneratedReports([]);
+    try { localStorage.removeItem(REPORT_HISTORY_KEY); } catch { /* ignore */ }
   };
 
   const filterByDate = <T extends { date?: string; fromDate?: string; entryDate?: string; issueDateISO?: string; testDate?: string }>(
@@ -1653,6 +1996,200 @@ export const ReportsScreen: React.FC = () => {
     setSuccess(`${title} generated!`);
     setGenerating(null);
   };
+  // ═══════════════════════════════════════════════════════════
+  // ★ NEW REPORT GENERATORS (Module 15 Audit — Missing Gap Closure)
+  // ═══════════════════════════════════════════════════════════
+
+  // 21. MEDICAL CASE REGISTER
+  const generateMedicalRegister = (format: 'EXCEL' | 'PRINT') => {
+    setGenerating('medical_register');
+    let filtered = filterByDate(medicalCases, 'date');
+    if (filterPlatoon !== 'All') filtered = filtered.filter(m => m.platoon === filterPlatoon);
+
+    const headers = ['S.No', 'Date', 'Chest No', 'Name', 'Platoon', 'Category', 'Diagnosis', 'Ward', 'Days', 'Status'];
+    const rows = filtered.map((m, i) => [
+      String(i + 1), formatDate(m.date), m.chestNo, m.name, m.platoon || '—',
+      m.category, m.diagnosis || '—', m.wardNo || '—',
+      m.recommendedDays > 0 ? String(m.recommendedDays) : '—', m.status
+    ]);
+
+    const active = filtered.filter(m => m.status === 'Active').length;
+    const fit = filtered.filter(m => m.status !== 'Active').length;
+    const daysLost = filtered.reduce((s, m) => s + m.recommendedDays, 0);
+    const summary = `Total Cases: ${filtered.length} | Active: ${active} | Fit/Discharged: ${fit} | Total Rest Days: ${daysLost} | Hospital: ${filtered.filter(m => m.category === 'Hospital Admit').length}`;
+    const title = 'Medical Case Register';
+
+    if (format === 'EXCEL') downloadCSV('Medical_Register', headers, rows);
+    else printReport(title, headers, rows, summary);
+    addToHistory(title, 'Medical', format, filtered.length);
+    setSuccess(`${title} generated!`);
+    setGenerating(null);
+  };
+
+  // 22. MEDICAL CATEGORY SUMMARY (category-wise + platoon-wise active)
+  const generateMedicalSummary = (format: 'EXCEL' | 'PRINT') => {
+    setGenerating('medical_summary');
+    const cats = ['Sick Report', 'Hospital Admit', 'B-Rest', 'C-Rest', 'Medical Board', 'Injury (Training)', 'Medical Exam'];
+
+    const headers = ['Category', 'Total Cases', 'Active Now', 'Fit / Discharged', 'Rest Days'];
+    const rows = cats.map(cat => {
+      const recs = medicalCases.filter(m => m.category === cat);
+      const act = recs.filter(m => m.status === 'Active').length;
+      return [
+        cat, String(recs.length), String(act),
+        String(recs.length - act),
+        String(recs.reduce((s, m) => s + m.recommendedDays, 0))
+      ];
+    }).filter(r => r[1] !== '0');
+
+    // Platoon-wise active append
+    rows.push(['— PLATOON-WISE ACTIVE —', '', '', '', '']);
+    platoons.forEach(p => {
+      const act = medicalCases.filter(m => m.status === 'Active' && m.platoon === p).length;
+      rows.push([`Platoon ${p}`, String(medicalCases.filter(m => m.platoon === p).length), String(act), '', '']);
+    });
+
+    const totalActive = medicalCases.filter(m => m.status === 'Active').length;
+    const summary = `Total Records: ${medicalCases.length} | Active Cases: ${totalActive} | Impact Platoons: ${new Set(medicalCases.filter(m => m.status === 'Active').map(m => m.platoon)).size}`;
+    const title = 'Medical Category Summary';
+
+    if (format === 'EXCEL') downloadCSV('Medical_Summary', headers, rows);
+    else printReport(title, headers, rows, summary);
+    addToHistory(title, 'Medical', format, rows.length);
+    setSuccess(`${title} generated!`);
+    setGenerating(null);
+  };
+
+  // 23. TRAINEE MONTHLY HAZRI (from trainee_attendance — M9 module data)
+  const generateTraineeHazri = (format: 'EXCEL' | 'PRINT') => {
+    setGenerating('trainee_hazri');
+    const monthKey = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
+    const monthDocs = hazriDocs.filter(h => (h.date ?? '').startsWith(monthKey));
+
+    // Per-trainee status counts across all sessions of the month
+    const perTrainee: Record<string, {
+      chestNo: string; name: string; platoon: string;
+      P: number; A: number; L: number; S: number; H: number; R: number; M: number;
+    }> = {};
+
+    let totalSlots = 0;
+    monthDocs.forEach(docH => {
+      docH.records.forEach(r => {
+        totalSlots++;
+        if (!perTrainee[r.traineeId]) {
+          perTrainee[r.traineeId] = { chestNo: r.chestNo, name: r.name, platoon: r.platoon, P: 0, A: 0, L: 0, S: 0, H: 0, R: 0, M: 0 };
+        }
+        const st = (r.status || 'P').toUpperCase() as 'P' | 'A' | 'L' | 'S' | 'H' | 'R' | 'M';
+        if (perTrainee[r.traineeId][st] !== undefined) perTrainee[r.traineeId][st]++;
+        else perTrainee[r.traineeId].P++;
+      });
+    });
+
+    const headers = ['S.No', 'Chest No', 'Name', 'Platoon', 'Present', 'Absent', 'Leave', 'Sick', 'Hosp', 'Rest', 'M.Board', 'Attendance %'];
+    const rows = Object.values(perTrainee)
+      .sort((a, b) => a.chestNo.localeCompare(b.chestNo))
+      .map((t, i) => {
+        const marked = t.P + t.A + t.L + t.S + t.H + t.R + t.M;
+        const pct = marked > 0 ? Math.round((t.P / marked) * 100) : 0;
+        return [
+          String(i + 1), t.chestNo, t.name, t.platoon || '—',
+          String(t.P), String(t.A), String(t.L), String(t.S), String(t.H), String(t.R), String(t.M),
+          `${pct}%`
+        ];
+      });
+
+    const monthName = new Date(selectedYear, selectedMonth - 1).toLocaleString('en-IN', { month: 'long' });
+    const lowAttendance = rows.filter(r => parseInt(r[11]) < 75).length;
+    const summary = `Month: ${monthName} ${selectedYear} | Sessions Marked: ${monthDocs.length} | Slots: ${totalSlots} | Trainees: ${rows.length} | Below 75%: ${lowAttendance}`;
+    const title = `Trainee Monthly Hazri Report — ${monthName} ${selectedYear}`;
+
+    if (format === 'EXCEL') downloadCSV(`Trainee_Hazri_${monthKey}`, headers, rows);
+    else printReport(title, headers, rows, summary);
+    addToHistory(title, 'Attendance', format, rows.length);
+    setSuccess(`${title} generated!`);
+    setGenerating(null);
+  };
+
+  // 24. UNIFIED EXAM TEST REGISTER (training_tests — M13 module data)
+  const generateExamRegister = (format: 'EXCEL' | 'PRINT') => {
+    setGenerating('exam_register');
+    let filtered = examTests;
+    if (filterPlatoon !== 'All') filtered = filtered.filter(t => t.platoon === filterPlatoon || t.platoon === 'All');
+    if (filterBatch !== 'All') filtered = filtered.filter(t => t.batchNumber === filterBatch);
+    if (dateFrom || dateTo) {
+      filtered = filtered.filter(t => {
+        const d = (t.testDate ?? '').split('T')[0];
+        if (!d) return false;
+        if (dateFrom && d < dateFrom) return false;
+        if (dateTo && d > dateTo) return false;
+        return true;
+      });
+    }
+
+    const headers = ['S.No', 'Date', 'Test Name', 'Type', 'Subject', 'Platoon', 'Week', 'Avg Score', 'Pass', 'Fail', 'Absent', 'Status'];
+    const rows = filtered.map((t, i) => [
+      String(i + 1), formatDate(t.testDate), t.testName, t.testType, t.subjectCode,
+      t.platoon || 'All', t.weekNumber > 0 ? `W${t.weekNumber}` : '—',
+      `${t.averageScore}%`, String(t.passCount), String(t.failCount), String(t.absentCount),
+      t.status.toUpperCase()
+    ]);
+
+    const totalPass = filtered.reduce((s, t) => s + t.passCount, 0);
+    const totalFail = filtered.reduce((s, t) => s + t.failCount, 0);
+    const avgAll = filtered.length > 0 ? Math.round(filtered.reduce((s, t) => s + t.averageScore, 0) / filtered.length) : 0;
+    const summary = `Total Tests: ${filtered.length} | Avg Score: ${avgAll}% | Pass: ${totalPass} | Fail: ${totalFail} | Absent: ${filtered.reduce((s, t) => s + t.absentCount, 0)}`;
+    const title = 'Examination Test Register (Unified)';
+
+    if (format === 'EXCEL') downloadCSV('Exam_Register', headers, rows);
+    else printReport(title, headers, rows, summary);
+    addToHistory(title, 'Examination', format, filtered.length);
+    setSuccess(`${title} generated!`);
+    setGenerating(null);
+  };
+
+  // 25. EXECUTIVE SUMMARY (consolidated one-page KPI print for CC)
+  const generateExecutiveSummary = () => {
+    setGenerating('exec_summary');
+    const present = trainees.filter(t => t.attn === 'P').length;
+    const attnPct = trainees.length > 0 ? Math.round((present / trainees.length) * 100) : 0;
+    const activeMedical = medicalCases.filter(m => m.status === 'Active').length;
+    const pendingLeaves = staffLeaves.filter(l => l.status === 'pending').length;
+    const testsPass = examTests.reduce((s, t) => s + t.passCount, 0);
+    const testsTotal = examTests.reduce((s, t) => s + t.passCount + t.failCount, 0);
+    const examPct = testsTotal > 0 ? Math.round((testsPass / testsTotal) * 100) : 0;
+
+    const headers = ['Section', 'Metric', 'Value'];
+    const rows: string[][] = [
+      ['— MANPOWER —', '', ''],
+      ['Strength', 'Total Trainees (All Batches)', String(trainees.length)],
+      ['Strength', 'Batches (Active / Total)', `${batches.filter(b => b.status === 'active').length} / ${batches.length}`],
+      ['Strength', 'Staff Instructors', String(staffList.length)],
+      ['— ATTENDANCE —', '', ''],
+      ["Today's Hazri", 'Present / Total', `${present} / ${trainees.length} (${attnPct}%)`],
+      ["Today's Hazri", 'Absent', String(trainees.filter(t => t.attn === 'A').length)],
+      ['— FINANCE —', '', ''],
+      ['Funds', 'Total Collection', formatCurrency(totalCol)],
+      ['Funds', 'Total Expense', formatCurrency(totalExp)],
+      ['Funds', 'Cash Balance', formatCurrency(balance)],
+      ['Funds', 'Vendor Dues', formatCurrency(totalDue)],
+      ['— MEDICAL —', '', ''],
+      ['Medical', 'Active Cases (Sick/Hospital/Rest)', String(activeMedical)],
+      ['Medical', 'Hospital Admissions (Active)', String(medicalCases.filter(m => m.status === 'Active' && m.category === 'Hospital Admit').length)],
+      ['— EXAMINATION —', '', ''],
+      ['Tests', 'Unified Tests Conducted', String(examTests.length)],
+      ['Tests', 'Overall Pass Rate', `${examPct}%`],
+      ['— PENDING ACTIONS —', '', ''],
+      ['Approvals', 'Pending Staff Leave Applications', String(pendingLeaves)],
+      ['Inventory', 'Kit Issue Records', String(issues.length)],
+    ];
+
+    const summary = `Generated for Company Commander · Strength ${trainees.length} · Attendance ${attnPct}% · Balance ${formatCurrency(balance)} · Active Medical ${activeMedical} · Pending Approvals ${pendingLeaves}`;
+    printReport('Executive Summary — Company State Report', headers, rows, summary);
+    addToHistory('Executive Summary', 'Executive', 'PRINT', rows.length);
+    setSuccess('Executive Summary generated!');
+    setGenerating(null);
+  };
+
   // ─── COMPUTED ───────────────────────────
   const platoons = [...new Set(trainees.map(t => t.platoon).filter(Boolean))];
   const batchNumbers = [...new Set(trainees.map(t => t.batchNumber).filter(Boolean))];
@@ -1873,6 +2410,63 @@ export const ReportsScreen: React.FC = () => {
         },
       ],
     },
+    // ═══════════════════════════════════════════════════════
+    // ★ NEW SECTIONS (Module 15 Audit — gap closure)
+    // ═══════════════════════════════════════════════════════
+    {
+      category: 'Attendance — Trainee Hazri',
+      icon: <CalendarCheck size={16} />,
+      headerBg: 'bg-cyan-50',
+      reports: [
+        {
+          name: 'Trainee Monthly Hazri Register',
+          desc: `${hazriDocs.length} session docs · P/A/L/S/H/R/M + % per trainee`,
+          icon: <CalendarCheck size={14} className="text-cyan-700" />,
+          onExcel: () => generateTraineeHazri('EXCEL'),
+          onPrint: () => generateTraineeHazri('PRINT'),
+          count: hazriDocs.length,
+        },
+      ],
+    },
+    {
+      category: 'Examination — Unified Tests',
+      icon: <GraduationCap size={16} />,
+      headerBg: 'bg-violet-50',
+      reports: [
+        {
+          name: 'Examination Test Register (Unified)',
+          desc: `${examTests.length} tests from Test Records module · pass/fail/absent`,
+          icon: <GraduationCap size={14} className="text-violet-700" />,
+          onExcel: () => generateExamRegister('EXCEL'),
+          onPrint: () => generateExamRegister('PRINT'),
+          count: examTests.length,
+        },
+      ],
+    },
+    {
+      category: 'Medical — Health Records',
+      icon: <HeartPulse size={16} />,
+      headerBg: 'bg-rose-50',
+      reports: [
+        {
+          name: 'Medical Case Register',
+          desc: `${medicalCases.length} cases · ${medicalCases.filter(m => m.status === 'Active').length} active`,
+          icon: <HeartPulse size={14} className="text-rose-600" />,
+          onExcel: () => generateMedicalRegister('EXCEL'),
+          onPrint: () => generateMedicalRegister('PRINT'),
+          count: medicalCases.length,
+          urgent: medicalCases.filter(m => m.status === 'Active').length > 0,
+        },
+        {
+          name: 'Medical Category Summary',
+          desc: `Category + platoon-wise active case breakdown`,
+          icon: <Activity size={14} className="text-rose-600" />,
+          onExcel: () => generateMedicalSummary('EXCEL'),
+          onPrint: () => generateMedicalSummary('PRINT'),
+          count: medicalCases.filter(m => m.status === 'Active').length,
+        },
+      ],
+    },
   ];
 
   // ─── RENDER ─────────────────────────────
@@ -1902,11 +2496,45 @@ export const ReportsScreen: React.FC = () => {
             Trainee · Inventory · Finance · Performance — All Reports with Item Names & Vendor Details
           </p>
         </div>
-        <button onClick={fetchAllData} disabled={loading}
-          className="flex items-center gap-1.5 text-[11px] font-bold uppercase border border-slate-300 px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50 rounded">
-          <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> Refresh Data
+        <div className="flex items-center gap-2">
+          {/* ★ EXECUTIVE SUMMARY — one-page consolidated KPI print */}
+          <button onClick={generateExecutiveSummary} disabled={generating !== null}
+            className="flex items-center gap-1.5 text-[11px] font-bold uppercase bg-military-800 text-white px-3 py-1.5 hover:bg-military-900 disabled:opacity-50 rounded">
+            {generating === 'exec_summary' ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />} Executive Summary
+          </button>
+          <button onClick={fetchAllData} disabled={loading}
+            className="flex items-center gap-1.5 text-[11px] font-bold uppercase border border-slate-300 px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50 rounded">
+            <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> Refresh Data
+          </button>
+        </div>
+      </div>
+
+      {/* ★ VIEW TABS — Report Center | Analytics Dashboard */}
+      <div className="flex gap-1 border-b border-slate-300">
+        <button
+          onClick={() => setActiveTab('reports')}
+          className={`flex items-center gap-1.5 px-4 py-2 text-[11px] font-black uppercase border-b-2 -mb-px ${activeTab === 'reports' ? 'border-slate-800 text-slate-900 bg-white' : 'border-transparent text-slate-400 hover:text-slate-700'}`}
+        >
+          <FileSpreadsheet size={13} /> Report Center
+        </button>
+        <button
+          onClick={() => setActiveTab('analytics')}
+          className={`flex items-center gap-1.5 px-4 py-2 text-[11px] font-black uppercase border-b-2 -mb-px ${activeTab === 'analytics' ? 'border-slate-800 text-slate-900 bg-white' : 'border-transparent text-slate-400 hover:text-slate-700'}`}
+        >
+          <PieChartIcon size={13} /> Analytics Dashboard
         </button>
       </div>
+
+      {activeTab === 'analytics' ? (
+        <AnalyticsDashboardView
+          trainees={trainees}
+          collections={collections}
+          expenses={expenses}
+          weeklyTests={weeklyTests}
+          medicalCases={medicalCases}
+        />
+      ) : (
+      <>
 
       {/* ALERTS */}
       {success && (
@@ -2112,7 +2740,7 @@ export const ReportsScreen: React.FC = () => {
                 {generatedReports.length} generated
               </span>
             </div>
-            <button onClick={() => setGeneratedReports([])}
+            <button onClick={clearHistory}
               className="text-[10px] font-bold text-slate-400 hover:text-red-600 uppercase">
               Clear All
             </button>
@@ -2147,7 +2775,10 @@ export const ReportsScreen: React.FC = () => {
         </div>
       )}
 
-            <div className="text-center text-[10px] text-slate-400 py-2 border-t border-slate-100">
+      </>
+      )}
+
+      <div className="text-center text-[10px] text-slate-400 py-2 border-t border-slate-100">
         BSF COY Management System · Reports Module · Live Data from Firestore
         <br />
         {trainees.length} trainees · {staffList.length} instructors · {expenses.length} expenses · {staffLeaves.length} leave records · {staffDuties.length} duty records

@@ -9,6 +9,7 @@ import {
 } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
+import { SESSION_TIMEOUT_MS, SESSION_EXPIRED_FLAG } from '../features/system/authSecurity';
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -76,6 +77,48 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     );
     return () => unsubscribe();
   }, []);
+
+  // ★ NEW ─── SESSION TIMEOUT (30 min inactivity → auto logout) ──
+  // Govt ERP security requirement: idle terminal pe session khula
+  // nahi rehna chahiye. User activity (mouse/keyboard/touch) pe
+  // timer reset hota hai. Expire hone pe LoginScreen pe notice
+  // dikhane ke liye sessionStorage flag set karte hain.
+  useEffect(() => {
+    if (!user) return; // Sirf logged-in state mein chalega
+
+    let timeoutId: ReturnType<typeof setTimeout>;
+    let lastReset = Date.now();
+    const EVENTS: (keyof WindowEventMap)[] = [
+      'mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart',
+    ];
+
+    const expireSession = () => {
+      sessionStorage.setItem(SESSION_EXPIRED_FLAG, '1');
+      void logout();
+    };
+
+    const armTimer = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(expireSession, SESSION_TIMEOUT_MS);
+    };
+
+    const onActivity = () => {
+      // Throttle: har 30 sec mein max 1 baar reset (perf)
+      const now = Date.now();
+      if (now - lastReset < 30_000) return;
+      lastReset = now;
+      armTimer();
+    };
+
+    EVENTS.forEach(ev => window.addEventListener(ev, onActivity, { passive: true }));
+    armTimer();
+
+    return () => {
+      clearTimeout(timeoutId);
+      EVENTS.forEach(ev => window.removeEventListener(ev, onActivity));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
   // ─── LOAD USER DATA FROM FIRESTORE ───────
   const loadUserData = async (firebaseUser: FirebaseUser) => {
