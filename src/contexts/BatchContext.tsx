@@ -114,10 +114,12 @@ export const BatchProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const batches = devOn ? raw : raw.filter(b => !b.isTestData && b.status !== 'test');
           setAllBatches(batches);
 
-          // Active batch: normal mode me sirf 'active'; Dev Mode me test batch bhi
-          // select ho jati hai taaki saari flows fake data par test ho sakein.
-          const active = batches.find(b => b.status === 'active')
-            || (devOn ? batches.find(b => b.status === 'test' && b.isTestData) : undefined)
+          // Active batch: NORMAL mode → hamesha status 'active' wali batch.
+          // DEV MODE  → test batch sabse pehle choose hoti hai (test batch hi
+          // activate ho jaati hai, real batch ko haath lagaye bina) — Dev Mode
+          // OFF karte hi real active batch apne aap wapas aa jaati hai.
+          const active = (devOn ? batches.find(b => b.status === 'test' || b.isTestData) : undefined)
+            || batches.find(b => b.status === 'active')
             || null;
           setActiveBatch(active);
           setLoading(false);
