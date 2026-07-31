@@ -8,6 +8,9 @@ import { useUnitConfig } from '../../contexts/UnitConfigContext';
 
 // 🆕 Notification System Import
 import NotificationBell from '../../features/notifications/NotificationBell';
+// ★ Module 19: maintenance mode flag (system_config/flags)
+import { getSystemFlags, DEFAULT_FLAGS, SystemFlags } from '../../features/system/systemHealth.api';
+import { Construction } from 'lucide-react';
 
 // 🆕 Global Search (Ctrl+K) — permission-based
 import GlobalSearch from '../../features/globalSearch/GlobalSearch';
@@ -24,6 +27,15 @@ export const EnterpriseLayout: React.FC<EnterpriseLayoutProps> = ({ children }) 
 
   // 🔥 Unit Config Context se DYNAMIC data
   const { unitConfig, loading: configLoading } = useUnitConfig();
+
+  // ★ Module 19: maintenance flag state (default OFF — safe)
+  const [maintenance, setMaintenance] = useState<SystemFlags>(DEFAULT_FLAGS);
+  useEffect(() => {
+    getSystemFlags().then(setMaintenance);
+    // Har 2 min mein refresh (CC flag badle to jaldi pata chale)
+    const timer = setInterval(() => { getSystemFlags().then(setMaintenance); }, 2 * 60 * 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
@@ -133,6 +145,18 @@ export const EnterpriseLayout: React.FC<EnterpriseLayoutProps> = ({ children }) 
 
         {/* Scrollable Page Content */}
         <main className="flex-1 overflow-x-hidden overflow-y-auto p-4 custom-scrollbar bg-slate-50">
+          {/* ★ Module 19: Maintenance Mode banner — non-CC users ko dikhega,
+              CC kaam karta rahega (banner bhi dikhega par amber info ke roop mein) */}
+          {maintenance.maintenanceMode && user?.role !== 'Company Commander' && (
+            <div className="mb-3 bg-amber-50 border-l-4 border-amber-500 text-amber-900 px-4 py-3 rounded flex items-start gap-3 shadow-sm">
+              <Construction size={18} className="flex-shrink-0 mt-0.5 text-amber-600" />
+              <div>
+                <p className="text-xs font-black uppercase tracking-wider">⚠️ Maintenance Mode Active</p>
+                <p className="text-xs font-semibold mt-0.5 normal-case">{maintenance.maintenanceMessage}</p>
+                <p className="text-[10px] text-amber-700 mt-1">Kaam save karke wait karein. Data entry abhi avoid karein — CC Office.</p>
+              </div>
+            </div>
+          )}
           {children}
         </main>
 

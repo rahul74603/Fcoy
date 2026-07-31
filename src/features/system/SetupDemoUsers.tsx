@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { auth, db } from '../../config/firebase';
 import { createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { AlertTriangle, Database } from 'lucide-react';
+// ★ Module 19: feature-flag gate (system_config/flags.enableSeedTools)
+import { getSystemFlags } from './systemHealth.api';
 
 const DEMO_USERS = [
   { email: 'commander@fcoy.local', pass: 'Commander@123', name: 'Cmdr. F Coy', role: 'Company Commander', desig: 'AC / DC' },
@@ -14,6 +16,10 @@ const DEMO_USERS = [
 export const SetupDemoUsers = () => {
   const [logs, setLogs] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // ★ Module 19: production-safety gate — flag OFF ho to screen block
+  const [seedAllowed, setSeedAllowed] = useState<boolean | null>(null);
+  useEffect(() => { getSystemFlags().then(f => setSeedAllowed(f.enableSeedTools)); }, []);
 
   const addLog = (msg: string) => setLogs(prev => [...prev, msg]);
 
@@ -49,6 +55,23 @@ export const SetupDemoUsers = () => {
     addLog('All Done. Safe to navigate to /login.');
     setLoading(false);
   };
+
+  // ★ Module 19: seed tools flag gate
+  if (seedAllowed === null) {
+    return <div className="p-6 text-center text-xs font-bold text-slate-400 uppercase">Checking feature flags…</div>;
+  }
+  if (seedAllowed === false) {
+    return (
+      <div className="max-w-xl mx-auto mt-10 p-6 bg-white border-2 border-red-400 shadow-flat text-center">
+        <AlertTriangle className="text-red-500 mx-auto mb-3" size={32} />
+        <h1 className="text-lg font-black text-red-700 uppercase">Demo Tools Blocked (Production Mode)</h1>
+        <p className="text-xs text-slate-600 mt-2">
+          Ye utility CC ne <strong>System Health → Feature Flags → Seed/Demo Tools</strong> se band ki hai.
+          Production mode mein demo users inject karna blocked hai.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl mx-auto mt-10 p-6 bg-white border-2 border-amber-500 shadow-flat">

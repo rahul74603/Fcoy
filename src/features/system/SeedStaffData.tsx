@@ -1,11 +1,13 @@
 // src/features/system/SeedStaffData.tsx
 // Complete: Seed + Sync + Cleanup (All-in-One)
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Loader2, Plus, AlertTriangle, Layers, RefreshCw } from 'lucide-react';
 import { collection, addDoc, getDocs, deleteDoc, doc, query, where, updateDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { useBatch } from '../../contexts/BatchContext';
+// ★ Module 19: feature-flag gate (system_config/flags.enableSeedTools)
+import { getSystemFlags } from './systemHealth.api';
 
 // ═══════════════════════════════════════════════════════════
 // DUMMY DATA
@@ -67,6 +69,9 @@ const DUTY_TYPES = [
 // COMPONENT
 // ═══════════════════════════════════════════════════════════
 const SeedStaffData: React.FC = () => {
+  // ★ Module 19: production-safety gate — flag OFF ho to screen block
+  const [seedAllowed, setSeedAllowed] = useState<boolean | null>(null);
+  useEffect(() => { getSystemFlags().then(f => setSeedAllowed(f.enableSeedTools)); }, []);
   const { activeBatch } = useBatch();
   const [status, setStatus] = useState<'idle' | 'busy'>('idle');
   const [logs, setLogs] = useState<string[]>([]);
@@ -394,6 +399,24 @@ const SeedStaffData: React.FC = () => {
   // ═══════════════════════════════════════════
   // RENDER
   // ═══════════════════════════════════════════
+
+  // ★ Module 19: seed tools flag gate
+  if (seedAllowed === null) {
+    return <div className="p-6 text-center text-xs font-bold text-slate-400 uppercase">Checking feature flags…</div>;
+  }
+  if (seedAllowed === false) {
+    return (
+      <div className="max-w-xl mx-auto mt-10 p-6 bg-white border-2 border-red-400 shadow-flat text-center">
+        <AlertTriangle className="text-red-500 mx-auto mb-3" size={32} />
+        <h1 className="text-lg font-black text-red-700 uppercase">Seed Tools Blocked (Production Mode)</h1>
+        <p className="text-xs text-slate-600 mt-2">
+          Ye utility CC ne <strong>System Health → Feature Flags → Seed/Demo Tools</strong> se band ki hai.
+          Production data par seed mat chalayein. Enable karne ke liye CC se contact karein.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-4xl mx-auto space-y-5 pb-8">
 

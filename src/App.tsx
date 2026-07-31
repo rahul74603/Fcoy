@@ -1,5 +1,6 @@
 // src/App.tsx
 
+import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { EnterpriseLayout } from './components/layout/EnterpriseLayout';
 import SeedStaffData from './features/system/SeedStaffData';
@@ -53,6 +54,10 @@ import { UserManagementPage } from './features/system/UserManagementPage';
 // --- ★ Module 17-18 Audit: Notification Center + System Masters ---
 import { NotificationCenterScreen } from './features/notifications/NotificationCenterScreen';
 import { SystemMastersScreen }      from './features/system/SystemMastersScreen';
+// --- ★ Module 19-20 Audit: System Health + Automation Center ---
+import { SystemHealthScreen }       from './features/system/SystemHealthScreen';
+import { AutomationCenterScreen }   from './features/automation/AutomationCenterScreen';
+import { logClientError }           from './features/system/systemHealth.api';
 import { TrainingScheduleScreen } from './features/ustad/screens';
 
 // --- Batch ---
@@ -89,6 +94,24 @@ const STAFF_MANAGE_ROLES = ['Company Commander', 'Clerk'];
 const STAFF_VIEW_ROLES   = ['Company Commander', 'Clerk', 'Ustad'];
 
 function App() {
+  // ★ Module 19: Global client error monitoring → error_logs
+  // (dedupe + throttle built-in; kabhi app ko break nahi karta)
+  React.useEffect(() => {
+    const onError = (ev: ErrorEvent) => {
+      logClientError('window.onerror', ev.message ?? 'unknown', `${ev.filename ?? ''}:${ev.lineno ?? ''}`);
+    };
+    const onRejection = (ev: PromiseRejectionEvent) => {
+      const reason = ev.reason instanceof Error ? ev.reason.message : String(ev.reason ?? 'unhandled rejection');
+      logClientError('unhandledrejection', reason);
+    };
+    window.addEventListener('error', onError);
+    window.addEventListener('unhandledrejection', onRejection);
+    return () => {
+      window.removeEventListener('error', onError);
+      window.removeEventListener('unhandledrejection', onRejection);
+    };
+  }, []);
+
   return (
     <AuthProvider>
       <UnitConfigProvider>
@@ -473,6 +496,24 @@ function App() {
                 element={
                   <ProtectedRoute allowedRoles={['Company Commander']}>
                     <EnterpriseLayout><SystemMastersScreen /></EnterpriseLayout>
+                  </ProtectedRoute>
+                }
+              />
+              {/* ★ Module 19: System Health & Administration — CC only */}
+              <Route
+                path="/system-health"
+                element={
+                  <ProtectedRoute allowedRoles={['Company Commander']}>
+                    <EnterpriseLayout><SystemHealthScreen /></EnterpriseLayout>
+                  </ProtectedRoute>
+                }
+              />
+              {/* ★ Module 20: Automation Center — CC only */}
+              <Route
+                path="/automation"
+                element={
+                  <ProtectedRoute allowedRoles={['Company Commander']}>
+                    <EnterpriseLayout><AutomationCenterScreen /></EnterpriseLayout>
                   </ProtectedRoute>
                 }
               />
