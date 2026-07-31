@@ -8,7 +8,9 @@ import {
 } from 'lucide-react';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
-import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+// ★ Cloudinary migration (free plan, no card): Firebase Storage → Cloudinary + client-side compressor
+import { prepareFileForUpload } from './fileCompress';
+import { uploadDocumentToCloudinary, isCloudinaryConfigured } from './cloudinaryUpload';
 
 import { useTraineeSearch } from '../../hooks/useTraineeSearch';
 import { useAuth } from '../../contexts/AuthContext';
@@ -16,7 +18,9 @@ import { useAuth } from '../../contexts/AuthContext';
 // ─────────────────────────────────────────────
 // CONSTANTS
 // ─────────────────────────────────────────────
-const MAX_FILE_SIZE_KB = 500;
+// ★ Compressor add hone ke baad badi input bhi theek hai (photo 3–8MB → ~200KB).
+// Pehle 500KB tha — phone scans reject ho jaati thi. Upload cap Cloudinary preset me bhi hai.
+const MAX_FILE_SIZE_KB = 20480;
 const ALLOWED_TYPES    = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
 
 const REQUIRED_DOCUMENTS = [
@@ -205,33 +209,38 @@ export const DocumentVerificationScreen = () => {
       }
     }
 
+    // ★ Cloudinary env missing ho to yahin rok do — clear setup message, confusing partial fail nahi
+    if (!isCloudinaryConfigured()) {
+      setMessage(
+        'ERROR: Cloudinary config set nahi hai — .env me VITE_CLOUDINARY_CLOUD_NAME aur ' +
+        'VITE_CLOUDINARY_UPLOAD_PRESET daalo (setup steps: CLOUDINARY_UPLOAD_IMPLEMENTATION_REPORT.md).'
+      );
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
     setUploadingKey(currentUploadKey);
-    setMessage('');
+    setMessage('Compress + upload ho raha hai — badi file me thoda time lag sakta hai...');
 
     const newFiles: FileInfo[] = [];
 
     for (const file of filesArray) {
-      const fileSizeKB = Math.round(file.size / 1024);
       try {
-        const storage    = getStorage();
-        const storageRef = ref(
-          storage,
-          `documents/${searchedTrainee?.regNo}/${currentUploadKey}_${Date.now()}_${file.name}`
-        );
-        await uploadBytes(storageRef, file);
-        const downloadUrl = await getDownloadURL(storageRef);
+        // ★ Pehle compress (photo/PDF dono), phir Cloudinary upload.
+        // Purani flow ki tarah fail file list me NAHI daalte (zombie link se bachna).
+        const prepared = await prepareFileForUpload(file);
+        const uploaded = await uploadDocumentToCloudinary(prepared.file);
         newFiles.push({
           fileName:   file.name,
-          fileUrl:    downloadUrl,
-          fileSize:   `${fileSizeKB}KB`,
-          fileType:   file.type,
+          fileUrl:    uploaded.url,
+          fileSize:   `${prepared.finalKB}KB`,
+          fileType:   prepared.file.type,
           uploadedAt: new Date().toISOString(),
         });
-      } catch {
-        // ★ FIX: Pehle yahan local blob URL save ho jaata tha jo refresh ke baad
-        // toot jaata tha (zombie link). Ab fail file ko list mein nahi daalte.
+      } catch (uploadErr) {
+        const reason = uploadErr instanceof Error ? uploadErr.message : 'unknown error';
         setMessage(
-          `ERROR: "${file.name}" Firebase Storage pe upload nahi ho payi. Internet check karke retry karein — file ko document me add nahi kiya gaya.`
+          `ERROR: "${file.name}" document server par upload nahi ho payi (${reason}). Internet check karke retry karein — file ko document me add nahi kiya gaya.`
         );
       }
     }
@@ -456,7 +465,7 @@ export const DocumentVerificationScreen = () => {
           </div>
         </div>
         <div className="text-right">
-          <p className="text-[10px] text-military-300">Max Size: <strong className="text-yellow-400">{MAX_FILE_SIZE_KB}KB</strong> per file</p>
+          <p className="text-[10px] text-military-300">Max Size: <strong className="text-yellow-400">20MB</strong> per file — badi file <strong className="text-yellow-400">auto-compress</strong> hoti hai</p>
           <p className="text-[10px] text-military-300">Formats: JPG, PNG, WEBP, PDF</p>
         </div>
       </div>
