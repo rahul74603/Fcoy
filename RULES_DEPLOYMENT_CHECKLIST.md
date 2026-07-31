@@ -86,6 +86,16 @@ Console me **Publish** dabao YA CLI: `firebase deploy --only firestore:rules,sto
 
 **Koi bhi permission error dikhe → screenshot + console log paste karo. Fix rules-side hoga, app code nahi.**
 
+### STEP 4.5 — ☐ GIT TAG (deploy + smoke PASS hone par — 48h watch SHURU hone se pehle)
+
+Known-good security baseline ka pointer — future me Task 4/5/AI me kuch toote to isi par instant wapas:
+```bash
+git tag -a v1.0-security-rules -m "Known-good security baseline: firestore+storage rules live & smoke-verified (Task-1/2/3). Pre-Task-4."
+git push origin v1.0-security-rules
+```
+Rollback use (kabhi zarurat pade to): `git checkout v1.0-security-rules` (inspect) ya `git revert` us point ke baad ke commits.
+*(Optional second tag 48h clean watch ke baad: `v1.0-security-stable`.)*
+
 ## STEP 5 — ☐ 48-hour Watch (MANDATORY GATE #4)
 
 - `error_logs` collection (System Health → Error Feed) me permission-denied spike?
@@ -111,6 +121,7 @@ Console me **Publish** dabao YA CLI: `firebase deploy --only firestore:rules,sto
 | Simulator 10/10 expected | ☐ |
 | Smoke 10/10 (4 roles) | ☐ |
 | Backup file saved | ☐ |
+| **Git tag `v1.0-security-rules` created + pushed** | ☐ |
 | 48h watch clean | ☐ |
 | → **PRODUCTION STABLE + Task 4 unlock** | 🔒 |
 
