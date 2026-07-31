@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   StaffLeave, LeaveFormData, LeaveType, LeaveStatistics,
+  canManageLeaves,
 } from '../types/leave.types';
 import {
   getAllLeaves, getPendingLeaves, getCurrentLeaves,
@@ -214,6 +215,11 @@ export const useLeave = (): UseLeaveReturn => {
     forceNumber: string,
     rank: string
   ): Promise<boolean> => {
+    // ★ Task 1 security gate: leave mutations sirf CC/Clerk (UI bhi gated hai; Task 2 = Firestore rules)
+    if (!canManageLeaves(user?.role)) {
+      setError('Permission denied: only Company Commander or Clerk can manage leaves.');
+      return false;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -246,6 +252,11 @@ export const useLeave = (): UseLeaveReturn => {
   };
 
     const handleApproveLeave = async (leaveId: string): Promise<boolean> => {
+    // ★ Task 1 security gate: approve sirf CC/Clerk
+    if (!canManageLeaves(user?.role)) {
+      setError('Permission denied: only Company Commander or Clerk can approve leaves.');
+      return false;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -345,6 +356,11 @@ export const useLeave = (): UseLeaveReturn => {
   const handleRejectLeave = async (
     leaveId: string, reason: string
   ): Promise<boolean> => {
+    // ★ Task 1 security gate: reject sirf CC/Clerk
+    if (!canManageLeaves(user?.role)) {
+      setError('Permission denied: only Company Commander or Clerk can reject leaves.');
+      return false;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -371,6 +387,11 @@ export const useLeave = (): UseLeaveReturn => {
   };
 
     const handleCancelLeave = async (leaveId: string): Promise<boolean> => {
+    // ★ Task 1 security gate: cancel sirf CC/Clerk
+    if (!canManageLeaves(user?.role)) {
+      setError('Permission denied: only Company Commander or Clerk can cancel leaves.');
+      return false;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -410,6 +431,11 @@ export const useLeave = (): UseLeaveReturn => {
     leaveId: string, returnDate: string,
     joiningReport: boolean, delayReason: string
   ): Promise<boolean> => {
+    // ★ Task 1 security gate: return record sirf CC/Clerk
+    if (!canManageLeaves(user?.role)) {
+      setError('Permission denied: only Company Commander or Clerk can record leave returns.');
+      return false;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -475,6 +501,11 @@ export const useLeave = (): UseLeaveReturn => {
     name: string, code: string, maxDays: number,
     isPaid: boolean, description: string
   ): Promise<boolean> => {
+    // ★ Task 1 security gate: leave-master edit sirf CC/Clerk
+    if (!canManageLeaves(user?.role)) {
+      setError('Permission denied: only Company Commander or Clerk can manage leave types.');
+      return false;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -492,6 +523,11 @@ export const useLeave = (): UseLeaveReturn => {
   const handleToggleLeaveType = async (
     typeId: string, isActive: boolean
   ): Promise<boolean> => {
+    // ★ Task 1 security gate: leave-master toggle sirf CC/Clerk
+    if (!canManageLeaves(user?.role)) {
+      setError('Permission denied: only Company Commander or Clerk can manage leave types.');
+      return false;
+    }
     setSubmitting(true);
     try {
       await toggleLeaveTypeStatus(typeId, isActive);

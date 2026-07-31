@@ -16,6 +16,17 @@
 
 ---
 
+## ⟳ CORRECTIONS LOG (Live verification discipline)
+
+*Rule (user addendum): current source code hamesha report ke upar. Koi bhi purana claim stale/galat lage to implementation se pehle code se verify karke correct kiya jayega.*
+
+| # | Date | Original Claim | Corrected Finding | Trigger |
+|---|------|----------------|-------------------|---------|
+| C1 | 31-Jul-2026 | "Leave → Attendance ❌ BROKEN/MISSING" (§3 row 8, M10, W2 roadmap) | **CONNECTED hai** — `useLeave.handleApproveLeave` approve par poore leave-period ke har din `markBulkAttendance(status:'leave')` karta hai; `handleRecordReturn` return-day par `'present'`; `handleCancelLeave` staff reactivate. Sync **hook layer** me tha — sirf `leave.api.ts` grep karne se miss hua. | Task 1 implementation ke dauran fresh code read |
+| C2 | 31-Jul-2026 | "Ustad leave approve kar sakta hai" (M11 🔴) | **FIXED (Task 1)** — `canManageLeaves` gate ab screen ke 6 UI points + hook ke 7 handlers me laga. Server-side enforcement Task 2 (Firestore Rules) pending. | Task 1 completion |
+
+---
+
 ## 0. VERIFICATION METHOD & EVIDENCE BASE
 
 | # | Check | Tool/Method | Result |
@@ -189,7 +200,7 @@
 
 - **Current:** Staff attendance (`staff_attendance`) + hazri; **TraineeAttendanceScreen** (`trainee_attendance`, codes P/A/L/S/H/R/M — M9-10 ★ NEW register); absent records; `hazri_missing` automation rule (→Clerk); attendance feeding CC dashboard + Reports.
 - **Missing:** **Test-absent → trainee_attendance sync** (verified absent — TestRecords does NOT write attendance); monthly attendance % per trainee report page (data hai, dedicated print view thin); biometric/manual override remarks; attendance edit audit trail (kaun change kiya).
-- **Broken:** Leave approve → staff_attendance me `L` auto-mark **NAHI hota** (verified: leave.api has no staff_attendance write) = manual double entry chahiye.
+- **Broken:** None. *(⟳ C1 corrected: pehle likha tha "leave approve → attendance auto-mark nahi hota" — **galat tha**; approve par poore period ki attendance `'leave'` mark hoti hai hook se. Remaining gap sirf test-absent sync.)*
 - **Dummy:** ❌. **Firebase:** ✅. **Collections:** ✅ (`staff_attendance`, `trainee_attendance`, `absentRecords`).
 - **CRUD:** ✅ · **Validation:** ✅ (7 codes) · **Search:** ✅ · **Filters:** ✅ · **Reports:** ✅
 - **RBAC:** ✅. **Security:** 🟡. **Production:** 🟡.
@@ -206,10 +217,11 @@
   - Route `/staff-leave` = `STAFF_VIEW_ROLES` = **CC + Clerk + Ustad**.
   - Approve dialog (`handleApproveClick` line ~346) kisi bhi logged-in Ustad ko **staff leave approve** karne deta hai. Firestore rules bhi absent hain, to write succeed hogi.
   - **= Privilege escalation: Ustad apni/kisi ki bhi leave approve kar sakta hai.** (M11 audit Critical — aaj fresh evidence se confirm.)
-- **Missing:** Leave calendar heatmap; leave→attendance auto-mark (§M10).
+- **Missing:** Leave calendar heatmap. *(leave→attendance auto-mark: already connected — ⟳ correction C1)*
+- **✅ TASK-1 FIX (31-Jul-2026):** Upar wala 🟥 security hole **fix ho chuka** — `canManageLeaves` gate screen (6 UI points: Apply/Approve/Reject/Cancel/Record-Return/Add+Toggle-Type) + hook (saare 7 mutation handlers) dono layers me. Ustad ab view-only. Server-side enforcement = Task 2 (Firestore Rules).
 - **Dummy:** ❌. **Firebase:** ✅. **Collections:** ✅ (`staff_leave`, `leave_types`).
 - **CRUD:** ✅ · **Validation:** ✅ (balance/overlap) · **Search:** ✅ · **Filters:** ✅ · **Reports:** ✅
-- **RBAC:** 🔴 **Screen-level FAIL** (route gate hai, action gate nahi). **Security Ready:** 🔴. **Production Ready:** 🔴 gate fix ke bina nahi.
+- **RBAC:** 🟡 **Screen+hook-level FIXED (Task 1 ★)**; server-side rules abhi pending (Task 2). **Security Ready:** 🟡. **Production Ready:** 🟡 Task 2 ke baad.
 - **Recommendation:** 🔄 **UPDATE EXISTING** — `canManage = role ∈ {CC, Clerk}` gate on Approve/Reject/Overstay-return actions (Ustad view-only). 1-file, additive change. **Priority:** 🔴 **CRITICAL**.
 
 ---
@@ -335,7 +347,7 @@
 | 5 | Global Search → Entities | ✅ **Connected** | trainees/staff/inventory/attendance searchable; `search_logs` audit |
 | 6 | Backup → All | ✅ **Connected** | 42 collections exported |
 | 7 | Automation → Notifications | ✅ **Connected** | All 7 rules emit role-targeted notifications with dedupe |
-| 8 | Leave → Attendance | ❌ **BROKEN/MISSING** | `leave.api.ts` has **zero** `staff_attendance` writes — approved leave doesn't auto-mark `L` (manual double entry) |
+| 8 | Leave → Attendance | ✅ **Connected** (⟳ CORRECTED — C1) | `useLeave.handleApproveLeave` Step-3 poore leave-period ke har din `'leave'` attendance mark karta hai; `handleRecordReturn` return-day `'present'`; cancel = staff reactivate |
 | 9 | Medical → Leave | ❌ **BROKEN/MISSING** | Medical module references leave **nowhere** (grep evidence) — bed-rest/referral creates no leave draft |
 | 10 | Inventory → Finance | ❌ **BROKEN/MISSING** | QM purchases and finance vendor books are disconnected — no auto expense posting, no amount cross-check |
 | 11 | Examination → Attendance | ❌ **BROKEN/MISSING** | TestRecords does NOT sync absentees to `trainee_attendance` (grep evidence) |
@@ -343,7 +355,7 @@
 | 13 | Audit logs → All modules | 🟡 **Partial** | `logActivity` used in only 10 files (9 ustad + 1 notifications) — students/finance/QM/mess/medical writes unaudited at activity level |
 | 14 | Settings → All (config) | ✅ **Connected** | `useUnitConfig` consumed app-wide (FY/session labels M18 ★) |
 
-**Broken integrations summary (5 missing + 2 partial):** Leave→Attendance, Medical→Leave, Inventory→Finance, Exam→Attendance, Kit→Finance-Recovery; Audit-log coverage partial; Notification emitter coverage partial.
+**Broken integrations summary (4 missing + 2 partial):** Medical→Leave, Inventory→Finance, Exam→Attendance, Kit→Finance-Recovery; Audit-log coverage partial; Notification emitter coverage partial. *(⟳ C1: Leave→Attendance CONNECTED hai — auto-sync hook layer me.)*
 
 ---
 
@@ -516,7 +528,7 @@ Ranked, evidence ke saath:
 |---|---|---|
 | 8–10 | Restore import wizard: backup JSON → schema validation → dry-run report → batch-wise write (with rollback log) | ➕ ADD NEW |
 | 10–11 | `logActivity` expansion: students/finance/QM/mess/medical write-paths (existing logger reuse — additive lines only) | 🔄 UPDATE EXISTING |
-| 11–12 | Leave→`staff_attendance` auto-mark (L code) + test-absent→`trainee_attendance` sync | 🔄 UPDATE EXISTING |
+| 11–12 | Test-absent→`trainee_attendance` sync *(⟳ leave→attendance auto-mark already exists — correction C1)* | 🔄 UPDATE EXISTING |
 | 12–14 | Retention purge function (notifications>90d, error_logs>60d, login_history>365d archive) + orphan-storage scanner | ➕ ADD NEW |
 
 **WEEK 3 (Day 15–21) — WORKFLOW COMPLETION** 🟠

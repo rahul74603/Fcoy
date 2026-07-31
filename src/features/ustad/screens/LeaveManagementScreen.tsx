@@ -6,6 +6,7 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useLeave } from '../hooks/useLeave';
 import { useStaff } from '../hooks/useStaff';
+import { useAuth } from '../../../contexts/AuthContext';
 import {
   StaffLeave,
   LeaveFormData,
@@ -13,6 +14,7 @@ import {
   LEAVE_STATUS_COLORS,
   LEAVE_STATUS_LABELS,
   DEFAULT_LEAVE_FORM,
+  canManageLeaves,
 } from '../types/leave.types';
 import FormModal from '../components/shared/FormModal';
 import ConfirmDialog from '../components/shared/ConfirmDialog';
@@ -226,6 +228,9 @@ const LeaveManagementScreen: React.FC = () => {
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [showReturnModal, setShowReturnModal] = useState(false);
   const [showLeaveTypeModal, setShowLeaveTypeModal] = useState(false);
+  const { user } = useAuth();
+  // ★ Task 1: Leave Approval Security — CC/Clerk manage karte hain, Ustad view-only
+  const canManage = canManageLeaves(user?.role);
   const [showApproveDialog, setShowApproveDialog] = useState(false);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [selectedLeave, setSelectedLeave] = useState<StaffLeave | null>(null);
@@ -510,7 +515,9 @@ const LeaveManagementScreen: React.FC = () => {
               Leave Management
             </h1>
             <p className="text-sm text-gray-500 mt-0.5">
-              Apply, approve and track staff leaves
+              {canManage
+                ? 'Apply, approve and track staff leaves'
+                : 'Staff leave status (view only — CC/Clerk manage)'}
             </p>
           </div>
           <div className="flex gap-2">
@@ -522,12 +529,15 @@ const LeaveManagementScreen: React.FC = () => {
             >
               🔄 Refresh
             </button>
-            <button
-              onClick={() => setShowApplyModal(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              + Apply Leave
-            </button>
+            {/* ★ Task 1: apply sirf CC/Clerk */}
+            {canManage && (
+              <button
+                onClick={() => setShowApplyModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                + Apply Leave
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -698,12 +708,15 @@ const LeaveManagementScreen: React.FC = () => {
               <h2 className="text-sm font-bold text-gray-700">
                 Leave Types Master
               </h2>
-              <button
-                onClick={() => setShowLeaveTypeModal(true)}
-                className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700"
-              >
-                + Add Type
-              </button>
+              {/* ★ Task 1: master edit sirf CC/Clerk */}
+              {canManage && (
+                <button
+                  onClick={() => setShowLeaveTypeModal(true)}
+                  className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700"
+                >
+                  + Add Type
+                </button>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -737,11 +750,15 @@ const LeaveManagementScreen: React.FC = () => {
                       {lt.isActive ? 'Active' : 'Inactive'}
                     </span>
                     <div
-                      onClick={() =>
-                        handleToggleLeaveType(lt.id, !lt.isActive)
+                      onClick={
+                        canManage
+                          ? () => handleToggleLeaveType(lt.id, !lt.isActive)
+                          : undefined
                       }
+                      title={canManage ? undefined : 'View only — CC/Clerk can change'}
                       className={`
-                        relative w-9 h-5 rounded-full cursor-pointer transition-colors
+                        relative w-9 h-5 rounded-full transition-colors
+                        ${canManage ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}
                         ${lt.isActive ? 'bg-green-500' : 'bg-gray-300'}
                       `}
                     >
@@ -763,12 +780,14 @@ const LeaveManagementScreen: React.FC = () => {
                   <p className="text-sm">
                     No leave types configured yet.
                   </p>
-                  <button
-                    onClick={() => setShowLeaveTypeModal(true)}
-                    className="mt-3 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg"
-                  >
-                    Add Leave Type
-                  </button>
+                  {canManage && (
+                    <button
+                      onClick={() => setShowLeaveTypeModal(true)}
+                      className="mt-3 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg"
+                    >
+                      Add Leave Type
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -982,8 +1001,8 @@ const LeaveManagementScreen: React.FC = () => {
                       >
                         👁 Leave Quota / History
                       </button>
-                      {/* Pending Actions */}
-                      {leave.status === 'pending' && (
+                      {/* Pending Actions — ★ Task 1: sirf CC/Clerk */}
+                      {canManage && leave.status === 'pending' && (
                         <>
                                                     <button
                             onClick={() => handleApproveClick(leave)}
@@ -1007,8 +1026,8 @@ const LeaveManagementScreen: React.FC = () => {
                         </>
                       )}
 
-                      {/* Approved + On Leave - Record Return */}
-                      {leave.status === 'approved' && !leave.returnDate && (
+                      {/* Approved + On Leave - Record Return — ★ Task 1: sirf CC/Clerk */}
+                      {canManage && leave.status === 'approved' && !leave.returnDate && (
                         <button
                           onClick={() => handleReturnClick(leave)}
                           className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors"

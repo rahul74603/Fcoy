@@ -121,3 +121,11 @@ export const LEAVE_STATUS_COLORS: Record<LeaveStatus, string> = {
   rejected: 'bg-red-100 text-red-800',
   cancelled: 'bg-gray-100 text-gray-800',
 };
+// ─── Role Gate (★ Task 1: Leave Approval Security) ───
+// Leave management mutations sirf in roles ke liye. Screen + hook dono isi helper
+// ko use karte hain — magic strings duplicate nahi karni (single source of truth).
+// Server-side enforcement Task 2 (Firestore Rules) me aayegi.
+export const LEAVE_MANAGER_ROLES = ['Company Commander', 'Clerk'] as const;
+
+export const canManageLeaves = (role?: string | null): boolean =>
+  !!role && (LEAVE_MANAGER_ROLES as readonly string[]).includes(role);
