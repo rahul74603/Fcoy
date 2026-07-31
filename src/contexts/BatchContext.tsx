@@ -7,13 +7,16 @@ import {
 } from 'firebase/firestore';
 import { db, auth } from '../config/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+// ★ Dev Test Lab: hidden test-batch filtering (devSeed)
+import { isDevMode } from '../features/system/devSeed';
 
 // ─── Types ───
 export interface Batch {
   id: string;
   batchNumber: string;
+  isTestData?: boolean;   // ★ Dev Test Lab: hidden fake batch marker
   batchName: string;
-  status: 'active' | 'completed' | 'upcoming';
+  status: 'active' | 'completed' | 'upcoming' | 'test';   // ★ 'test' = hidden dev batch
   startDate: string;
   endDate: string;
   totalTrainees: number;
@@ -99,14 +102,23 @@ export const BatchProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       unsubscribeFirestore = onSnapshot(
         query(collection(db, 'batches'), orderBy('createdAt', 'desc')),
         (snapshot) => {
-          const batches: Batch[] = [];
+          const raw: Batch[] = [];
           snapshot.forEach((doc) => {
-            batches.push({ id: doc.id, ...doc.data() } as Batch);
+            raw.push({ id: doc.id, ...doc.data() } as Batch);
           });
+
+          // ★ Dev Test Lab: status 'test' ya isTestData wali batches normal users
+          //   ko kabhi NAHI dikhti (hidden). Sirf Dev Mode (localStorage
+          //   'fcoy_dev_mode'='1') ON hone par developer ko dikhti hain.
+          const devOn = isDevMode();
+          const batches = devOn ? raw : raw.filter(b => !b.isTestData && b.status !== 'test');
           setAllBatches(batches);
 
-          // Find active batch
-          const active = batches.find(b => b.status === 'active') || null;
+          // Active batch: normal mode me sirf 'active'; Dev Mode me test batch bhi
+          // select ho jati hai taaki saari flows fake data par test ho sakein.
+          const active = batches.find(b => b.status === 'active')
+            || (devOn ? batches.find(b => b.status === 'test' && b.isTestData) : undefined)
+            || null;
           setActiveBatch(active);
           setLoading(false);
         },

@@ -8,6 +8,8 @@ import { db } from '../../config/firebase';
 import { useBatch } from '../../contexts/BatchContext';
 // ★ Module 19: feature-flag gate (system_config/flags.enableSeedTools)
 import { getSystemFlags } from './systemHealth.api';
+// ★ Dev Test Lab — hidden fake batch section (150 trainees + 20 staff)
+import DevTestLabSection from './DevTestLabSection';
 
 // ═══════════════════════════════════════════════════════════
 // DUMMY DATA
@@ -445,6 +447,9 @@ const SeedStaffData: React.FC = () => {
           <p className="text-sm font-bold text-amber-900">No Active Batch!</p>
         </div>
       )}
+
+      {/* ★ DEV TEST LAB — hidden fake batch (150 trainees + 20 staff) */}
+      <DevTestLabSection />
 
       {/* ════════════════════════════════════════
           SECTION 1: SEEDING
