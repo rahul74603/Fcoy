@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test:rules": "firebase emulators:exec --only firestore,storage --project demo-fcoy 'vitest run tests/rules'"
+    "test:rules": "firebase emulators:exec --only firestore,storage --project demo-fcoy \"npx vitest run tests/rules\""
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
