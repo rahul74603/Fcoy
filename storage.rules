@@ -1,0 +1,49 @@
+rules_version = '2';
+
+// ═══════════════════════════════════════════════════════════════════════════
+// F COY ERP — STORAGE SECURITY RULES (Task 2 · 31-Jul-2026)
+// ═══════════════════════════════════════════════════════════════════════════
+// Firestore rules ke saath SYNCHRONIZED: role source wahi hai (users/{uid}.role).
+// App Storage sirf trainee verification documents ke liye use hota hai
+// (src/features/students/DocumentVerificationScreen.tsx — path pattern
+//  documents/{regNo}/{docKey}_{timestamp}_{filename}).
+// Wo screen CLERK_ROLES (CC+Clerk) route hai — yahan bhi wahi scope.
+// Bills base64 Firestore me hain (known design) — Storage me kuch aur nahi jata.
+// ═══════════════════════════════════════════════════════════════════════════
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // ── Firestore rules jaisi hi reusable helpers (cross-service lookup) ──
+    function isSignedIn_() {
+      return request.auth != null;
+    }
+    function hasProfile_() {
+      return isSignedIn_()
+        && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid));
+    }
+    function staffRole_() {
+      return hasProfile_()
+        ? firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.get('role', '')
+        : '';
+    }
+    function isClerkOrCC_() {
+      return staffRole_() == 'Clerk' || staffRole_() == 'Company Commander';
+    }
+
+    // Trainee documents — upload/read/delete sirf CC/Clerk.
+    // Guardrails: 5MB cap + sirf image/PDF (executable/script upload block).
+    match /documents/{regNo}/{fileName} {
+      allow read: if isClerkOrCC_();
+      allow create: if isClerkOrCC_()
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*|application/pdf');
+      allow update, delete: if isClerkOrCC_();
+    }
+
+    // DENY BY DEFAULT — koi aur path (bills/tmp/etc.) allowed nahi.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

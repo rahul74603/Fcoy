@@ -1,0 +1,5 @@
+{
+  "//": "F Coy ERP — query design deliberately composite-index-free (notification queries client-side sort karte hain). Agar kabhi Firebase Console link se composite index banao to yahan add karo — warna khali base hi rahegi.",
+  "indexes": [],
+  "fieldOverrides": []
+}

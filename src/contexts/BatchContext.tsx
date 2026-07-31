@@ -5,7 +5,8 @@ import {
   doc, collection, onSnapshot, getDoc,
   updateDoc, query, orderBy, writeBatch
 } from 'firebase/firestore';
-import { db } from '../config/firebase';
+import { db, auth } from '../config/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 
 // ─── Types ───
 export interface Batch {
@@ -73,29 +74,54 @@ export const BatchProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [error, setError] = useState('');
 
   // ── Real-time listener for all batches ──
+  // ★ Task 2 (rules-readiness): listener sirf LOGIN KE BAAD attach karo.
+  //   Firestore rules batches read = sirf authenticated staff rakhti hain (D3).
+  //   Pre-auth attach hua to rules deny kar dengi aur subscription mar jayegi —
+  //   phir login ke baad bhi batches dead rahte (refresh tak). Ye fix additive hai;
+  //   logged-in behaviour bilkul same hai, sirf boot-order safe hua.
   useEffect(() => {
-    const unsubscribe = onSnapshot(
-      query(collection(db, 'batches'), orderBy('createdAt', 'desc')),
-      (snapshot) => {
-        const batches: Batch[] = [];
-        snapshot.forEach((doc) => {
-          batches.push({ id: doc.id, ...doc.data() } as Batch);
-        });
-        setAllBatches(batches);
+    let unsubscribeFirestore: (() => void) | null = null;
 
-        // Find active batch
-        const active = batches.find(b => b.status === 'active') || null;
-        setActiveBatch(active);
+    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+      // Login/logout switch par purana listener hamesha band karo (leak nahi)
+      unsubscribeFirestore?.();
+      unsubscribeFirestore = null;
+
+      if (!firebaseUser) {
+        // Pre-auth: kuch fetch nahi — quietly empty state, koi deny-error nahi
+        setAllBatches([]);
+        setActiveBatch(null);
         setLoading(false);
-      },
-      (err) => {
-        console.error('Batch listener error:', err);
-        setError('Batch data load nahi hua');
-        setLoading(false);
+        setError('');
+        return;
       }
-    );
 
-    return () => unsubscribe();
+      unsubscribeFirestore = onSnapshot(
+        query(collection(db, 'batches'), orderBy('createdAt', 'desc')),
+        (snapshot) => {
+          const batches: Batch[] = [];
+          snapshot.forEach((doc) => {
+            batches.push({ id: doc.id, ...doc.data() } as Batch);
+          });
+          setAllBatches(batches);
+
+          // Find active batch
+          const active = batches.find(b => b.status === 'active') || null;
+          setActiveBatch(active);
+          setLoading(false);
+        },
+        (err) => {
+          console.error('Batch listener error:', err);
+          setError('Batch data load nahi hua');
+          setLoading(false);
+        }
+      );
+    });
+
+    return () => {
+      unsubscribeFirestore?.();
+      unsubscribeAuth();
+    };
   }, []);
 
   // ── Create New Batch ──

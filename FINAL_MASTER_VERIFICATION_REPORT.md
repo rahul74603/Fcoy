@@ -24,6 +24,7 @@
 |---|------|----------------|-------------------|---------|
 | C1 | 31-Jul-2026 | "Leave → Attendance ❌ BROKEN/MISSING" (§3 row 8, M10, W2 roadmap) | **CONNECTED hai** — `useLeave.handleApproveLeave` approve par poore leave-period ke har din `markBulkAttendance(status:'leave')` karta hai; `handleRecordReturn` return-day par `'present'`; `handleCancelLeave` staff reactivate. Sync **hook layer** me tha — sirf `leave.api.ts` grep karne se miss hua. | Task 1 implementation ke dauran fresh code read |
 | C2 | 31-Jul-2026 | "Ustad leave approve kar sakta hai" (M11 🔴) | **FIXED (Task 1)** — `canManageLeaves` gate ab screen ke 6 UI points + hook ke 7 handlers me laga. Server-side enforcement Task 2 (Firestore Rules) pending. | Task 1 completion |
+| C3 | 31-Jul-2026 | "Security rules repo me hain hi nahi (0/100 enforcement layer)" (Q9, §5) | **RESOLVED IN CODE (Task 2)** — `firestore.rules` + `storage.rules` likh di gayi (deny-by-default, 55/55 collections, role helpers, append-only logs, Task-1 server-proof). Deploy dashboard-level par pending: emulator tests tumhari machine par (sandbox me Java nahi) → PASS → staged deploy. Owner decisions: D1 no-unauth-write (temporary), D2 public unitConfig main (secrets block), D3 batches all-auth read. | Task 2 completion |
 
 ---
 

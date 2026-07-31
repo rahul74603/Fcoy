@@ -1,0 +1,355 @@
+rules_version = '2';
+
+// ═══════════════════════════════════════════════════════════════════════════
+// F COY ERP — FIRESTORE SECURITY RULES (Task 2 · 31-Jul-2026)
+// ═══════════════════════════════════════════════════════════════════════════
+// Principles (user-approved):
+//   1. DENY BY DEFAULT   — catch-all neeche sab kuch block karta hai.
+//   2. LEAST PRIVILEGE   — har collection sirf utna open jitna routes/screens use karte hain
+//                          (46 routes × role-groups × collection-ops scan se derived).
+//   3. REUSABLE HELPERS  — role strings sirf neeche helper functions me hain;
+//                          naya role/change = ek jagah edit.
+//   4. APPEND-ONLY LOGS  — forensics collections (login/activity/search/error) update+delete immutable.
+//
+// Role mirror: users/{uid}.role  ('Company Commander' | 'Clerk' | 'Quarter Master' | 'Ustad')
+// Decisions approved by owner:
+//   D1-FINAL: login_history sirf AUTHENTICATED create (unauth write = ❌).
+//             NOTE (temporary): wrong-password attempts Phase-2 Cloud Function tak record nahi honge.
+//   D2: unitConfig/main public read — SIRF branding (unit/FY). Secrets is doc me allowed hi nahi
+//       (rules me forbidden-keys guard laga hai).
+//   D3: batches read = sabhi authenticated staff.
+// ═══════════════════════════════════════════════════════════════════════════
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── REUSABLE HELPERS (single source of truth) ──────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function hasProfile() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+    // Logged-in user ka role (users/{uid}.role). Profile missing → '' (sab checks fail-safe).
+    function userRole() {
+      return hasProfile()
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '')
+        : '';
+    }
+    function isCommander()  { return userRole() == 'Company Commander'; }   // CC — full override
+    function isClerk()      { return userRole() == 'Clerk'; }
+    function isQM()         { return userRole() == 'Quarter Master'; }
+    function isUstad()      { return userRole() == 'Ustad'; }
+    function isClerkOrCC()  { return isCommander() || isClerk(); }          // App CLERK/STAFF_MANAGE mirror
+    function isQMOrCC()     { return isCommander() || isQM(); }             // App QM_ROLES mirror
+    function isAnyStaff()   { return isCommander() || isClerk() || isQM() || isUstad(); }  // ALL_ROLES mirror
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 1) IDENTITY & AUTH AUDIT
+    // ═══════════════════════════════════════════════════════════════════
+
+    // users — login par AuthContext apna role padhta hai (self-read ZARURI hai,
+    // warna login hi break). Poori list + role management sirf CC.
+    match /users/{uid} {
+      allow get: if isSignedIn() && (request.auth.uid == uid || isCommander());
+      allow list: if isCommander();
+      allow create, update, delete: if isCommander();
+    }
+
+    // login_history — forensic audit. Sirf authenticated create (D1-FINAL —
+    // unauth write owner ne reject ki). Append-only: koi edit/delete nahi, CC bhi nahi.
+    match /login_history/{docId} {
+      allow read: if isCommander();
+      allow create: if isSignedIn()
+        && request.resource.data.keys().hasOnly(
+             ['email', 'status', 'role', 'reason', 'userAgent', 'module', 'timestamp'])
+        && request.resource.data.status in ['SUCCESS', 'FAILED']
+        && request.resource.data.email is string;
+      allow update, delete: if false;
+    }
+
+    // staff_activity_logs / search_logs / error_logs — har staff apne actions
+    // log karta hai (create), padh sirf CC. Append-only.
+    match /staff_activity_logs/{docId} {
+      allow read: if isCommander();
+      allow create: if isSignedIn();
+      allow update, delete: if false;
+    }
+    match /search_logs/{docId} {
+      allow read: if isCommander();
+      allow create: if isSignedIn();
+      allow update, delete: if false;
+    }
+    match /error_logs/{docId} {
+      allow read: if isCommander();
+      allow create: if isSignedIn();
+      allow update, delete: if false;
+    }
+
+    // automation_runs + system_counters — sirf CC (automation center +
+    // BC numbering dono CC screens hain).
+    match /automation_runs/{docId} {
+      allow read, create, update: if isCommander();
+      allow delete: if false;
+    }
+    match /system_counters/{docId} {
+      allow read, create, update, delete: if isCommander();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 2) TRAINEE DOMAIN — Clerk/CC manage. QM sirf READ (kit-issue search +
+    //    welfare-demographics listener dono trainees padhte hain).
+    // ═══════════════════════════════════════════════════════════════════
+    match /trainees/{docId} {
+      allow read: if isClerkOrCC() || isQM();
+      allow create, update, delete: if isClerkOrCC();
+    }
+    match /trainee_attendance/{docId} {
+      allow read, create, update, delete: if isClerkOrCC();
+    }
+    match /absentRecords/{docId} {
+      allow read, create, update, delete: if isClerkOrCC();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 3) STAFF DOMAIN — READ sabhi staff (notification-bell ke 6 computed
+    //    generators har role ke liye chalte hain — QM bell bhi); WRITE sirf
+    //    CC/Clerk (STAFF_MANAGE mirror + Task-1 gate ka server-side enforcement).
+    // ═══════════════════════════════════════════════════════════════════
+    match /staff/{docId} {
+      allow read: if isAnyStaff();
+      allow create, update, delete: if isClerkOrCC();
+    }
+    match /ustads/{docId} {
+      allow read: if isAnyStaff();
+      allow create, update, delete: if isClerkOrCC();
+    }
+    // ⭐ staff_leave — TASK-1 SERVER PROOF: Ustad read kar sakta hai (view)
+    //    par approve/reject/create/update DELETE — sirf CC/Clerk.
+    match /staff_leave/{docId} {
+      allow read: if isAnyStaff();
+      allow create, update, delete: if isClerkOrCC();
+    }
+    match /leave_types/{docId} {
+      allow read: if isAnyStaff();
+      allow create, update, delete: if isClerkOrCC();
+    }
+    match /staff_attendance/{docId} {
+      allow read, create, update, delete: if isClerkOrCC();
+    }
+    match /staff_duty/{docId} {
+      allow read: if isAnyStaff();
+      allow create, update, delete: if isClerkOrCC();
+    }
+    match /duty_types/{docId} {
+      allow read: if isAnyStaff();
+      allow create, update, delete: if isClerkOrCC();
+    }
+    match /deputation_records/{docId} {
+      allow read: if isAnyStaff();
+      allow create, update, delete: if isClerkOrCC();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 4) TRAINING & EXAM — READ sabhi staff (batch-progress/ustad dashboard/
+    //    bell); WRITE sirf CC/Clerk (test-records = STAFF_MANAGE,
+    //    weekly-program = CLERK routes).
+    // ═══════════════════════════════════════════════════════════════════
+    match /training_schedule/{docId} {
+      allow read: if isAnyStaff();
+      allow create, update, delete: if isClerkOrCC();
+    }
+    match /weeklyPrograms/{docId} {
+      allow read: if isAnyStaff();
+      allow create, update, delete: if isClerkOrCC();
+    }
+    match /weeklyTestRecords/{docId} {
+      allow read: if isAnyStaff();
+      allow create, update, delete: if isClerkOrCC();
+    }
+    match /fptRecords/{docId} {
+      allow read: if isAnyStaff();
+      allow create, update, delete: if isClerkOrCC();
+    }
+    match /training_custom_items/{docId} {
+      allow read: if isClerkOrCC() || isQM();
+      allow create, update, delete: if isClerkOrCC();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 5) MEDICAL — PII-sensitive. Sirf CC/Clerk (medical-register = CLERK
+    //    routes; CC dashboard read; AI agent CC ke roop me).
+    // ═══════════════════════════════════════════════════════════════════
+    match /medicalRecords/{docId} {
+      allow read, create, update, delete: if isClerkOrCC();
+    }
+    match /medicine_txns/{docId} {
+      allow read, create, update, delete: if isClerkOrCC();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 6) INVENTORY (QM DOMAIN) — stock/issue/returns sirf CC/QM
+    //    (/issue-kit = QM_ROLES; reports/stock-engine CC).
+    // ═══════════════════════════════════════════════════════════════════
+    match /item_master/{docId} {
+      allow read, create, update, delete: if isQMOrCC();
+    }
+    match /issue_records/{docId} {
+      allow read, create, update, delete: if isQMOrCC();
+    }
+    match /stock_returns/{docId} {
+      allow read, create, update, delete: if isQMOrCC();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 7) FINANCE — funds screens sab QM_ROLES hain. Har fund-family ke
+    //    collections SIRF CC/QM. udhariRecords alag: Clerk dashboard bhi
+    //    padhta hai (read-only evidence).
+    // ═══════════════════════════════════════════════════════════════════
+
+    // ── General Fund (collections + expenses) ──
+    match /general_fund_collections/{docId} {
+      allow read, create, update, delete: if isQMOrCC();
+    }
+    match /general_fund_expenses/{docId} {
+      allow read, create, update, delete: if isQMOrCC();
+    }
+
+    // ── Training Fund (collections + expenses + recoveries) ──
+    match /training_fund_collections/{docId} {
+      allow read, create, update, delete: if isQMOrCC();
+    }
+    match /training_fund_expenses/{docId} {
+      allow read, create, update, delete: if isQMOrCC();
+    }
+    match /training_fund_recoveries/{docId} {
+      allow read, create, update, delete: if isQMOrCC();
+    }
+
+    // ── Mess Fund (collections + expenses) ──
+    match /mess_fund_collections/{docId} {
+      allow read, create, update, delete: if isQMOrCC();
+    }
+    match /mess_fund_expenses/{docId} {
+      allow read, create, update, delete: if isQMOrCC();
+    }
+
+    // ── Company Assets Fund (collections + expenses + custom items) ──
+    match /company_assets_collections/{docId} {
+      allow read, create, update, delete: if isQMOrCC();
+    }
+    match /company_assets_expenses/{docId} {
+      allow read, create, update, delete: if isQMOrCC();
+    }
+    match /company_assets_custom_items/{docId} {
+      allow read, create, update, delete: if isQMOrCC();
+    }
+
+    // ── Cross-fund transfers + vendor system + generic ledgers ──
+    match /fund_transfers/{docId} {
+      allow read, create, update, delete: if isQMOrCC();
+    }
+    match /vendors/{docId} {
+      allow read, create, update, delete: if isQMOrCC();
+    }
+    match /vendor_entries/{docId} {
+      allow read, create, update, delete: if isQMOrCC();
+    }
+    match /vendor_payments/{docId} {
+      allow read, create, update, delete: if isQMOrCC();
+    }
+    match /recoveries/{docId} {
+      allow read, create, update, delete: if isQMOrCC();
+    }
+    match /collections/{docId} {
+      allow read, create, update, delete: if isQMOrCC();
+    }
+    match /expenses/{docId} {
+      allow read, create, update, delete: if isQMOrCC();
+    }
+    match /bills/{docId} {
+      allow read, create, update, delete: if isQMOrCC();
+    }
+    match /udhariRecords/{docId} {
+      allow read: if isQMOrCC() || isClerk();      // Clerk dashboard read evidence
+      allow create, update, delete: if isQMOrCC();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 8) MESS OPS — QM domain (mess-boy salary/vendors = QM_ROLES routes).
+    // ═══════════════════════════════════════════════════════════════════
+    match /mess_boys/{docId} {
+      allow read, create, update, delete: if isQMOrCC();
+    }
+    match /mess_boy_salaries/{docId} {
+      allow read, create, update, delete: if isQMOrCC();
+    }
+    match /mess_custom_categories/{docId} {
+      allow read, create, update, delete: if isQMOrCC();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 9) NOTIFICATIONS — read sabhi (target-filter client-side, existing
+    //    index-safe design). create: koi bhi staff (emitters actor ke roop me
+    //    likhte hain; automation CC). update: SIRF apna read-receipt
+    //    (readBy me khud ka uid — strict diff validation). delete: CC.
+    // ═══════════════════════════════════════════════════════════════════
+    match /notifications/{docId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && request.resource.data.title is string
+        && request.resource.data.message is string;
+      allow update: if isSignedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy'])
+        && request.resource.data.readBy is list
+        && request.resource.data.readBy.hasAll(resource.data.get('readBy', []))
+        && request.resource.data.readBy.size() <= resource.data.get('readBy', []).size() + 1
+        && request.auth.uid in request.resource.data.readBy;
+      allow delete: if isCommander();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 10) CONFIG & MASTERS
+    // ═══════════════════════════════════════════════════════════════════
+
+    // batches — D3: read sabhi staff (BatchContext universal — har screen
+    // active batch dikhata hai). Write sirf CC/Clerk (Batch screen me edit
+    // buttons — /batches route ALL_ROLES hai isliye write-block yahin
+    // enforce hona chahiye; UI-gate Task-4 me aayega).
+    match /batches/{docId} {
+      allow read: if isAnyStaff();
+      allow create, update, delete: if isClerkOrCC();
+    }
+
+    // dropdown_masters — live medical categories sab padhte hain; editor CC.
+    match /dropdown_masters/{docId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isCommander();
+    }
+
+    // system_config/flags — maintenance banner sabhi roles padhte hain;
+    // toggle sirf CC (system-health = CC route).
+    match /system_config/{docId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isCommander();
+    }
+
+    // unitConfig — D2: SIRF 'main' doc public read (login-page branding:
+    // unit name/FY/session — non-sensitive). Secrets yahan rules-level par BLOCK.
+    match /unitConfig/{docId} {
+      allow read: if docId == 'main';
+      allow create, update: if isCommander() && docId == 'main'
+        && !request.resource.data.keys().hasAny(
+             ['password', 'apiKey', 'apiKeys', 'secret', 'secrets', 'privateKey', 'token']);
+      allow delete: if false;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // DENY BY DEFAULT — jo collection upar listed nahi, woh har ke liye band.
+    // ═══════════════════════════════════════════════════════════════════
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
