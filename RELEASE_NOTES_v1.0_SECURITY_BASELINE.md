@@ -29,16 +29,24 @@
 | Owner decisions | D1: no-unauth-write (temporary) · D2: unitConfig/main public + secret-keys rule-blocked · D3: batches read all-auth |
 | App-side change | Sirf `BatchContext.tsx` auth-gated listener (rules-readiness) — baaki `src/` zero change |
 
-## Verification Evidence
+## Verification Evidence (Deploy Approval Record)
 
-| Gate | Result | Evidence |
-|---|---|---|
-| Emulator — Firestore suite (~70 assertions) | ⏳ PASS ☐ / FAIL ☐ | (local output yahan summarize/paste) |
-| Emulator — Storage suite (7 blocks) | ⏳ PASS ☐ / FAIL ☐ | |
-| Console Simulator — 10 scenarios (S1–S10) | ⏳ 10/10 expected | |
-| Manual Smoke — 10 flows × 4 roles (M1–M10) | ⏳ 10/10 | |
-| 48-hour watch — `error_logs` / `login_history` permission anomalies | ⏳ ZERO | |
-| Deploy command used | `firebase deploy --only firestore:rules,storage` | |
+*Kisi ko baad me ye na poochna pade ki "kis basis par deploy approve hua tha" — har claim 3-layer verified: source code (file+line) + automated test + real runtime behavior. Tabhi "verified" maana jayega.*
+
+| Item | Evidence |
+|---|---|
+| Git Commit | `85e5803` (rules+suites) · `b03a39e` (checklist/tag) · `7f12028` (release notes) |
+| Git Tag | `v1.0-security-rules` (⏳ Step 4.5 par create hoga) |
+| Emulator Tests | ⏳ PASS ☐ / FAIL ☐ · timestamp: __________ (IST) |
+| Rules Simulator (S1–S10) | ⏳ PASS ☐ / FAIL ☐ · timestamp: __________ |
+| Smoke Tests (M1–M10, 4 roles) | ⏳ PASS ☐ / FAIL ☐ · timestamp: __________ |
+| Build | ✅ PASS (vite 11.14s, commit `85e5803` par) |
+| TypeScript | ✅ PASS (strict, exit 0, commit `85e5803` par) |
+| Reviewer | ⏳ __________ (name/initials — jo gates run + approve kare) |
+| Approval Date | ⏳ __________ (date & time IST) |
+| 48h Observation | ⏳ CLEAN (no PERMISSION_DENIED spike / regression) |
+
+**3-layer principle (frozen doctrine):** koi bhi AI/agent report final proof NAHI — har claim tabhi "verified" jab ① source code (file+line), ② automated test (emulator suite), ③ real runtime behavior (simulator + smoke) teeno agree karein.
 
 ## Known Limitations (is release me documented)
 
