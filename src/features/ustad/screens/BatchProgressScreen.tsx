@@ -284,6 +284,14 @@ const BatchProgressScreen: React.FC = () => {
           <p className="text-sm text-slate-500 mt-1">
             Activate a batch to view progress
           </p>
+          {/* ★ Pehle error yahan dikhta hi nahi tha (early-return ne daba diya tha) —
+              ab asli wajah screen par hi dikhegi */}
+          {error && (
+            <div className="mt-4 bg-red-50 border border-red-300 p-3 text-left rounded-sm">
+              <p className="text-[10px] font-black uppercase text-red-500 mb-1">Progress load fail — asli error:</p>
+              <p className="text-sm text-red-700">{error}</p>
+            </div>
+          )}
         </div>
       </div>
     );
