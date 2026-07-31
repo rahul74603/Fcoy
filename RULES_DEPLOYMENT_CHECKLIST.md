@@ -123,6 +123,7 @@ Rollback use (kabhi zarurat pade to): `git checkout v1.0-security-rules` (inspec
 | Backup file saved | ☐ |
 | **Git tag `v1.0-security-rules` created + pushed** | ☐ |
 | 48h watch clean | ☐ |
+| **`RELEASE_NOTES_v1.0_SECURITY_BASELINE.md`** ke ☐ fields fill + commit | ☐ |
 | → **PRODUCTION STABLE + Task 4 unlock** | 🔒 |
 
 **Process note (owner ka decision, main follow karta hoon):** Rules ke runtime verification ke bina koi naya code-task start nahi hoga — single moving target, instant root-cause.
