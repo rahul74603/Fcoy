@@ -28,7 +28,7 @@
 | Change ID | `SECURITY-001` |
 | Baseline | Security Baseline v1.0 |
 | Risk Level | High (entire-DB access layer change; rollback < 2 min) |
-| Rollback Tested | ⏳ Yes ☐ / No ☐ *(tip: Console → Rules → Previous-versions → Restore ka ek dry-run 30 sec ka hai — verification window me kar lena; untested rollback = no rollback)* |
+| Rollback Tested | ⏳ Yes ☐ / No ☐ *(owner-refined: "Yes" = POORA loop verified — ① previous rules restore ho ② 2–3 critical smoke (login + read + write) rollback ke baad PASS ho ③ original rules dubara restore karke forward-deploy confirm ho. Sirf button dabana = not tested.)* |
 | Approved By | ⏳ __________ |
 | Approved On | ⏳ __________ (IST) |
 
@@ -78,7 +78,7 @@
 | **Pre-deploy backup file** | `backup-rules-YYYYMMDD.txt` (Step 4 checklist — deploy se PEHLE console rules copy karke save kiye the) |
 | **App-side** | BatchContext change independent hai; revert optional |
 
-**Rollback procedure:** ① Console se previous rules restore → ② 4 roles se quick smoke (login + ek action) → ③ incident note doc → ④ mujhe report.
+**Rollback procedure (owner-refined full loop):** ① Console/Git/Tag/backup se previous rules restore → ② 2–3 critical smoke (login + read + write) rollback ke baad expected PASS verify → ③ original rules dubara restore karke forward-deployment confirm → ④ incident note doc → ⑤ mujhe report. *(Recovery verified nahi = rollback tested nahi.)*
 
 ## Next Planned Work (unlock order)
 
