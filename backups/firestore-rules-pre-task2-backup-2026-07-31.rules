@@ -1,0 +1,257 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// BACKUP — PRODUCTION FIRESTORE RULES (PRE-SECURITY-001)
+// Captured: 31-July-2026 by owner (verbatim copy from Firebase Console rules tab)
+// Purpose : Instant rollback reference. Agar naye deny-by-default rules deploy
+//           karne ke baad koi problem aaye to is poore text ko console me paste
+//           karke "Publish" dabao = 2-minute me purani duniya wapas.
+// Security note: Ye purane rules "koi bhi logged-in user = full read/write" hain.
+//           Isliye ye SIRF temporary rollback ke liye hain — permanent nahi.
+// ═══════════════════════════════════════════════════════════════════════════
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── Helper Functions ──────────────────────
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // ═══════════════════════════════════════════
+    // AUTHENTICATED USERS - FULL ACCESS
+    // (Simple rules for now - all logged in users can read/write)
+    // ═══════════════════════════════════════════
+
+    // Users Collection
+    match /users/{userId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Config
+    match /unitConfig/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /config/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // ═══════════════════════════════════════════
+    // BATCH & TRAINEE COLLECTIONS
+    // ═══════════════════════════════════════════
+
+    match /batches/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /trainees/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /absentRecords/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /medicalRecords/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /fptRecords/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /weeklyTestRecords/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /weeklyPrograms/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // ═══════════════════════════════════════════
+    // STAFF MODULE COLLECTIONS (ALL)
+    // ═══════════════════════════════════════════
+
+    // Staff Profiles
+    match /staff/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Subjects
+    match /subject_master/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /staff_subjects/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Attendance
+    match /staff_attendance/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Leave Management
+    match /leave_types/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /staff_leave/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Duty Management
+    match /duty_types/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /staff_duty/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Training Schedule
+    match /training_schedule/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Deputation Records
+    match /deputation_records/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Training Material
+    match /training_material/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Exams & Results
+    match /training_exam/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /training_results/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Performance
+    match /staff_performance/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Notifications
+    match /staff_notifications/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Activity Logs
+    match /staff_activity_logs/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Old Ustad Collections (Legacy)
+    match /ustads/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /ustadDailyStatus/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /udhariRecords/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /dailyDeployments/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /dailyAssignments/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // ═══════════════════════════════════════════
+    // FINANCE COLLECTIONS
+    // ═══════════════════════════════════════════
+
+    match /mess_fund_collections/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /mess_fund_expenses/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /training_fund_collections/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /training_fund_expenses/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /training_fund_recoveries/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /company_assets_collections/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /company_assets_expenses/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /general_fund_collections/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /general_fund_expenses/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /fund_transfers/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Vendors
+    match /vendors/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /vendor_entries/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /vendor_payments/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Mess Boys
+    match /mess_boys/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // ═══════════════════════════════════════════
+    // ISSUE & INVENTORY
+    // ═══════════════════════════════════════════
+
+    match /issue_records/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /training_custom_items/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // ═══════════════════════════════════════════
+    // CATCH-ALL FALLBACK
+    // (Any collection not explicitly listed)
+    // ═══════════════════════════════════════════
+
+    match /{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+
+  }
+}

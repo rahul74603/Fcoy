@@ -75,7 +75,7 @@
 | **Console (instant)** | Firestore → Rules → Previous versions → Restore |
 | **Git (2 min)** | `git revert 85e5803` → `firebase deploy --only firestore:rules,storage` |
 | **Tag (3 min)** | `git checkout v1.0-security-rules` → inspect → `firebase deploy --only firestore:rules,storage` |
-| **Pre-deploy backup file** | `backup-rules-YYYYMMDD.txt` (Step 4 checklist — deploy se PEHLE console rules copy karke save kiye the) |
+| **Pre-deploy backup file** | ✅ **`backups/firestore-rules-pre-task2-backup-2026-07-31.rules`** — owner ne 31-Jul-2026 ko console rules tab se verbatim copy karke bheja; repo me committed (rollback text hamesha available). Console → Firestore → Rules → ye pura text paste → Publish = instant rollback. WARNING: ye purane rules "any logged-in user = full access" hain — sirf temporary rollback ke liye. |
 | **App-side** | BatchContext change independent hai; revert optional |
 
 **Rollback procedure (owner-refined full loop):** ① Console/Git/Tag/backup se previous rules restore → ② 2–3 critical smoke (login + read + write) rollback ke baad expected PASS verify → ③ original rules dubara restore karke forward-deployment confirm → ④ incident note doc → ⑤ mujhe report. *(Recovery verified nahi = rollback tested nahi.)*
