@@ -13,11 +13,24 @@
 | **Rules Commit** | `85e5803` (firestore+storage rules + suites) |
 | **Deploy-Gate Commit** | `b03a39e` (checklist + tag instructions) |
 | **Deploy Date & Time** | ⏳ __________ (IST fill karo jab Step 3 publish ho) |
-| **Firestore Rules Version** | `v1.0` · content-hash `md5:ef8acd77cb43` |
-| **Storage Rules Version** | `v1.0` · content-hash `md5:b34a6171d5aa` |
+| **Firestore Rules SHA-256** | `v1.0` · `f752f7ef43a288f6ebb618ce621fb10649ef2cac038f836d74a4351dbef510d3` |
+| **Storage Rules SHA-256** | `v1.0` · `eeeb5d8e65637f88036795cc1ecf5d05a1e325910d793118586049b03a421add` |
 | **App Build** | tsc strict PASS · vite build PASS (11.14s, pre-existing chunk-size warning) |
 
-> Hash-tip: future me `md5sum firestore.rules` ka output is hash se alag dikhe = rules me drift hua hai.
+> Hash-tip (integrity): `sha256sum firestore.rules` ka output upar wale SHA-256 se alag dikhe = rules me drift hua hai (approve-ki-gayi baseline se hatke kuch badla).
+
+## Deployment Approval Record
+
+*Future deployments isi pattern par track honge: SECURITY-002, SECURITY-003 …*
+
+| Field | Value |
+|---|---|
+| Change ID | `SECURITY-001` |
+| Baseline | Security Baseline v1.0 |
+| Risk Level | High (entire-DB access layer change; rollback < 2 min) |
+| Rollback Tested | ⏳ Yes ☐ / No ☐ *(tip: Console → Rules → Previous-versions → Restore ka ek dry-run 30 sec ka hai — verification window me kar lena; untested rollback = no rollback)* |
+| Approved By | ⏳ __________ |
+| Approved On | ⏳ __________ (IST) |
 
 ## Scope of This Release
 
