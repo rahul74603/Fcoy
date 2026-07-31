@@ -1,5 +1,94 @@
 {
-  "//": "F Coy ERP — query design deliberately composite-index-free (notification queries client-side sort karte hain). Agar kabhi Firebase Console link se composite index banao to yahan add karo — warna khali base hi rahegi.",
-  "indexes": [],
+  "//": "F Coy ERP — PRODUCTION TRUTH SYNCED (31-Jul-2026). CLI deploy prompt ne prove kiya ki production me ye 11 composite indexes maujood hain (console-link se bane the). Puraana claim 'composite-index-free' GALAT tha — correction applied. Is file ko production se sync me rakhna MANDATORY hai: agar koi naya index console se bane to turant yahan add karo, warna agla deploy 'delete these indexes?' poochega aur 'y' dabate hi LIVE queries FAILED_PRECONDITION se toot jayengi.",
+  "indexes": [
+    {
+      "collectionGroup": "absentRecords",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "batchId", "order": "ASCENDING" },
+        { "fieldPath": "fromDate", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "fptRecords",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "batchId", "order": "ASCENDING" },
+        { "fieldPath": "testDate", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "medicalRecords",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "batchId", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "staff_leave",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "appliedAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "staff_leave",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "fromDate", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "staff_subjects",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "staffId", "order": "ASCENDING" },
+        { "fieldPath": "isActive", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "staff_subjects",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "subjectId", "order": "ASCENDING" },
+        { "fieldPath": "isActive", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "subject_master",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "name", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "training_schedule",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "batchId", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "weeklyPrograms",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "batchId", "order": "ASCENDING" },
+        { "fieldPath": "fromDate", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "weeklyTestRecords",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "batchId", "order": "ASCENDING" },
+        { "fieldPath": "testDate", "order": "DESCENDING" }
+      ]
+    }
+  ],
   "fieldOverrides": []
 }
