@@ -112,6 +112,11 @@ export const DocumentVerificationScreen = () => {
 
   const [docStatus, setDocStatus]           = useState<Record<string, DocStatusItem>>({});
   const [uploadingKey, setUploadingKey]     = useState('');
+  // ★ UX polish: unsaved-changes guard + message-scroll target
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const messageRef = useRef<HTMLDivElement>(null);
+  const scrollToMessage = () =>
+    setTimeout(() => messageRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
   const fileInputRef                        = useRef<HTMLInputElement>(null);
   const [currentUploadKey, setCurrentUploadKey]         = useState('');
   const [currentUploadMultiple, setCurrentUploadMultiple] = useState(false);
@@ -169,6 +174,7 @@ export const DocumentVerificationScreen = () => {
   React.useEffect(() => {
     if (searchedTrainee) {
       setDocStatus(initDocStatus(searchedTrainee.documents));
+      setHasUnsavedChanges(false);   // naya trainee = saaf slate
     }
   }, [searchedTrainee]);
 
@@ -215,14 +221,17 @@ export const DocumentVerificationScreen = () => {
         'ERROR: Cloudinary config set nahi hai — .env me VITE_CLOUDINARY_CLOUD_NAME aur ' +
         'VITE_CLOUDINARY_UPLOAD_PRESET daalo (setup steps: CLOUDINARY_UPLOAD_IMPLEMENTATION_REPORT.md).'
       );
+      scrollToMessage();
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
 
     setUploadingKey(currentUploadKey);
     setMessage('Compress + upload ho raha hai — badi file me thoda time lag sakta hai...');
+    scrollToMessage();
 
     const newFiles: FileInfo[] = [];
+    const uploadedDetails: string[] = [];
 
     for (const file of filesArray) {
       try {
@@ -237,6 +246,11 @@ export const DocumentVerificationScreen = () => {
           fileType:   prepared.file.type,
           uploadedAt: new Date().toISOString(),
         });
+        uploadedDetails.push(
+          prepared.compressed
+            ? `${file.name} (${prepared.originalKB}KB→${prepared.finalKB}KB)`
+            : `${file.name} (${prepared.finalKB}KB)`
+        );
       } catch (uploadErr) {
         const reason = uploadErr instanceof Error ? uploadErr.message : 'unknown error';
         setMessage(
@@ -256,7 +270,15 @@ export const DocumentVerificationScreen = () => {
       },
     }));
 
-    setMessage(`SUCCESS: ${newFiles.length} file(s) upload ho gayi!`);
+    // ★ Sirf tab SUCCESS dikhao jab sach me file(s) upload hui — nahi to loop ka
+    // ERROR message zinda rehne do (pehle success hamesha overwrite kar deta tha).
+    if (newFiles.length > 0) {
+      setHasUnsavedChanges(true);
+      setMessage(
+        `SUCCESS: ${newFiles.length} file(s) upload ho gayi — ${uploadedDetails.join(', ')}. ` +
+        `Ab "Save All" dabao, warna refresh par ye record nahi rahega!`
+      );
+    }
     setUploadingKey('');
     setCurrentUploadKey('');
     setCurrentUploadMultiple(false);
@@ -280,6 +302,7 @@ export const DocumentVerificationScreen = () => {
       }
       return { ...prev, [docKey]: { ...current, status: 'Pending', files: [] } };
     });
+    setHasUnsavedChanges(true);
   };
 
   const handleStatusChange = (docKey: string, newStatus: string) => {
@@ -315,6 +338,7 @@ export const DocumentVerificationScreen = () => {
           : {}),
       },
     }));
+    setHasUnsavedChanges(true);
   };
 
   // ★ Rejection confirm — reason ke saath
@@ -333,7 +357,9 @@ export const DocumentVerificationScreen = () => {
       },
     }));
     setRejectModal({ open: false, docKey: '', docLabel: '', reason: '' });
+    setHasUnsavedChanges(true);
     setMessage('Document "Rejected" mark ho gaya — reason save kiya gaya. Save Changes dabana na bhoolein!');
+    scrollToMessage();
   };
 
   const toggleRequired = (docKey: string) => {
@@ -341,6 +367,7 @@ export const DocumentVerificationScreen = () => {
       ...prev,
       [docKey]: { ...prev[docKey], isRequired: !prev[docKey].isRequired },
     }));
+    setHasUnsavedChanges(true);
   };
 
   // ── Preview ──
@@ -383,9 +410,11 @@ export const DocumentVerificationScreen = () => {
         docsUpdatedDate:   new Date().toISOString(),
       });
 
+      setHasUnsavedChanges(false);
       setMessage(
         `SUCCESS: Documents save ho gaye! (${completedRequired}/${totalRequired} required documents done)`
       );
+      scrollToMessage();
       setTimeout(() => {
         setSearchedTrainee(null);
         setSearchQuery('');
@@ -478,26 +507,17 @@ export const DocumentVerificationScreen = () => {
             File Size Limit: {MAX_FILE_SIZE_KB}KB | Multiple Files Supported (Front & Back)
           </p>
           <p className="text-[10px] text-amber-700 mt-0.5">
-            Agar file badi hai toh compress karo. Har document me <strong>"Zaruri Hai"</strong> toggle se decide karo
-            ki wo required hai ya nahi.
+            Badi file ki tension mat lo — photo/PDF upload ke waqt <strong>auto-compress</strong> hoti hai (20MB tak chalegi,
+            chhoti ho kar save hogi). Har document me <strong>"Zaruri Hai"</strong> toggle se decide karo ki wo required hai ya nahi.
+            Upload ke baad file ke paas <strong>"Dekho"</strong> (preview) aur <strong>"Nayi Tab"</strong> (poori file) buttons milte hain —
+            aur har badlav ke baad <strong>"Save All"</strong> dabao, warna record save nahi hoga.
           </p>
-          <div className="mt-2 flex items-center space-x-4">
-            <a
-              href="https://studygyaan.in/tools/"
-              target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center bg-amber-600 text-white px-3 py-1.5 text-[10px] font-bold uppercase hover:bg-amber-700 transition-colors rounded-sm"
-            >
-              <ExternalLink size={12} className="mr-1.5" />
-              Image & PDF Compressor - Click Here
-            </a>
-            <span className="text-[9px] text-amber-600 font-semibold">studygyaan.in/tools/ - Free Compression Tools</span>
-          </div>
         </div>
       </div>
 
       {/* Messages */}
       {message && (
-        <div className={`p-3 text-xs font-bold border flex items-center ${
+        <div ref={messageRef} className={`p-3 text-xs font-bold border flex items-center ${
           message.startsWith('ERROR')
             ? 'bg-red-50 text-red-600 border-red-200'
             : 'bg-green-50 text-green-700 border-green-200'
@@ -670,6 +690,12 @@ export const DocumentVerificationScreen = () => {
                 </button>
               ))}
             </div>
+            {hasUnsavedChanges && (
+              <div className="flex items-center bg-orange-50 border border-orange-300 text-orange-700 px-2 py-1 text-[10px] font-bold mr-2 flex-shrink-0">
+                <AlertCircle size={12} className="mr-1 flex-shrink-0" />
+                Badlav save hona baaki — "Save All" dabao!
+              </div>
+            )}
             <button
               onClick={handleSaveDocuments}
               disabled={!searchedTrainee || isSaving}
@@ -746,11 +772,21 @@ export const DocumentVerificationScreen = () => {
                                   <span className="font-mono font-bold text-slate-600">{file.fileSize}</span>
                                   <button
                                     onClick={() => openPreview(status.files, idx, docItem.label)}
-                                    className="text-blue-500 hover:text-blue-700 p-0.5 transition-colors"
-                                    title="Dekho / Preview"
+                                    className="inline-flex items-center px-1.5 py-0.5 bg-blue-600 text-white text-[8px] font-bold uppercase hover:bg-blue-700 transition-colors"
+                                    title="Poora preview dekho"
                                   >
-                                    <Eye size={12} />
+                                    <Eye size={10} className="mr-0.5" /> Dekho
                                   </button>
+                                  {file.fileUrl && (
+                                    <a
+                                      href={file.fileUrl}
+                                      target="_blank" rel="noopener noreferrer"
+                                      className="inline-flex items-center px-1.5 py-0.5 bg-slate-600 text-white text-[8px] font-bold uppercase hover:bg-slate-500 transition-colors"
+                                      title="Nayi tab me kholo / download"
+                                    >
+                                      <ExternalLink size={10} className="mr-0.5" /> Nayi Tab
+                                    </a>
+                                  )}
                                   {status.files.length > 1 && (
                                     <button
                                       onClick={() => handleRemoveFile(docItem.key, idx)}
