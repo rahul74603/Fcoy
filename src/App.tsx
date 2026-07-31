@@ -50,6 +50,9 @@ import { TraineeAttendanceScreen } from './features/attendance/TraineeAttendance
 import { ReportsScreen }      from './features/system/ReportsScreen';
 import { SettingsScreen }     from './features/system/SettingsScreen';
 import { UserManagementPage } from './features/system/UserManagementPage';
+// --- ★ Module 17-18 Audit: Notification Center + System Masters ---
+import { NotificationCenterScreen } from './features/notifications/NotificationCenterScreen';
+import { SystemMastersScreen }      from './features/system/SystemMastersScreen';
 import { TrainingScheduleScreen } from './features/ustad/screens';
 
 // --- Batch ---
@@ -455,7 +458,25 @@ function App() {
                   </ProtectedRoute>
                 }
               />
-              
+              {/* ★ Module 17: Notification Center — ALL roles (apne role ke messages) */}
+              <Route
+                path="/notifications"
+                element={
+                  <ProtectedRoute allowedRoles={ALL_ROLES}>
+                    <EnterpriseLayout><NotificationCenterScreen /></EnterpriseLayout>
+                  </ProtectedRoute>
+                }
+              />
+              {/* ★ Module 18: System Masters & Backup — CC only */}
+              <Route
+                path="/system-masters"
+                element={
+                  <ProtectedRoute allowedRoles={['Company Commander']}>
+                    <EnterpriseLayout><SystemMastersScreen /></EnterpriseLayout>
+                  </ProtectedRoute>
+                }
+              />
+
               {/* ── 404 Fallback ── */}
               <Route path="*" element={<Navigate to="/login" replace />} />
 

@@ -10,6 +10,8 @@ import { db } from '../../../config/firebase';
 import {
   TrainingSchedule, ScheduleFormData, ScheduleStatus, DAYS_OF_WEEK,
 } from '../types/schedule.types';
+// ★ Module 17: event notification emitters (fire-and-forget)
+import { notifyScheduleChanged } from '../../notifications/notification.api';
 
 const COLLECTION = 'training_schedule';
 
@@ -193,6 +195,7 @@ export const updateSchedule = async (
   extras?: {
     ustadDetails?: { name: string; rank: string; forceNumber: string };
     subjectDetails?: { name: string; code: string };
+    changedByName?: string;   // ★ Module 17: notifier name (optional)
   }
 ): Promise<void> => {
   try {
@@ -223,6 +226,14 @@ export const updateSchedule = async (
     }
 
     await updateDoc(docRef, payload);
+
+    // ★ Module 17: schedule change notification → Ustad + Clerk
+    notifyScheduleChanged(
+      extras?.subjectDetails?.name ?? 'Training class',
+      formData.date ?? '(date same)',
+      formData.startTime && formData.endTime ? `${formData.startTime}-${formData.endTime}` : '(time same)',
+      extras?.changedByName ?? 'ERP'
+    );
   } catch (error) {
     throw error;
   }

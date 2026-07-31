@@ -12,6 +12,8 @@ import { useBatch } from '../../contexts/BatchContext';
 import { useAuth } from '../../contexts/AuthContext';               // ★ audit stamps
 import { useUnitConfig } from '../../contexts/UnitConfigContext';   // ★ report header
 import { buildSickReportHtml, printDocument } from '../shared/printDocuments'; // ★
+import { getDropdownValues } from '../system/masters.api';                 // ★ Module 18: DB-driven categories
+import { notifyMedicalCaseCreated } from '../notifications/notification.api'; // ★ Module 17: CC alert
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -114,6 +116,14 @@ export const MedicalRegisterScreen = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+
+  // ★ Module 18: DB-driven medical categories (fallback = hardcoded CATEGORIES)
+  const [categories, setCategories] = useState<string[]>(CATEGORIES);
+  useEffect(() => {
+    getDropdownValues('medical_categories').then(values => {
+      if (values.length > 0) setCategories(values);
+    });
+  }, []);
 
   const [showForm, setShowForm] = useState(false);
   const todayDate = new Date().toISOString().split('T')[0];
@@ -247,6 +257,12 @@ export const MedicalRegisterScreen = () => {
           lastMedicalUpdate: new Date().toISOString(),
         });
       }
+
+      // ★ Module 17: CC ko medical alert (fire-and-forget)
+      notifyMedicalCaseCreated(
+        form.chestNo, form.name, form.category,
+        user?.displayName ?? user?.email ?? 'Medical Register'
+      );
       setMessage(shouldSyncDutyStatus(form.category)
         ? 'SUCCESS: Medical record save ho gaya aur trainee status sync ho gaya!'
         : 'SUCCESS: Medical exam record save ho gaya! (duty status unchanged — exam record hai)');
@@ -827,7 +843,7 @@ export const MedicalRegisterScreen = () => {
             </div>
             <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="text-[11px] border border-slate-300 px-2 py-1.5 focus:outline-none">
               <option value="all">All Categories</option>
-              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              {categories.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
             <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="text-[11px] border border-slate-300 px-2 py-1.5 focus:outline-none">
               <option value="all">All Status</option>
@@ -865,7 +881,7 @@ export const MedicalRegisterScreen = () => {
                 </select>
               </div>
               <div><label className={labelCls}>Date *</label><input required type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} className={inputCls} /></div>
-              <div><label className={labelCls}>Category *</label><select value={form.category} onChange={e => setForm({...form, category: e.target.value as any})} className={inputCls}>{CATEGORIES.map(c => <option key={c}>{c}</option>)}</select></div>
+              <div><label className={labelCls}>Category *</label><select value={form.category} onChange={e => setForm({...form, category: e.target.value as any})} className={inputCls}>{categories.map(c => <option key={c}>{c}</option>)}</select></div>
               
               <div className="md:col-span-2"><label className={labelCls}>Diagnosis / Problem *</label><input required type="text" value={form.diagnosis} onChange={e => setForm({...form, diagnosis: e.target.value})} className={inputCls} placeholder="e.g. Viral Fever, Ankle Sprain" /></div>
               

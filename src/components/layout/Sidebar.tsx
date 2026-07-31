@@ -516,6 +516,9 @@ export const Sidebar = () => {
                   <SubItem title="Reports Center" path="/reports" dot="bg-blue-400" />
                   <SubItem title="Settings" path="/settings" dot="bg-slate-400" />
                   <SubItem title="User Management" path="/users" dot="bg-purple-400" />
+                  {/* ★ Module 17-18 */}
+                  <SubItem title="🔔 Notification Center" path="/notifications" dot="bg-red-400" />
+                  <SubItem title="🗄️ Masters & Backup" path="/system-masters" dot="bg-cyan-400" />
                   <SubItem title="🌱 Seed Staff Data" path="/seed-staff" dot="bg-green-400" />
                 </NavGroup>
               </>

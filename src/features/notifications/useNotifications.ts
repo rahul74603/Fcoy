@@ -1,11 +1,24 @@
 // ============================================
 // useNotifications HOOK
 // ============================================
+// ★ Module 17 Audit UPGRADE:
+//   Ab 2 sources merge hote hain —
+//   1) COMPUTED alerts (pehle wale 6 live generators — untouched)
+//   2) STORED notifications (`notifications` collection se —
+//      broadcast + event-based: leave/exam/medical/schedule)
+//   Stored read-status Firestore readBy[] mein hai (multi-device),
+//   computed ka localStorage mein rehta hai (unchanged).
+// ============================================
 
 import { useState, useEffect, useCallback } from 'react';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../config/firebase';
-import { AppNotification } from './notification.types';
+import { AppNotification, StoredNotification } from './notification.types';
+import {
+  fetchNotificationsFor,
+  markStoredNotificationRead,
+  markAllStoredRead,
+} from './notification.api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBatch } from '../../contexts/BatchContext';
 
@@ -20,12 +33,15 @@ interface UseNotificationsReturn {
 }
 
 const READ_STORAGE_KEY = 'bsf_read_notifications';
+const STORED_ID_PREFIX = 'stored_';
 
 export const useNotifications = (): UseNotificationsReturn => {
   const { user } = useAuth();
   const { activeBatch } = useBatch();
 
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  // ★ stored notifications raw copy (mark-all operations ke liye)
+  const [storedRaw, setStoredRaw] = useState<StoredNotification[]>([]);
   const [loading, setLoading] = useState(false);
   const [readIds, setReadIds] = useState<Set<string>>(() => {
     try {
@@ -50,6 +66,35 @@ export const useNotifications = (): UseNotificationsReturn => {
       today.setHours(0, 0, 0, 0);
       const threeDaysLater = new Date();
       threeDaysLater.setDate(today.getDate() + 3);
+
+      // ═══════════════════════════════════════
+      // SOURCE A: STORED NOTIFICATIONS (★ NEW)
+      // Broadcast + event-based, role-targeted + personal
+      // ═══════════════════════════════════════
+      try {
+        const stored = await fetchNotificationsFor(user.role, user.uid);
+        setStoredRaw(stored);
+        stored.forEach(n => {
+          const appId = `${STORED_ID_PREFIX}${n.id}`;
+          allNotifs.push({
+            id: appId,
+            type: n.type,
+            priority: n.priority,
+            title: n.title,
+            message: n.message,
+            timestamp: n.createdAt ?? new Date(),
+            // read ho to Firestore readBy ya local cache — dono maano
+            read: n.readBy.includes(user.uid) || readIds.has(appId),
+            link: n.link,
+          });
+        });
+      } catch (err) {
+        console.warn('Failed to fetch stored notifications:', err);
+      }
+
+      // ═══════════════════════════════════════
+      // SOURCE B: COMPUTED ALERTS (existing — untouched)
+      // ═══════════════════════════════════════
 
       // 1. PENDING LEAVES
       try {
@@ -252,12 +297,25 @@ export const useNotifications = (): UseNotificationsReturn => {
     return () => clearInterval(interval);
   }, [refreshNotifications]);
 
+  // ★ markAsRead — stored ho to Firestore readBy[], computed ho to localStorage
   const markAsRead = (id: string) => {
     setReadIds(prev => new Set([...prev, id]));
+    if (id.startsWith(STORED_ID_PREFIX) && user) {
+      const origId = id.slice(STORED_ID_PREFIX.length);
+      markStoredNotificationRead(origId, user.uid);
+      setStoredRaw(prev =>
+        prev.map(n => (n.id === origId ? { ...n, readBy: [...n.readBy, user.uid] } : n))
+      );
+    }
   };
 
   const markAllAsRead = () => {
     setReadIds(new Set(notifications.map(n => n.id)));
+    // ★ stored ke liye bhi Firestore update
+    if (user && storedRaw.length > 0) {
+      markAllStoredRead(storedRaw, user.uid);
+      setStoredRaw(prev => prev.map(n => ({ ...n, readBy: [...new Set([...n.readBy, user.uid])] })));
+    }
   };
 
   const clearAll = () => {

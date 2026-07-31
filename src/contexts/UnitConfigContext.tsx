@@ -10,9 +10,18 @@ interface UnitConfig {
   companyShort: string;
   location: string;
   commanderName: string;
+  financialYear: string;   // ★ Module 18: e.g. "2026-27"
+  sessionLabel: string;    // ★ Module 18: training session
   updatedAt: string;
   updatedBy: string;
 }
+
+// ★ Module 18: current Indian Financial Year (April–March)
+const computeCurrentFY = (): string => {
+  const now = new Date();
+  const y = now.getFullYear();
+  return now.getMonth() >= 3 ? `${y}-${String((y + 1) % 100).padStart(2, '0')}` : `${y - 1}-${String(y % 100).padStart(2, '0')}`;
+};
 
 interface UnitConfigContextType {
   unitConfig: UnitConfig;
@@ -27,6 +36,8 @@ const DEFAULT_CONFIG: UnitConfig = {
   companyShort: 'A-COY',
   location: 'TEKANPUR, MADHYA PRADESH',
   commanderName: '',
+  financialYear: computeCurrentFY(),   // ★ Module 18
+  sessionLabel: '',                    // ★ Module 18
   updatedAt: '',
   updatedBy: '',
 };
@@ -56,6 +67,8 @@ export const UnitConfigProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             companyShort: data.companyShort || DEFAULT_CONFIG.companyShort,
             location: data.location || DEFAULT_CONFIG.location,
             commanderName: data.commanderName || DEFAULT_CONFIG.commanderName,
+            financialYear: data.financialYear || DEFAULT_CONFIG.financialYear,  // ★ Module 18
+            sessionLabel: data.sessionLabel ?? '',                              // ★ Module 18
             updatedAt: data.updatedAt || '',
             updatedBy: data.updatedBy || '',
           });

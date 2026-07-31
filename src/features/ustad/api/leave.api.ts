@@ -21,6 +21,8 @@ import {
   LeaveStatus,
   LeaveType,
 } from '../types/leave.types';
+// ★ Module 17: event notification emitters (fire-and-forget)
+import { notifyLeaveDecision } from '../../notifications/notification.api';
 
 const LEAVE_COL = 'staff_leave';
 const LEAVE_TYPE_COL = 'leave_types';
@@ -238,6 +240,9 @@ export const approveLeave = async (
       approvedByName,
       approvalDate: serverTimestamp(),
     });
+
+    // ★ Module 17: notification emit (fire-and-forget — flow safe)
+    notifyLeaveDecision(leaveId, 'approved', approvedByName);
   } catch (error) {
     throw error;
   }
@@ -259,6 +264,9 @@ export const rejectLeave = async (
       rejectionReason,
       approvalDate: serverTimestamp(),
     });
+
+    // ★ Module 17: notification emit (fire-and-forget — flow safe)
+    notifyLeaveDecision(leaveId, 'rejected', rejectedByName);
   } catch (error) {
     throw error;
   }

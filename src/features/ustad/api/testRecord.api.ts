@@ -12,6 +12,8 @@ import {
   TestRecord, TestFormData, TestStatus,
   TraineeResult, TestType, FPTEvent, calculateGrade,
 } from '../types/testRecord.types';
+// ★ Module 17: event notification emitters (fire-and-forget)
+import { notifyTestResultsPublished } from '../../notifications/notification.api';
 
 const COLLECTION = 'training_tests';
 
@@ -226,6 +228,9 @@ export const saveTestResults = async (
       const weekNumber = (testData.weekNumber as number) || 1;
       const subjectCode = testData.subjectCode as string || '';
       const batchId = testData.batchId as string;
+
+      // ★ Module 17: exam result event → CC + Clerk (fire-and-forget)
+      notifyTestResultsPublished(testName, passCount, failCount, absentCount);
 
       // 4. Auto-publish to old collections (backward compatibility)
       for (const res of processedResults) {

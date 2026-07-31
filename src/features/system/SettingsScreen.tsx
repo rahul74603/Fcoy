@@ -9,13 +9,13 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import {
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
   updatePassword,
   EmailAuthProvider,
   reauthenticateWithCredential,
   sendPasswordResetEmail
 } from 'firebase/auth';
+// ★ Module 18: session-safe user provisioning (secondary app — M16 helper)
+import { createStaffAuthUser } from './authSecurity';
 import {
   doc, setDoc, getDocs, collection,
   updateDoc, getDoc
@@ -51,9 +51,18 @@ interface UnitConfig {
   companyShort: string;
   location: string;
   commanderName: string;
+  financialYear: string;   // ★ Module 18: e.g. "2026-27"
+  sessionLabel: string;    // ★ Module 18: e.g. "Training Session 2026"
   updatedAt: string;
   updatedBy: string;
 }
+
+// ★ Module 18: current Indian Financial Year (April–March) auto-compute
+export const computeCurrentFY = (): string => {
+  const now = new Date();
+  const y = now.getFullYear();
+  return now.getMonth() >= 3 ? `${y}-${String((y + 1) % 100).padStart(2, '0')}` : `${y - 1}-${String(y % 100).padStart(2, '0')}`;
+};
 
 // ─────────────────────────────────────────────
 // MAIN COMPONENT
@@ -104,6 +113,8 @@ export const SettingsScreen = () => {
     companyShort:  '',
     location:      '',
     commanderName: '',
+    financialYear: computeCurrentFY(),  // ★ Module 18
+    sessionLabel:  '',                  // ★ Module 18
     updatedAt:     '',
     updatedBy:     '',
   });
@@ -116,8 +127,7 @@ export const SettingsScreen = () => {
   const [activeTab, setActiveTab] = useState<'profile' | 'security' | 'staff' | 'unit'>('profile');
 
   // ── Commander re-auth password ──
-  const [cmdPassword, setCmdPassword] = useState('');
-  const [showCmdPw,   setShowCmdPw]   = useState(false);
+
 
   // ── CSS helpers ──
   const inputCls    = "w-full border border-slate-300 px-3 py-2 text-xs focus:outline-none focus:border-military-700 bg-white rounded";
@@ -180,8 +190,14 @@ export const SettingsScreen = () => {
       const snap = await getDoc(doc(db, 'unitConfig', 'main'));
       if (snap.exists()) {
         const data = snap.data() as UnitConfig;
-        setUnitConfig(data);
-        setUnitForm(data);
+        // ★ Module 18: purane docs mein FY/session fields nahi honge — defaults merge
+        const merged: UnitConfig = {
+          ...data,
+          financialYear: data.financialYear || computeCurrentFY(),
+          sessionLabel:  data.sessionLabel ?? '',
+        };
+        setUnitConfig(merged);
+        setUnitForm(merged);
       } else {
         const defaults: UnitConfig = {
           parentUnit:    'STC TEKANPUR',
@@ -189,6 +205,8 @@ export const SettingsScreen = () => {
           companyShort:  'A-COY',
           location:      'TEKANPUR, MADHYA PRADESH',
           commanderName: '',
+          financialYear: computeCurrentFY(),
+          sessionLabel:  '',
           updatedAt:     '',
           updatedBy:     '',
         };
@@ -283,26 +301,27 @@ export const SettingsScreen = () => {
       setError('Password minimum 6 characters ka hona chahiye');
       return;
     }
-    if (!cmdPassword) {
-      setError('Apna (Commander) password enter karo');
-      return;
-    }
 
     setCreateLoading(true);
     setError('');
     setSuccess('');
 
-    const commanderEmail    = user?.email ?? '';
-    const commanderPassword = cmdPassword;
-
+    // ♻️ Module 18 REFACTOR (M16 pattern ke saath align):
+    // Pehle live auth instance par createUserWithEmailAndPassword hota
+    // tha — jo CC ko LOGOUT karke naye user mein sign-in kar deta tha,
+    // phir CC apna password dobara daal kar vaapis aata tha. Network
+    // error aane par CC mid-session logout ho jaata tha.
+    // Ab secondary-app pattern — CC ka session 100% safe, password
+    // dobara daalne ki zaroorat nahi.
     try {
-      const newUserCred = await createUserWithEmailAndPassword(
-        firebaseAuth, createForm.email, createForm.password
+      const authUid = await createStaffAuthUser(
+        createForm.email.trim().toLowerCase(),
+        createForm.password
       );
 
-      await setDoc(doc(db, 'users', newUserCred.user.uid), {
+      await setDoc(doc(db, 'users', authUid), {
         name:        createForm.name,
-        email:       createForm.email,
+        email:       createForm.email.trim().toLowerCase(),
         phone:       createForm.phone,
         designation: createForm.designation,
         role:        createForm.role,
@@ -311,26 +330,13 @@ export const SettingsScreen = () => {
         createdAt:   new Date().toISOString(),
       });
 
-      await signInWithEmailAndPassword(firebaseAuth, commanderEmail, commanderPassword);
-
-      setSuccess(`✓ ${createForm.name} (${createForm.role}) ka account ban gaya!`);
+      setSuccess(`✓ ${createForm.name} (${createForm.role}) ka account ban gaya! Ab ye email/password se login kar sakta hai.`);
       setCreateForm({ name: '', email: '', password: '', phone: '', designation: '', role: 'Clerk' });
-      setCmdPassword('');
       fetchStaff();
     } catch (err: any) {
       console.error(err);
-      if (err.code === 'auth/email-already-in-use') {
-        setError('Yeh email already registered hai');
-      } else if (err.code === 'auth/weak-password') {
-        setError('Password zyada strong chahiye (min 6 chars)');
-      } else if (err.code === 'auth/wrong-password') {
-        setError('Aapka (Commander) password galat hai');
-      } else {
-        setError(`Error: ${err.message}`);
-      }
-      try {
-        await signInWithEmailAndPassword(firebaseAuth, commanderEmail, commanderPassword);
-      } catch { /* already logged in */ }
+      // createStaffAuthUser friendly Hinglish errors deta hai
+      setError(err.message || 'User creation failed');
     } finally {
       setCreateLoading(false);
     }
@@ -882,26 +888,16 @@ export const SettingsScreen = () => {
                     </div>
                   </div>
 
-                  {/* Commander re-auth password */}
-                  <div className="bg-amber-50 border border-amber-200 rounded p-3 mb-4">
-                    <label className="text-[10px] font-black text-amber-800 uppercase block mb-1.5">
-                      🔐 Aapka (Commander) Password — Account Create ke Baad Re-Login ke Liye *
-                    </label>
-                    <div className="relative max-w-xs">
-                      <input
-                        type={showCmdPw ? 'text' : 'password'}
-                        value={cmdPassword}
-                        onChange={e => setCmdPassword(e.target.value)}
-                        required
-                        className="w-full border border-amber-300 px-3 py-2 text-xs rounded focus:outline-none focus:border-amber-500 bg-white"
-                        placeholder="Apna current password dalein"
-                      />
-                      <button type="button"
-                        onClick={() => setShowCmdPw(!showCmdPw)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
-                        {showCmdPw ? <EyeOff size={13} /> : <Eye size={13} />}
-                      </button>
-                    </div>
+                  {/* ★ Module 18: Commander re-auth password ki ab zaroorat NAHI —
+                      secondary-app provisioning se CC session kabhi disturb nahi hota */}
+                  <div className="bg-green-50 border border-green-200 rounded p-3 mb-4">
+                    <p className="text-[10px] font-black text-green-800 uppercase">
+                      ✓ Session-Safe Creation — ab aapka apna password dobara nahi maanga jaayega
+                    </p>
+                    <p className="text-[10px] text-green-700 mt-1">
+                      Naya account bante waqt aapka login session ab bilkul disturb nahi hoga.
+                      Staff ko uska password verbally dein — wo Settings se baad mein change kar sakta hai.
+                    </p>
                   </div>
 
                   <button type="submit" disabled={createLoading}
@@ -1157,6 +1153,37 @@ export const SettingsScreen = () => {
                         Official documents mein Commander ka naam aayega
                       </p>
                     </div>
+
+                    {/* ★ Module 18: Financial Year */}
+                    <div>
+                      <label className={labelCls}>Financial Year</label>
+                      <input
+                        type="text"
+                        value={unitForm.financialYear}
+                        onChange={e => setUnitForm({ ...unitForm, financialYear: e.target.value })}
+                        className={inputCls}
+                        placeholder="e.g. 2026-27"
+                        maxLength={9}
+                      />
+                      <p className="text-[9px] text-slate-400 mt-0.5">
+                        Finance reports / vouchers mein reference
+                      </p>
+                    </div>
+
+                    {/* ★ Module 18: Training Session */}
+                    <div>
+                      <label className={labelCls}>Training Session Label</label>
+                      <input
+                        type="text"
+                        value={unitForm.sessionLabel}
+                        onChange={e => setUnitForm({ ...unitForm, sessionLabel: e.target.value })}
+                        className={inputCls}
+                        placeholder="e.g. Session 2025-26 (RECT)"
+                      />
+                      <p className="text-[9px] text-slate-400 mt-0.5">
+                        Academic year / course session ka label
+                      </p>
+                    </div>
                   </div>
 
                   {/* Save / Cancel Buttons */}
@@ -1220,6 +1247,21 @@ export const SettingsScreen = () => {
                       <div className={`${disabledCls} flex items-center gap-2`}>
                         <User size={12} className="text-slate-400" />
                         {unitConfig?.commanderName || '—'}
+                      </div>
+                    </div>
+                    {/* ★ Module 18: FY + Session view rows */}
+                    <div>
+                      <label className={labelCls}>Financial Year</label>
+                      <div className={`${disabledCls} flex items-center gap-2`}>
+                        <Shield size={12} className="text-slate-400" />
+                        {unitConfig?.financialYear || computeCurrentFY()}
+                      </div>
+                    </div>
+                    <div>
+                      <label className={labelCls}>Training Session</label>
+                      <div className={`${disabledCls} flex items-center gap-2`}>
+                        <Shield size={12} className="text-slate-400" />
+                        {unitConfig?.sessionLabel || '—'}
                       </div>
                     </div>
                   </div>

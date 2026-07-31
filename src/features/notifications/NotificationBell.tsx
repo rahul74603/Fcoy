@@ -203,13 +203,18 @@ const NotificationBell: React.FC = () => {
           </div>
 
           {/* Footer */}
-          {notifications.length > 0 && (
-            <div className="px-4 py-2 bg-slate-50 border-t border-slate-200 rounded-b-2xl">
-              <p className="text-[10px] text-slate-400 text-center">
-                Auto-refreshes every 2 minutes
-              </p>
-            </div>
-          )}
+          <div className="px-4 py-2 bg-slate-50 border-t border-slate-200 rounded-b-2xl flex items-center justify-between">
+            <p className="text-[10px] text-slate-400">
+              Auto-refreshes every 2 minutes
+            </p>
+            {/* ★ Module 17: full notification center */}
+            <button
+              onClick={() => { navigate('/notifications'); setIsOpen(false); }}
+              className="text-[10px] font-black text-blue-600 hover:text-blue-800 uppercase"
+            >
+              View All →
+            </button>
+          </div>
         </div>
       )}
     </div>
