@@ -88,3 +88,6 @@ npm run test:rules   # emulator boot + dono suites
 
 ## 7. NEXT (Task 3 preview — Storage Rules already done as part of this task)
 Per implementation order, Task 3 (Storage Rules) is already COMPLETE within this task (synchronized delivery per owner instruction). Next in line: **Task 4 — Role Permission Fixes** (e.g., /batches route group tightening + any residual action-gates).
+
+## Correction Log
+- **C-R1 (31-Jul-2026, runtime evidence):** 3 code-used collections audit se chhoot gaye the (catch-all deny): `batch_progress` (BatchProgress api — COLLECTION const indirection; live symptom = "No Active Batch"), `config` (BatchContext `config/activeBatch`), `training_tests` (ReportsScreen safeFetch + backup). Roles: batch_progress read anyStaff / write CC+Clerk+Ustad · config read anyStaff / write clerkCC · training_tests clerkCC full. **Legacy old-rule names re-verified DEAD (0 code usage) → deny-by-default correct:** training_material, training_exam, training_results, staff_performance, staff_notifications, dailyDeployments, dailyAssignments, ustadDailyStatus.

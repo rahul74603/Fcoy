@@ -348,6 +348,32 @@ service cloud.firestore {
     // ═══════════════════════════════════════════════════════════════════
     // DENY BY DEFAULT — jo collection upar listed nahi, woh har ke liye band.
     // ═══════════════════════════════════════════════════════════════════
+    // ─── CORRECTION C-R1 (31-Jul-2026 late · RUNTIME EVIDENCE) ──────────────
+    // Task-2 audit se 3 code-used collections chhoot gaye the — catch-all deny ne
+    // live app ke screens tod diye the (Batch Progress = "No Active Batch" proof).
+
+    // batch_progress — Batch Progress screen ka plan/progress record (ustad/api/
+    // batchProgress.api.ts — COLLECTION const ke andar chhupa tha, audit miss).
+    // read sabhi staff; write instructor workflow = CC/Clerk/Ustad.
+    match /batch_progress/{docId} {
+      allow read: if isAnyStaff();
+      allow create, update, delete: if isClerkOrCC() || isUstad();
+    }
+
+    // config — app-wide config docs (BatchContext `config/activeBatch` batch-create
+    // par likhta hai; har role ko boot/active-batch read chahiye).
+    // read sabhi staff; write sirf CC/Clerk (Batch Management mirror).
+    match /config/{docId} {
+      allow read: if isAnyStaff();
+      allow create, update, delete: if isClerkOrCC();
+    }
+
+    // training_tests — unified exam test docs (ReportsScreen read + backup list).
+    // Reports = CC, test-record screens = CC/Clerk → dono clerkCC (tight).
+    match /training_tests/{docId} {
+      allow read, create, update, delete: if isClerkOrCC();
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
