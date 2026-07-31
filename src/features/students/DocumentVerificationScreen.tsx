@@ -11,6 +11,7 @@ import { db } from '../../config/firebase';
 // ★ Cloudinary migration (free plan, no card): Firebase Storage → Cloudinary + client-side compressor
 import { prepareFileForUpload } from './fileCompress';
 import { uploadDocumentToCloudinary, isCloudinaryConfigured } from './cloudinaryUpload';
+import { useBlobUrl } from './useBlobUrl';
 
 import { useTraineeSearch } from '../../hooks/useTraineeSearch';
 import { useAuth } from '../../contexts/AuthContext';
@@ -123,6 +124,14 @@ export const DocumentVerificationScreen = () => {
 
   // ★ Verification workflow ke liye logged-in user (verifiedBy / actionedBy)
   const { user } = useAuth();
+
+  // ★ Preview ke liye Cloudinary file ko same-origin blob me badlo —
+  // dev ka COEP (require-corp) cross-origin <img>/<iframe> block kar deta hai.
+  const previewRemoteUrl = previewModal.open && previewModal.files.length > 0
+    ? previewModal.files[previewModal.currentIndex]?.fileUrl
+    : undefined;
+  const { blobUrl: previewBlobUrl, loading: previewLoading, failed: previewFailed } =
+    useBlobUrl(previewRemoteUrl);
   // ★ Rejection reason modal
   const [rejectModal, setRejectModal] = useState<{ open: boolean; docKey: string; docLabel: string; reason: string }>({
     open: false, docKey: '', docLabel: '', reason: '',
@@ -401,9 +410,14 @@ export const DocumentVerificationScreen = () => {
 
     try {
       // ✅ Hook ka traineeId use karo — Firestore doc ID correct rahegi
+      // ★ PRE-EXISTING BUG FIX: initDocStatus / handleStatusChange docStatus me
+      // undefined audit-fields (verifiedBy: undefined ...) chhod dete hain — Firestore
+      // updateDoc undefined value dekh kar THROW kar deta tha → Save hamesha fail.
+      // Yahan sab data plain JSON-safe hai, isliye round-trip se undefined keys clean.
+      const cleanDocStatus = JSON.parse(JSON.stringify(docStatus)) as Record<string, DocStatusItem>;
       const traineeRef = doc(db, 'trainees', searchedTraineeId);
       await updateDoc(traineeRef, {
-        documents:        docStatus,
+        documents:        cleanDocStatus,
         docsComplete:     allVerified,
         docsRequiredTotal: totalRequired,
         docsRequiredDone:  completedRequired,
@@ -421,7 +435,8 @@ export const DocumentVerificationScreen = () => {
         setMessage('');
         setDocStatus({});
       }, 3000);
-    } catch {
+    } catch (saveErr) {
+      console.error('[Documents] Save fail — asli error:', saveErr);
       setMessage('ERROR: Data save nahi ho paya. Dobara try karein.');
     } finally {
       setIsSaving(false);
@@ -995,12 +1010,24 @@ export const DocumentVerificationScreen = () => {
 
               {previewModal.files[previewModal.currentIndex].fileType === 'application/pdf' ? (
                 <div className="w-full h-full min-h-[60vh]">
-                  {previewModal.files[previewModal.currentIndex].fileUrl ? (
+                  {previewBlobUrl ? (
                     <iframe
-                      src={previewModal.files[previewModal.currentIndex].fileUrl}
+                      src={previewBlobUrl}
                       className="w-full h-full min-h-[60vh] border-0"
                       title="PDF Preview"
                     />
+                  ) : previewLoading ? (
+                    <p className="text-xs font-bold text-slate-400 py-12">PDF load ho rahi hai...</p>
+                  ) : previewFailed ? (
+                    <div className="flex flex-col items-center justify-center h-full text-slate-500 py-12">
+                      <File size={48} className="mb-2 text-red-400" />
+                      <p className="text-sm font-bold">Preview load nahi ho paya</p>
+                      <a
+                        href={previewModal.files[previewModal.currentIndex].fileUrl}
+                        target="_blank" rel="noopener noreferrer"
+                        className="mt-2 bg-slate-700 text-white px-3 py-1 text-[10px] font-bold uppercase hover:bg-slate-600"
+                      >Nayi Tab me kholo</a>
+                    </div>
                   ) : (
                     <div className="flex flex-col items-center justify-center h-full text-slate-500">
                       <File size={48} className="mb-2 text-red-400" />
@@ -1013,12 +1040,24 @@ export const DocumentVerificationScreen = () => {
                 </div>
               ) : (
                 <div className="flex items-center justify-center">
-                  {previewModal.files[previewModal.currentIndex].fileUrl ? (
+                  {previewBlobUrl ? (
                     <img
-                      src={previewModal.files[previewModal.currentIndex].fileUrl}
+                      src={previewBlobUrl}
                       alt={previewModal.files[previewModal.currentIndex].fileName}
                       className="max-w-full max-h-[65vh] object-contain shadow-lg"
                     />
+                  ) : previewLoading ? (
+                    <p className="text-xs font-bold text-slate-400 py-12">Photo load ho rahi hai...</p>
+                  ) : previewFailed ? (
+                    <div className="flex flex-col items-center justify-center text-slate-500 py-12">
+                      <FileImage size={48} className="mb-2 text-blue-400" />
+                      <p className="text-sm font-bold">Preview load nahi ho paya</p>
+                      <a
+                        href={previewModal.files[previewModal.currentIndex].fileUrl}
+                        target="_blank" rel="noopener noreferrer"
+                        className="mt-2 bg-slate-700 text-white px-3 py-1 text-[10px] font-bold uppercase hover:bg-slate-600"
+                      >Nayi Tab me kholo</a>
+                    </div>
                   ) : (
                     <div className="flex flex-col items-center justify-center text-slate-500 py-12">
                       <FileImage size={48} className="mb-2 text-blue-400" />
