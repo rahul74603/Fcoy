@@ -56,10 +56,17 @@ beforeEach(async () => {
 
 const dbAs = (uid: string) => testEnv.authenticatedContext(uid).firestore();
 const dbAnon = () => testEnv.unauthenticatedContext().firestore();
-const seededNotification = async () => (await testEnv.withSecurityRulesDisabled(async (ctx) =>
-  (await getDocs(collection(ctx.firestore(), 'notifications'))).docs[0].id));
-const seededLeave = async () => (await testEnv.withSecurityRulesDisabled(async (ctx) =>
-  (await getDocs(collection(ctx.firestore(), 'staff_leave'))).docs[0].id));
+// 🔄 UPDATE (01-Aug): robust seeders — addDoc ka ref hamesha valid id deta hai
+// (pehle getDocs().docs[0].id pattern tha; emulator-listen storm ke baad collection
+// empty milne par undefined id → doc(db, coll, undefined) IndexOf crash → 10 cascade
+// failures. Ab har call ek FRESH doc seed karke uski REAL id return karti hai.)
+const seedDoc = async (coll: string, data: Record<string, unknown>) =>
+  testEnv.withSecurityRulesDisabled(async (ctx) =>
+    (await addDoc(collection(ctx.firestore(), coll), data)).id);
+const seededNotification = () => seedDoc('notifications', {
+  title: 'Seeded', message: 'hello', targetRole: 'ALL', readBy: [], createdBy: 'seed',
+});
+const seededLeave = () => seedDoc('staff_leave', { staffId: 's1', status: 'pending' });
 
 // ─── 1) users — self-read sabko, list/manage sirf CC ─────────────────────
 describe('users collection', () => {
@@ -100,11 +107,11 @@ describe('login_history (D1-final)', () => {
     await assertFails(addDoc(collection(dbAs(CLERK), 'login_history'), { ...valid(), injected: 1 }));
   });
   it('append-only: update/delete kisi ko nahi, CC ko bhi nahi', async () => {
-    await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      await addDoc(collection(ctx.firestore(), 'login_history'), { ...valid(), timestamp: undefined });
-    });
+    // 🔄 UPDATE (01-Aug): pehle yahan `timestamp: undefined` seed hota tha — SDK
+    // client-side hi reject karta hai ("Unsupported field value: undefined"),
+    // matlab asli rule-test tak pahunchta hi nahi tha. Ab valid doc seed hota hai.
+    const id = await seedDoc('login_history', { ...valid(), email: 'seed@test.in' });
     const db = dbAs(CC);
-    const id = (await getDocs(collection(db, 'login_history'))).docs[0].id;
     await assertFails(updateDoc(doc(db, 'login_history', id), { status: 'SUCCESS' }));
     await assertFails(deleteDoc(doc(db, 'login_history', id)));
   });
