@@ -52,6 +52,8 @@ export const BatchManagementScreen: React.FC = () => {
   // ── ➕ ADD — Task A: Batch Switch state ──
   const [switchTarget, setSwitchTarget] = useState<{ id: string; batchNumber: string; batchName: string } | null>(null);
   const [switchLoading, setSwitchLoading] = useState(false);
+  // ➕ ADD — Task A-UX (owner feedback 01-Aug): header SWITCH DROPDOWN ka selection
+  const [switchPick, setSwitchPick] = useState('');
 
   // ── CSS ──
   const inputCls = "w-full border border-slate-300 px-3 py-2.5 text-xs focus:outline-none focus:border-military-700 bg-white rounded";
@@ -160,6 +162,17 @@ export const BatchManagementScreen: React.FC = () => {
 
   // ── ➕ ADD — Task A: Handle Batch Switch ──
   // Purani batch wapas ACTIVE karta hai. Data delete nahi hota — reversible hai.
+
+  // ➕ ADD — Task A-UX: switch confirmation kholne ka single helper
+  // (header dropdown + row button dono isi se chalte hain)
+  const openSwitchConfirm = (batch: { id: string; batchNumber: string; batchName: string }) => {
+    setSwitchTarget({ id: batch.id, batchNumber: batch.batchNumber, batchName: batch.batchName });
+    setConfirmAction('switch');
+    setError('');
+    setSuccess('');
+    setShowConfirm(true);
+  };
+
   const handleSwitchBatch = async () => {
     if (!switchTarget) return;
     if (!isCommander) {
@@ -180,6 +193,7 @@ export const BatchManagementScreen: React.FC = () => {
         `Koi data delete nahi hua — chaaho to wapas switch kar sakte ho.`
       );
       setSwitchTarget(null);
+      setSwitchPick('');   // ➕ Task A-UX: dropdown bhi reset
     } catch (err: any) {
       setError(`Batch switch failed: ${err.message}`);
     } finally {
@@ -252,6 +266,48 @@ export const BatchManagementScreen: React.FC = () => {
               <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
               Active: {activeBatch.batchNumber}
             </span>
+          )}
+          {/* ➕ ADD — Task A-UX (owner feedback 01-Aug): BATCH SWITCH DROPDOWN.
+              Pehle button sirf detail panel ke andar tha (dikhta hi nahi tha) —
+              ab header me hamesha visible. Kisi bhi inactive real batch ko chuno →
+              Switch → confirm → wo ACTIVE; purani archive. Data delete NAHI hota. */}
+          {isCommander && (
+            <div
+              className="flex items-center gap-1.5"
+              title="Kisi purani batch ko dobara Active karo — current archive hogi, data safe rehta hai (wapas switch bhi kar sakte ho)"
+            >
+              <select
+                value={switchPick}
+                onChange={e => setSwitchPick(e.target.value)}
+                className="border-2 border-green-400 bg-green-50 text-green-900 text-[11px] font-bold rounded px-2 py-1.5 focus:outline-none focus:border-green-600 max-w-[230px]"
+              >
+                <option value="">
+                  {allBatches.some(b => b.status !== 'active' && b.status !== 'test' && !b.isTestData)
+                    ? '⇄ Switch Batch chuno…'
+                    : '⇄ Switch (koi aur batch nahi)'}
+                </option>
+                {allBatches
+                  .filter(b => b.status !== 'active' && b.status !== 'test' && !b.isTestData)
+                  .map(b => (
+                    <option key={b.id} value={b.id}>
+                      {b.batchNumber} — {b.batchName} ({b.status})
+                    </option>
+                  ))}
+              </select>
+              <button
+                onClick={() => {
+                  const t = allBatches.find(b => b.id === switchPick);
+                  if (t) openSwitchConfirm(t);
+                }}
+                disabled={!switchPick || switchLoading}
+                className="bg-green-700 text-white px-3 py-1.5 text-[10px] font-black uppercase rounded hover:bg-green-800 disabled:opacity-40 flex items-center gap-1"
+              >
+                {switchLoading
+                  ? <Loader2 size={12} className="animate-spin" />
+                  : <CheckCircle2 size={12} />}
+                Switch
+              </button>
+            </div>
           )}
           {isCommander && (
             <button
@@ -687,7 +743,7 @@ export const BatchManagementScreen: React.FC = () => {
             <table className="w-full text-xs">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
-                  {['#', 'Batch Number', 'Name', 'Start Date', 'End Date', 'Status', 'Trainees', 'Created'].map(h => (
+                  {['#', 'Batch Number', 'Name', 'Start Date', 'End Date', 'Status', 'Trainees', 'Created', 'Actions'].map(h => (
                     <th key={h} className="px-4 py-2.5 text-[9px] font-black text-slate-500 uppercase text-left">
                       {h}
                     </th>
@@ -735,11 +791,26 @@ export const BatchManagementScreen: React.FC = () => {
                       {batchTraineeCount[batch.id] ?? batch.totalTrainees ?? 0}
                     </td>
                     <td className="px-4 py-3 text-slate-400 text-[10px]">
-                      {batch.createdAt
+                      {/* 🔄 UPDATE — Task A-UX: invalid/missing createdAt par
+                          "Invalid Date" ki jagah saaf "—" (test batch 900 case) */}
+                      {batch.createdAt && !isNaN(new Date(batch.createdAt).getTime())
                         ? new Date(batch.createdAt).toLocaleDateString('en-IN', {
                             day: '2-digit', month: 'short', year: 'numeric'
                           })
                         : '—'}
+                    </td>
+                    {/* ➕ ADD — Task A-UX: row-level Set Active (one-click switch).
+                        stopPropagation zaroori — warna row-click detail panel toggle ho jata */}
+                    <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                      {isCommander && batch.status !== 'active' && batch.status !== 'test' && !batch.isTestData && (
+                        <button
+                          onClick={() => openSwitchConfirm(batch)}
+                          className="text-[9px] font-black uppercase px-2 py-1 bg-green-50 border border-green-300 text-green-700 rounded hover:bg-green-100 flex items-center gap-1"
+                          title="Is batch ko Active karo (current archive hogi — reversible)"
+                        >
+                          <CheckCircle2 size={10} /> Set Active
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -767,13 +838,7 @@ export const BatchManagementScreen: React.FC = () => {
                 {/* ➕ ADD — Task A: Set Active (batch switch) — sirf CC, sirf non-active real batch par */}
                 {isCommander && batch.status !== 'active' && batch.status !== 'test' && !batch.isTestData && (
                   <button
-                    onClick={() => {
-                      setSwitchTarget({ id: batch.id, batchNumber: batch.batchNumber, batchName: batch.batchName });
-                      setConfirmAction('switch');
-                      setError('');
-                      setSuccess('');
-                      setShowConfirm(true);
-                    }}
+                    onClick={() => openSwitchConfirm(batch)}
                     className="text-[10px] font-black uppercase flex items-center gap-1 px-2.5 py-1 border border-green-300 text-green-700 rounded hover:bg-green-50"
                     title="Is batch ko Active banao — current active archive hogi, data delete nahi hoga (reversible)"
                   >
@@ -837,7 +902,7 @@ export const BatchManagementScreen: React.FC = () => {
                 <div>
                   <p className="text-[10px] font-black text-slate-400 uppercase">Created On</p>
                   <p className="text-sm font-bold text-slate-700">
-                    {batch.createdAt
+                    {batch.createdAt && !isNaN(new Date(batch.createdAt).getTime())
                       ? new Date(batch.createdAt).toLocaleString('en-IN', {
                           day: '2-digit', month: 'short', year: 'numeric',
                           hour: '2-digit', minute: '2-digit'
