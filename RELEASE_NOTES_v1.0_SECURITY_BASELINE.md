@@ -14,6 +14,7 @@
 | **Deploy-Gate Commit** | `b03a39e` (checklist + tag instructions) |
 | **Deploy Date & Time** | ⏳ __________ (IST fill karo jab Step 3 publish ho) |
 | **Firestore Rules SHA-256** | `v1.0` · `f752f7ef43a288f6ebb618ce621fb10649ef2cac038f836d74a4351dbef510d3` |
+| **Firestore Rules SHA-256 (CURRENT — C-R1 corrected)** | `v1.1` · `7e3cf53713799999356052b898aca5414811a794a5c0804344c231db19773c30` · commit `59278e9` · 3 runtime-proven missing collections add hue (`batch_progress`, `config`, `training_tests`) · **purana (v1.0) hash ab drift maana jayega** · ⏳ deploy pending (PC se `firebase deploy --only firestore`) |
 | **Storage Rules SHA-256** | `v1.0` · `eeeb5d8e65637f88036795cc1ecf5d05a1e325910d793118586049b03a421add` |
 | **App Build** | tsc strict PASS · vite build PASS (11.14s, pre-existing chunk-size warning) |
 
@@ -65,7 +66,7 @@
 
 1. **Wrong-password attempts log nahi hote** (unauthenticated `login_history` write band hai — D1 owner decision). **Fix: Phase-2 Cloud Function (server-side logging) — mandatory.**
 2. **Pre-auth browser errors** `error_logs` me nahi jaate (auth-required), console par dikhte hain.
-3. **`/batches` route abhi ALL_ROLES hai** — Ustad screen khol sakta hai par write DB-level blocked hai; UI-gate **Task 4** ka scope.
+3. ~~**`/batches` route abhi ALL_ROLES hai**~~ ✅ **RESOLVED (Task 4, commit `fa86497`)** — route ab CC+Clerk only; Ustad/QM ko "Access Denied" milega; globalSearch bhi sync. *Write actions pehle se screen-level CC-gated + rules-level the.*
 4. Failed-login spike automation rule ko ab sirf post-auth failures milte hain (degraded, broken nahi).
 
 ## Rollback
@@ -82,7 +83,7 @@
 
 ## Next Planned Work (unlock order)
 
-1. 🔒 **Task 4 — Role Permission Fixes** (`/batches` route tightening, residual action-gate sweep, reusable `usePermission` hook) — **sirf tab jab saare gates + 48h watch clear**
+1. ✅ **Task 4 — Role Permission Fixes (CODE COMPLETE, commit `fa86497`)** — `/batches` route tightening + globalSearch sync + reusable `src/hooks/usePermission.ts` hook (pehla consumer: BatchManagementScreen). Baaki screens ka action-gate sweep jaan-boojhkar incremental rakha gaya hai (sab kuch ek saath badalna = blind-break risk). Owner ke "apne hisaab se sab complete karo" instruction par gates se pehle code push hua hai — deploy/test PC par verify hoga.
 2. Phase 2: Error Boundary → Authentication Hardening (failed-login lockout + server-side login logging CF) → Cloud Functions → Audit Logs expansion
 
 ---
