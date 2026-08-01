@@ -13,7 +13,7 @@ import { db } from '../../config/firebase';
 
 export const BatchManagementScreen: React.FC = () => {
   const { user } = useAuth();
-  const { activeBatch, allBatches, loading, createNewBatch, updateBatchInfo } = useBatch();
+  const { activeBatch, allBatches, loading, createNewBatch, updateBatchInfo, switchActiveBatch } = useBatch();
 
   const isCommander = user?.role === 'Company Commander';
 
@@ -44,7 +44,12 @@ export const BatchManagementScreen: React.FC = () => {
 
   // ── Confirm Dialog ──
   const [showConfirm, setShowConfirm] = useState(false);
-  const [confirmAction, setConfirmAction] = useState<'create' | 'complete'>('create');
+  // ➕ ADD — Task A: 'switch' action bhi isi confirm modal se chalega
+  const [confirmAction, setConfirmAction] = useState<'create' | 'complete' | 'switch'>('create');
+
+  // ── ➕ ADD — Task A: Batch Switch state ──
+  const [switchTarget, setSwitchTarget] = useState<{ id: string; batchNumber: string; batchName: string } | null>(null);
+  const [switchLoading, setSwitchLoading] = useState(false);
 
   // ── CSS ──
   const inputCls = "w-full border border-slate-300 px-3 py-2.5 text-xs focus:outline-none focus:border-military-700 bg-white rounded";
@@ -148,6 +153,35 @@ export const BatchManagementScreen: React.FC = () => {
       setError(`Batch update failed: ${err.message}`);
     } finally {
       setEditLoading(false);
+    }
+  };
+
+  // ── ➕ ADD — Task A: Handle Batch Switch ──
+  // Purani batch wapas ACTIVE karta hai. Data delete nahi hota — reversible hai.
+  const handleSwitchBatch = async () => {
+    if (!switchTarget) return;
+    if (!isCommander) {
+      setError('Only Company Commander can switch active batch');
+      setShowConfirm(false);
+      return;
+    }
+
+    setSwitchLoading(true);
+    setError('');
+    setSuccess('');
+    setShowConfirm(false);
+
+    try {
+      await switchActiveBatch(switchTarget.id, user?.name ?? user?.email ?? 'Unknown');
+      setSuccess(
+        `✓ Batch "${switchTarget.batchNumber}" ab ACTIVE hai! Purani active batch archive ho gayi. ` +
+        `Koi data delete nahi hua — chaaho to wapas switch kar sakte ho.`
+      );
+      setSwitchTarget(null);
+    } catch (err: any) {
+      setError(`Batch switch failed: ${err.message}`);
+    } finally {
+      setSwitchLoading(false);
     }
   };
 
@@ -532,7 +566,7 @@ export const BatchManagementScreen: React.FC = () => {
               </h3>
             </div>
             <div className="p-5">
-              {confirmAction === 'create' ? (
+              {confirmAction === 'create' && (
                 <>
                   <p className="text-xs text-slate-700 mb-3">
                     Kya aap sure hain? Yeh action karne se:
@@ -558,21 +592,59 @@ export const BatchManagementScreen: React.FC = () => {
                     </li>
                   </ul>
                 </>
-              ) : (
+              )}
+
+              {confirmAction === 'complete' && (
                 <p className="text-xs text-slate-700 mb-4">
                   Kya aap sure hain ki is batch ko complete/archive karna hai?
                 </p>
+              )}
+
+              {/* ➕ ADD — Task A: Batch Switch confirmation */}
+              {confirmAction === 'switch' && switchTarget && (
+                <>
+                  <p className="text-xs text-slate-700 mb-3">
+                    Batch Switch confirm karo. Is action se:
+                  </p>
+                  <ul className="text-xs text-slate-600 space-y-2 mb-4">
+                    {activeBatch && activeBatch.id !== switchTarget.id && (
+                      <li className="flex items-start gap-2">
+                        <ArrowRight size={12} className="text-red-500 mt-0.5 flex-shrink-0" />
+                        <span>
+                          Current active batch <strong>"{activeBatch.batchNumber}"</strong>{' '}
+                          <span className="text-red-600 font-bold">ARCHIVE (Completed)</span> ho jayega
+                        </span>
+                      </li>
+                    )}
+                    <li className="flex items-start gap-2">
+                      <ArrowRight size={12} className="text-green-500 mt-0.5 flex-shrink-0" />
+                      <span>
+                        Batch <strong>"{switchTarget.batchNumber}"</strong> ab{' '}
+                        <span className="text-green-600 font-bold">ACTIVE</span> ho jayega — Batch Progress,
+                        Attendance, Inventory jaise saare screens ab isi batch ko dikhayenge
+                      </span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <ArrowRight size={12} className="text-blue-500 mt-0.5 flex-shrink-0" />
+                      <span>
+                        <strong>Koi data delete NAHI hoga</strong> — purani batch ki details isi screen me
+                        "All Batches History" se hamesha dekh sakte ho, aur zaroorat padi to wapas switch bhi kar sakte ho
+                      </span>
+                    </li>
+                  </ul>
+                </>
               )}
 
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => {
                     if (confirmAction === 'create') handleCreateBatch();
+                    else if (confirmAction === 'switch') handleSwitchBatch();
                   }}
-                  disabled={createLoading}
+                  disabled={createLoading || switchLoading}
                   className="bg-green-700 text-white px-5 py-2 text-xs font-black uppercase rounded hover:bg-green-800 disabled:opacity-50 flex items-center gap-2"
                 >
-                  {createLoading
+                  {(createLoading || switchLoading)
                     ? <><Loader2 size={12} className="animate-spin" /> Processing...</>
                     : <><CheckCircle2 size={12} /> Confirm</>}
                 </button>
@@ -690,6 +762,22 @@ export const BatchManagementScreen: React.FC = () => {
                 {getStatusBadge(batch.status)}
               </div>
               <div className="flex items-center gap-2">
+                {/* ➕ ADD — Task A: Set Active (batch switch) — sirf CC, sirf non-active real batch par */}
+                {isCommander && batch.status !== 'active' && batch.status !== 'test' && !batch.isTestData && (
+                  <button
+                    onClick={() => {
+                      setSwitchTarget({ id: batch.id, batchNumber: batch.batchNumber, batchName: batch.batchName });
+                      setConfirmAction('switch');
+                      setError('');
+                      setSuccess('');
+                      setShowConfirm(true);
+                    }}
+                    className="text-[10px] font-black uppercase flex items-center gap-1 px-2.5 py-1 border border-green-300 text-green-700 rounded hover:bg-green-50"
+                    title="Is batch ko Active banao — current active archive hogi, data delete nahi hoga (reversible)"
+                  >
+                    <CheckCircle2 size={11} /> Set Active
+                  </button>
+                )}
                 {isCommander && (
                   <button
                     onClick={() => openEdit(batch)}

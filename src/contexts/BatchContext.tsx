@@ -35,6 +35,8 @@ interface BatchContextType {
   createNewBatch: (data: CreateBatchForm) => Promise<void>;
   completeBatch: (batchId: string, userId: string) => Promise<void>;
   updateBatchInfo: (batchId: string, data: UpdateBatchForm) => Promise<void>; // ★ NEW — Batch editing
+  // ➕ ADD — Task A: kisi bhi purani batch ko dobara ACTIVE karna (reversible batch switch)
+  switchActiveBatch: (batchId: string, userId: string) => Promise<void>;
   refreshBatches: () => void;
 }
 
@@ -64,6 +66,7 @@ const BatchContext = createContext<BatchContextType>({
   createNewBatch: async () => {},
   completeBatch: async () => {},
   updateBatchInfo: async () => {},
+  switchActiveBatch: async () => {},
   refreshBatches: () => {},
 });
 
@@ -208,6 +211,60 @@ export const BatchProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, []);
 
+  // ── ➕ ADD — Task A: Switch Active Batch (CC-only, poori tarah REVERSIBLE) ──
+  // Kisi bhi completed/upcoming batch ko dobara ACTIVE banata hai:
+  //   Step 1: current active batch → 'completed' (archive, data safe rehta hai)
+  //   Step 2: target batch         → 'active'
+  //   Step 3: config/activeBatch   → target batchId (saari screens isi ko follow karti hain)
+  // Koi data delete NAHI hota — wapas switch karke purani batch fir se active ho sakti hai.
+  // writeBatch = atomic commit: ya to teeno updates honge ya koi nahi (adhura state nahi banega).
+  const switchActiveBatch = useCallback(async (batchId: string, userId: string) => {
+    try {
+      const target = allBatches.find(b => b.id === batchId);
+      if (!target) throw new Error('Batch nahi mili — list refresh karke dobara try karo');
+      if (target.status === 'active') return; // pehle se active — kuch karne ki zaroorat nahi
+      // ★ Safety: dev/test batch ko kabhi real ACTIVE nahi banana (warna normal
+      //   mode me hidden test batch asli active ban jayegi)
+      if (target.status === 'test' || target.isTestData) {
+        throw new Error('Ye dev/test batch hai — ise active karne ki zaroorat nahi (Dev Mode me ye pehle se chalti hai)');
+      }
+
+      const batch = writeBatch(db);
+      const now = new Date().toISOString();
+
+      // Step 1: Current active batch ko archive karo
+      const currentActive = allBatches.find(b => b.status === 'active');
+      if (currentActive && currentActive.id !== batchId) {
+        batch.update(doc(db, 'batches', currentActive.id), {
+          status: 'completed',
+          completedAt: now,
+          completedBy: userId,
+        });
+      }
+
+      // Step 2: Target batch ko active karo
+      batch.update(doc(db, 'batches', batchId), {
+        status: 'active',
+        reactivatedAt: now,
+        reactivatedBy: userId,
+      });
+
+      // Step 3: activeBatch config doc sync (createNewBatch jaisa hi)
+      batch.set(doc(db, 'config', 'activeBatch'), {
+        batchId: target.id,
+        batchNumber: target.batchNumber,
+        batchName: target.batchName,
+        updatedAt: now,
+        updatedBy: userId,
+      });
+
+      await batch.commit();
+    } catch (err: any) {
+      console.error('Switch batch error:', err);
+      throw err;
+    }
+  }, [allBatches]);
+
   // ── ★ NEW: Edit Batch Info (name/dates/description) ──
   // batchNumber identity hai — kabhi change nahi hoti.
   // status bhi yahan change nahi hota (sirf create/complete se).
@@ -245,6 +302,7 @@ export const BatchProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       createNewBatch,
       completeBatch,
       updateBatchInfo,
+      switchActiveBatch,
       refreshBatches,
     }}>
       {children}
