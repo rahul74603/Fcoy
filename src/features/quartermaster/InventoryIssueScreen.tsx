@@ -69,7 +69,28 @@ interface TrainingItemStock {
   totalReturned: number;   // Good condition — stock mein wapas aaya
   totalDamaged: number;    // Damaged — damage register (stock mein nahi aata)
   returnedSizeStock: Record<string, number>;
+  // ➕ ADD — Task D: sabse recent purchase ki tareekh (ISO string).
+  //   Inventory batch-independent hai — purana stock + naye purchases
+  //   milke chalti rehti hai, isliye purchase date dikhana zaroori hai.
+  latestPurchaseDate?: string;
   isCustom?: boolean;
+}
+
+// ➕ ADD — Task C: Damage Register entry (stock_returns jahan condition = 'Damaged')
+// Ye sirf DISPLAY/counting ke liye hai — stock math pehle se sahi hai:
+// damaged item issue ke time hi stock se kat chuka hota hai (issue_records
+// immutable ledger), isliye currentStock se dobara minus NAHI karte
+// (warna double-count ho jayega).
+interface DamageEntry {
+  id: string;
+  itemName: string;
+  size: string;
+  qty: number;
+  traineeName: string;
+  chestNo: string;
+  reason: string;
+  returnedBy: string;
+  dateISO: string;
 }
 
 interface CartItem extends TrainingItemStock {
@@ -660,6 +681,9 @@ export const InventoryIssueScreen: React.FC = () => {
   const [searchLoading, setSearchLoading] = useState(false);
   const [issueLoading,  setIssueLoading]  = useState(false);
   const [allItems,      setAllItems]      = useState<TrainingItemStock[]>([]);
+  // ➕ ADD — Task C: Damage Register (write-off) list + section toggle
+  const [damageLog,          setDamageLog]          = useState<DamageEntry[]>([]);
+  const [showDamageRegister, setShowDamageRegister] = useState(true);
   const [itemsLoading,  setItemsLoading]  = useState(true);
   const [cartItems,     setCartItems]     = useState<CartItem[]>([]);
   const [itemSearchText,setItemSearchText]= useState('');
@@ -789,6 +813,7 @@ export const InventoryIssueScreen: React.FC = () => {
       const purchasedMap = new Map<string, {
         itemName: string; totalQty: number; totalValue: number;
         latestUnitPrice: number; sizeStock: Record<string, number>;
+        latestDate: string;   // ➕ ADD — Task D
       }>();
 
       expSnap.forEach(d => {
@@ -805,15 +830,20 @@ export const InventoryIssueScreen: React.FC = () => {
         const key       = normalizeName(itemName);
 
         if (!purchasedMap.has(key)) {
-          purchasedMap.set(key, { 
-            itemName, totalQty: 0, totalValue: 0, 
-            latestUnitPrice: 0, sizeStock: {} 
+          purchasedMap.set(key, {
+            itemName, totalQty: 0, totalValue: 0,
+            latestUnitPrice: 0, sizeStock: {}, latestDate: ''
           });
         }
         const agg = purchasedMap.get(key)!;
         agg.totalQty   += qty;
         agg.totalValue += amount;
         if (unitPrice > 0) agg.latestUnitPrice = unitPrice;
+
+        // ➕ ADD — Task D: latest purchase date track karo
+        // (expense doc ka `date` field ISO string hai — lexicographic compare kaafi)
+        const expDate = typeof data.date === 'string' ? data.date : '';
+        if (expDate && expDate > agg.latestDate) agg.latestDate = expDate;
 
         const sizes: SizeBreakdown[] = Array.isArray(data.sizes) ? data.sizes : [];
         sizes.forEach(sz => {
@@ -860,6 +890,8 @@ export const InventoryIssueScreen: React.FC = () => {
       const returnedMap = new Map<string, {
         goodQty: number; damagedQty: number; goodSizeStock: Record<string, number>;
       }>();
+      // ➕ ADD — Task C: Damage Register ke liye raw entries (display-only)
+      const damageEntries: DamageEntry[] = [];
       try {
         const returnSnap = await getDocs(collection(db, 'stock_returns'));
         returnSnap.forEach(d => {
@@ -880,11 +912,26 @@ export const InventoryIssueScreen: React.FC = () => {
             }
           } else {
             agg.damagedQty += qty; // Damage register — stock mein wapas nahi aata
+            // ➕ ADD — Task C: register entry note karo (kab, kisne, kyun)
+            damageEntries.push({
+              id:          d.id,
+              itemName,
+              size:        size || 'N/A',
+              qty,
+              traineeName: String(data.traineeName ?? '—'),
+              chestNo:     String(data.chestNo ?? ''),
+              reason:      String(data.reason ?? ''),
+              returnedBy:  String(data.returnedBy ?? ''),
+              dateISO:     typeof data.returnDateISO === 'string' ? data.returnDateISO : '',
+            });
           }
         });
       } catch (retErr) {
         console.warn('stock_returns fetch skipped:', retErr);
       }
+      // ➕ ADD — Task C: newest damage pehle dikhao
+      damageEntries.sort((a, b) => b.dateISO.localeCompare(a.dateISO));
+      setDamageLog(damageEntries);
 
       const allKeys = new Set<string>([
         ...Array.from(catalogMap.keys()),
@@ -956,6 +1003,7 @@ export const InventoryIssueScreen: React.FC = () => {
           totalReturned,
           totalDamaged,
           returnedSizeStock: retSizeStock,
+          latestPurchaseDate: purchased?.latestDate || undefined,   // ➕ ADD — Task D
           isCustom:      meta?.isCustom,
         });
       });
@@ -1376,7 +1424,12 @@ export const InventoryIssueScreen: React.FC = () => {
             </span>
             <span className="text-slate-300">|</span>
             <span className="flex items-center gap-1 text-blue-600">
-              <Package size={11} /> Stock = Purchased − Already Issued
+              <Package size={11} /> Stock = Purchased − Issued + Good Returns
+            </span>
+            {/* ➕ ADD — Task D: inventory hamesha active rehti hai */}
+            <span className="text-slate-300">|</span>
+            <span className="flex items-center gap-1 text-purple-600">
+              <CheckCircle2 size={11} /> Inventory batch-independent — hamesha active, purchase date ke saath badhti rahegi
             </span>
           </p>
         </div>
@@ -1438,13 +1491,77 @@ export const InventoryIssueScreen: React.FC = () => {
             sub: `Damaged: ${allItems.reduce((s, i) => s + (i.totalDamaged || 0), 0)} (write-off)`
           },
         ].map(({ label, value, color, border, sub }) => (
-          <div key={label} 
+          <div key={label}
             className={`bg-white border border-slate-200 border-l-4 ${border} p-3 rounded shadow-sm`}>
             <p className="text-[10px] font-bold text-slate-400 uppercase">{label}</p>
             <p className={`text-xl font-black mt-0.5 ${color}`}>{value}</p>
             <p className="text-[9px] text-slate-300 font-semibold">{sub}</p>
           </div>
         ))}
+      </div>
+
+      {/* ➕ ADD — Task C: DAMAGE REGISTER (write-off ledger)
+             User request: "agar 20 items hai 2 damage hai to damage me dikhe
+             and 18 active dikhe" — yahan damaged items ki poori counting +
+             record dikhta hai (kab, kiske paas se, kyun damage hua). */}
+      <div className="bg-white border border-red-200 rounded shadow-sm overflow-hidden">
+        <button
+          onClick={() => setShowDamageRegister(v => !v)}
+          className="w-full bg-red-50 px-4 py-2.5 flex items-center justify-between hover:bg-red-100 transition-colors"
+        >
+          <span className="flex items-center gap-2 text-red-800">
+            <AlertTriangle size={14} />
+            <span className="text-xs font-black uppercase">Damage Register (Write-off)</span>
+            <span className="text-[10px] font-bold bg-red-600 text-white px-2 py-0.5 rounded-full">
+              {damageLog.reduce((s, e) => s + e.qty, 0)} items · {damageLog.length} entries
+            </span>
+          </span>
+          {showDamageRegister
+            ? <ChevronUp size={14} className="text-red-500" />
+            : <ChevronDown size={14} className="text-red-500" />}
+        </button>
+        {showDamageRegister && (
+          damageLog.length === 0 ? (
+            <p className="p-4 text-center text-[11px] text-slate-400 font-semibold">
+              ✓ Abhi tak koi damaged item nahi — saara stock achhi condition me hai
+            </p>
+          ) : (
+            <div className="max-h-72 overflow-y-auto">
+              <p className="px-3 pt-2 text-[9px] text-slate-400 font-semibold">
+                Damaged (write-off) items — trainee se wapas aaye par kharab. Ye Active Stock me
+                NAHI jate (issue ke time hi stock se kat chuke the — isliye stock dobara minus nahi hota).
+              </p>
+              <table className="w-full text-[11px] mt-1">
+                <thead className="bg-slate-50 sticky top-0">
+                  <tr>
+                    {['Date', 'Item', 'Size', 'Qty', 'Trainee', 'Reason', 'Returned By'].map(h => (
+                      <th key={h} className="px-3 py-2 text-left text-[9px] font-black text-slate-500 uppercase border-b border-slate-200">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {damageLog.map(e => (
+                    <tr key={e.id} className="border-b border-slate-100 hover:bg-red-50/40">
+                      <td className="px-3 py-1.5 text-slate-500 whitespace-nowrap">
+                        {e.dateISO
+                          ? new Date(e.dateISO).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                          : '—'}
+                      </td>
+                      <td className="px-3 py-1.5 font-bold text-slate-700">{e.itemName}</td>
+                      <td className="px-3 py-1.5 text-slate-500">{e.size !== 'N/A' ? e.size : '—'}</td>
+                      <td className="px-3 py-1.5 font-black text-red-600">{e.qty}</td>
+                      <td className="px-3 py-1.5 text-slate-600">
+                        {e.traineeName}{e.chestNo ? ` (Chest: ${e.chestNo})` : ''}
+                      </td>
+                      <td className="px-3 py-1.5 text-slate-500 italic">{e.reason || '—'}</td>
+                      <td className="px-3 py-1.5 text-slate-400">{e.returnedBy || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
+        )}
       </div>
 
       {/* INFO BANNER */}
@@ -1653,12 +1770,22 @@ export const InventoryIssueScreen: React.FC = () => {
                               </span>
                             )}
                           </div>
-                          <div className="flex items-center gap-3 mt-0.5 text-[10px] text-slate-400">
+                          <div className="flex items-center gap-3 mt-0.5 text-[10px] text-slate-400 flex-wrap">
                             <span>{item.category}</span>
                             <span>₹{item.unitPrice}</span>
                             <span>
                               Purchased: {item.totalPurchased} · Issued: {item.totalIssued}
+                              {/* ➕ ADD — Task C: damaged count visible (write-off) */}
+                              {item.totalDamaged > 0 && (
+                                <span className="text-red-500 font-bold"> · Damaged: {item.totalDamaged}</span>
+                              )}
                             </span>
+                            {/* ➕ ADD — Task D: latest purchase date */}
+                            {item.latestPurchaseDate && (
+                              <span className="text-purple-500 font-semibold">
+                                Last Purchase: {new Date(item.latestPurchaseDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                              </span>
+                            )}
                           </div>
                           {item.sizeRequired && 
                            Object.keys(item.sizeStock).length > 0 && (
@@ -1679,7 +1806,7 @@ export const InventoryIssueScreen: React.FC = () => {
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
                             getStockColor(item.currentStock, item.minStockAlert)
                           }`}>
-                            Stock: {item.currentStock}
+                            {item.currentStock} Active
                           </span>
                           <div className="bg-slate-800 text-white p-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity">
                             <Plus size={12} />
