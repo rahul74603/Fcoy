@@ -2,7 +2,7 @@
 // Complete: Seed + Sync + Cleanup (All-in-One)
 
 import React, { useState, useEffect } from 'react';
-import { Loader2, Plus, AlertTriangle, Layers, RefreshCw } from 'lucide-react';
+import { Loader2, Plus, AlertTriangle, Layers, RefreshCw, Shield } from 'lucide-react';
 import { collection, addDoc, getDocs, deleteDoc, doc, query, where, updateDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { useBatch } from '../../contexts/BatchContext';
@@ -10,6 +10,8 @@ import { useBatch } from '../../contexts/BatchContext';
 import { getSystemFlags } from './systemHealth.api';
 // ★ Dev Test Lab — hidden fake batch section (150 trainees + 20 staff)
 import DevTestLabSection from './DevTestLabSection';
+// ➕ ADD — Task B: Seed/Cleanup tools sirf Developer (Dev Mode ON) ko dikhen
+import { isDevMode } from './devSeed';
 
 // ═══════════════════════════════════════════════════════════
 // DUMMY DATA
@@ -448,9 +450,17 @@ const SeedStaffData: React.FC = () => {
         </div>
       )}
 
-      {/* ★ DEV TEST LAB — hidden fake batch (150 trainees + 20 staff) */}
+      {/* ★ DEV TEST LAB — hidden fake batch (150 trainees + 20 staff)
+          NOTE: ye section Dev Mode OFF par bhi dikhta hai, kyunki Dev Mode
+          ON/OFF toggle isi ke andar hai — developer yahin se Dev Mode ON
+          karke neeche ke seed tools unlock karta hai (chicken-and-egg se bachna) */}
       <DevTestLabSection />
 
+      {/* ➕ ADD — Task B: Seed / Sync / Cleanup / Nuclear Reset — sirf Developer
+          ko (Dev Mode ON). Normal CC ko ye destructive tools NAHI dikhenge.
+          (User request: "seed data wala system only Developer ko dikhe") */}
+      {isDevMode() ? (
+      <>
       {/* ════════════════════════════════════════
           SECTION 1: SEEDING
       ════════════════════════════════════════ */}
@@ -595,6 +605,22 @@ const SeedStaffData: React.FC = () => {
               </div>
             ))}
           </div>
+        </div>
+      )}
+      </>
+      ) : (
+        /* 🔒 Task B: Locked panel — non-developers (Dev Mode OFF) ke liye */
+        <div className="bg-slate-50 border-2 border-dashed border-slate-300 rounded-xl p-8 text-center">
+          <Shield className="mx-auto mb-3 text-slate-400" size={32} />
+          <h3 className="text-sm font-black text-slate-700 uppercase">
+            🔒 Seed Tools Locked — Developer Only
+          </h3>
+          <p className="text-xs text-slate-500 mt-2 max-w-md mx-auto leading-relaxed">
+            Seed / Sync / Cleanup / Nuclear Reset jaise destructive tools sirf{' '}
+            <strong>Developer</strong> ke liye hain — production me inki zaroorat nahi hai.
+            Developer ho to upar <strong>Dev Test Lab</strong> se <strong>Dev Mode ON</strong> karo —
+            page refresh hote hi ye tools unlock ho jayenge.
+          </p>
         </div>
       )}
     </div>
