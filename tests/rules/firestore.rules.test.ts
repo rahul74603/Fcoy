@@ -56,13 +56,19 @@ beforeEach(async () => {
 
 const dbAs = (uid: string) => testEnv.authenticatedContext(uid).firestore();
 const dbAnon = () => testEnv.unauthenticatedContext().firestore();
-// 🔄 UPDATE (01-Aug): robust seeders — addDoc ka ref hamesha valid id deta hai
-// (pehle getDocs().docs[0].id pattern tha; emulator-listen storm ke baad collection
-// empty milne par undefined id → doc(db, coll, undefined) IndexOf crash → 10 cascade
-// failures. Ab har call ek FRESH doc seed karke uski REAL id return karti hai.)
-const seedDoc = async (coll: string, data: Record<string, unknown>) =>
-  testEnv.withSecurityRulesDisabled(async (ctx) =>
-    (await addDoc(collection(ctx.firestore(), coll), data)).id);
+// 🔄 UPDATE (01-Aug, real-run fix 2): withSecurityRulesDisabled() callback ki
+// RETURN VALUE ko swallow kar deta hai — hamesha void resolve hota hai (library
+// design). Isliye return-se id nahi aati; CLOSURE variable me capture karna
+// zaroori hai. (Yehi asli wajah thi ki pehla getDocs().docs[0].id pattern bhi
+// kabhi kaam nahi kiya — suite pehli baar aaj chali isliye bug aaj mila.)
+const seedDoc = async (coll: string, data: Record<string, unknown>): Promise<string> => {
+  let id = '';
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const ref = await addDoc(collection(ctx.firestore(), coll), data);
+    id = ref.id;   // addDoc hamesha valid DocumentReference deta hai
+  });
+  return id;
+};
 const seededNotification = () => seedDoc('notifications', {
   title: 'Seeded', message: 'hello', targetRole: 'ALL', readBy: [], createdBy: 'seed',
 });
