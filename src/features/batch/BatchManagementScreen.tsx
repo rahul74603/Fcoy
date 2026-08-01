@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 import { useBatch, CreateBatchForm } from '../../contexts/BatchContext';
 import { useAuth } from '../../contexts/AuthContext';
+// ➕ ADD — Task 4: reusable permission hook (role-checks ka single source-of-truth)
+import { usePermission } from '../../hooks/usePermission';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 
@@ -15,7 +17,7 @@ export const BatchManagementScreen: React.FC = () => {
   const { user } = useAuth();
   const { activeBatch, allBatches, loading, createNewBatch, updateBatchInfo, switchActiveBatch } = useBatch();
 
-  const isCommander = user?.role === 'Company Commander';
+  const { isCommander } = usePermission();
 
   // ── ★ Edit Batch State ──
   const [editingBatch, setEditingBatch] = useState<string | null>(null);

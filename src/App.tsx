@@ -173,7 +173,12 @@ function App() {
               <Route
                 path="/batches"
                 element={
-                  <ProtectedRoute allowedRoles={ALL_ROLES}>
+                  // 🔄 UPDATE — Task 4: pehle ALL_ROLES tha (Ustad/QM bhi khol sakta tha).
+                  // Ab sirf CC + Clerk (Clerk ka "Batch View" legit use-case hai —
+                  // sidebar me bhi sirf CC/Clerk ko ye link dikhta hai).
+                  // Write actions screen ke andar pehle se CC-gated hain aur
+                  // Firestore rules DB-level pe bhi enforce karti hain.
+                  <ProtectedRoute allowedRoles={CLERK_ROLES}>
                     <EnterpriseLayout><BatchManagementScreen /></EnterpriseLayout>
                   </ProtectedRoute>
                 }

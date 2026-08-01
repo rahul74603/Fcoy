@@ -98,7 +98,8 @@ export const SEARCH_PAGES: SearchPageEntry[] = [
   { id: 'p-batchprog', title: 'Batch Progress', keywords: ['batch progress', 'progress'], path: '/batch-progress', icon: BarChart3, roles: [ROLE.CLERK, ROLE.USTAD] },
 
   // ── Common / Welfare ──
-  { id: 'p-batches', title: 'All Batches', keywords: ['batch', 'batches', 'course'], path: '/batches', icon: Layers, roles: ALL },
+  // 🔄 UPDATE — Task 4: /batches ab CC+Clerk only (route tightened) — search me bhi sync
+  { id: 'p-batches', title: 'All Batches', keywords: ['batch', 'batches', 'course'], path: '/batches', icon: Layers, roles: [ROLE.CLERK] },
   { id: 'p-welfare', title: 'Welfare & Demographics', keywords: ['welfare', 'demographics', 'festival', 'tyohar'], path: '/welfare-demographics', icon: HeartHandshake, roles: [ROLE.CLERK, ROLE.QM] },
 ];
 
