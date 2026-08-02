@@ -12,7 +12,7 @@
 | **Git Tag** | `v1.0-security-rules` (⏳ Step 4.5 par create hoga) |
 | **Rules Commit** | `85e5803` (firestore+storage rules + suites) |
 | **Deploy-Gate Commit** | `b03a39e` (checklist + tag instructions) |
-| **Deploy Date & Time** | ⏳ __________ (IST fill karo jab Step 3 publish ho) |
+| **Deploy Date & Time** | ✅ 02-Aug-2026 ~05:45 IST · `firebase deploy --only firestore` → `✔ Deploy complete!` · CLI ne kaha "already up to date, skipping upload" + `released rules` + 11 indexes deployed — matlab server content tested-v1.1 se **byte-identical** confirm; repo = tested = live, tino hash `7e3cf537…` |
 | **Firestore Rules SHA-256** | `v1.0` · `f752f7ef43a288f6ebb618ce621fb10649ef2cac038f836d74a4351dbef510d3` |
 | **Firestore Rules SHA-256 (CURRENT — C-R1 corrected)** | `v1.1` · `7e3cf53713799999356052b898aca5414811a794a5c0804344c231db19773c30` · commit `59278e9` · 3 runtime-proven missing collections add hue (`batch_progress`, `config`, `training_tests`) · **purana (v1.0) hash ab drift maana jayega** · ⏳ deploy pending (PC se `firebase deploy --only firestore`) |
 | **Storage Rules SHA-256** | `v1.0` · `eeeb5d8e65637f88036795cc1ecf5d05a1e325910d793118586049b03a421add` |
