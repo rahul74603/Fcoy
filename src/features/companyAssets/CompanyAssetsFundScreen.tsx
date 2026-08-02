@@ -394,11 +394,19 @@ export const CompanyAssetsFundScreen: React.FC = () => {
   // ── COMPUTED ──
   const filteredCollectionsByBatch = selectedBatchId === 'All'
     ? collections
-    : collections.filter(c => (c as any).batchId === selectedBatchId);
+    : collections.filter(c => {
+        const bId = (c as any).batchId;
+        if (!bId) return selectedBatchId === activeBatch?.id;
+        return bId === selectedBatchId;
+      });
 
   const filteredExpensesByBatch = selectedBatchId === 'All'
     ? expenses
-    : expenses.filter(e => (e as any).batchId === selectedBatchId);
+    : expenses.filter(e => {
+        const bId = (e as any).batchId;
+        if (!bId) return selectedBatchId === activeBatch?.id;
+        return bId === selectedBatchId;
+      });
 
   const totalCollection = filteredCollectionsByBatch.reduce((s, c) => s + c.amount, 0);
   const totalExpense    = filteredExpensesByBatch.reduce((s, e) => s + e.amount, 0);
@@ -1594,8 +1602,8 @@ export const CompanyAssetsFundScreen: React.FC = () => {
         <div className="flex gap-0 overflow-x-auto">
           {([
             { key: 'overview',    label: 'Asset Overview',  icon: <Landmark size={13} /> },
-            { key: 'collections', label: 'Collections',     icon: <ArrowDownToLine size={13} />, count: collections.length },
-            { key: 'expenses',    label: 'Purchases',       icon: <ArrowUpFromLine size={13} />, count: expenses.length },
+            { key: 'collections', label: 'Collections',     icon: <ArrowDownToLine size={13} />, count: filteredCollectionsByBatch.length },
+            { key: 'expenses',    label: 'Purchases',       icon: <ArrowUpFromLine size={13} />, count: filteredExpensesByBatch.length },
             { key: 'assets',      label: 'Stock Register',  icon: <Boxes size={13} />,           count: totalAssets,      countCls: 'bg-green-100 text-green-700' },
             { key: 'vendor_dues', label: 'Vendor Dues',     icon: <Building2 size={13} />,       count: assetVendorDues.filter(v => v.totalDue > 0).length, countCls: totalAssetVendorDue > 0 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700' },
           ] as const).map(tab => (
