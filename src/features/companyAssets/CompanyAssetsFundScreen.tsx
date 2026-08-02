@@ -81,6 +81,8 @@ interface AssetExpense {
   assetStatus: 'Active' | 'Damaged' | 'Disposed';
   dueAmount: number;
   paidAmount: number;
+  damagedQty?: number;
+  disposedQty?: number;
 }
 
 interface VendorDueSummary {
@@ -304,6 +306,8 @@ export const CompanyAssetsFundScreen: React.FC = () => {
           assetStatus:   data.assetStatus ?? 'Active',
           dueAmount:     Number(data.dueAmount ?? 0),
           paidAmount:    Number(data.paidAmount ?? 0),
+          damagedQty:    Number(data.damagedQty ?? 0),
+          disposedQty:   Number(data.disposedQty ?? 0),
         });
       });
       eList.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -421,9 +425,9 @@ export const CompanyAssetsFundScreen: React.FC = () => {
   const autoAmount      = Number(expQty) * Number(expUnitPrice);
 
   const totalAssets    = filteredExpensesByBatch.reduce((s, e) => s + e.quantity, 0);
-  const activeAssets   = filteredExpensesByBatch.filter(e => e.assetStatus === 'Active').reduce((s, e) => s + e.quantity, 0);
-  const damagedAssets  = filteredExpensesByBatch.filter(e => e.assetStatus === 'Damaged').reduce((s, e) => s + e.quantity, 0);
-  const disposedAssets = filteredExpensesByBatch.filter(e => e.assetStatus === 'Disposed').reduce((s, e) => s + e.quantity, 0);
+  const damagedAssets  = filteredExpensesByBatch.reduce((s, e) => s + Number(e.damagedQty ?? 0), 0);
+  const disposedAssets = filteredExpensesByBatch.reduce((s, e) => s + Number(e.disposedQty ?? 0), 0);
+  const activeAssets   = totalAssets - damagedAssets - disposedAssets;
 
   const veTotal = veItems.reduce((s, i) => s + i.total, 0);
 
@@ -477,9 +481,9 @@ export const CompanyAssetsFundScreen: React.FC = () => {
     const itemExps   = filteredExpensesByBatch.filter(e => e.itemName === item.name);
     const total      = itemExps.reduce((s, e) => s + e.amount, 0);
     const totalQty   = itemExps.reduce((s, e) => s + e.quantity, 0);
-    const activeQty  = itemExps.filter(e => e.assetStatus === 'Active').reduce((s, e) => s + e.quantity, 0);
-    const damagedQty = itemExps.filter(e => e.assetStatus === 'Damaged').reduce((s, e) => s + e.quantity, 0);
-    const disposedQty = itemExps.filter(e => e.assetStatus === 'Disposed').reduce((s, e) => s + e.quantity, 0);
+    const damagedQty = itemExps.reduce((s, e) => s + Number(e.damagedQty ?? 0), 0);
+    const disposedQty = itemExps.reduce((s, e) => s + Number(e.disposedQty ?? 0), 0);
+    const activeQty  = totalQty - damagedQty - disposedQty;
     return { ...item, total, count: itemExps.length, totalQty, activeQty, damagedQty, disposedQty, expenses: itemExps };
   });
 
@@ -869,10 +873,70 @@ export const CompanyAssetsFundScreen: React.FC = () => {
   // ─────────────────────────────────────────
   const updateAssetStatus = async (expenseId: string, newStatus: AssetExpense['assetStatus']) => {
     try {
-      await updateDoc(doc(db, 'company_assets_expenses', expenseId), { assetStatus: newStatus });
-      setSuccessMsg(`Asset status updated: ${newStatus}`);
+      const exp = expenses.find(e => e.id === expenseId);
+      if (!exp) return;
+
+      if (newStatus === 'Active') {
+        await updateDoc(doc(db, 'company_assets_expenses', expenseId), {
+          assetStatus: 'Active',
+          damagedQty: 0,
+          disposedQty: 0,
+        });
+        setSuccessMsg(`✓ Asset "${exp.itemName}" set to Active for all ${exp.quantity} units!`);
+        await fetchAllData();
+        return;
+      }
+
+      const promptMsg = newStatus === 'Damaged'
+        ? `Total Quantity: ${exp.quantity}. How many units are Damaged?`
+        : `Total Quantity: ${exp.quantity}. How many units are Disposed?`;
+
+      const inputVal = window.prompt(
+        promptMsg,
+        String(newStatus === 'Damaged' ? (exp.damagedQty || exp.quantity) : (exp.disposedQty || exp.quantity))
+      );
+      if (inputVal === null) return; // User cancelled
+
+      const qty = parseInt(inputVal) || 0;
+      if (qty < 0 || qty > exp.quantity) {
+        setErrorMsg(`Quantity must be between 0 and ${exp.quantity}`);
+        return;
+      }
+
+      const updates: any = {
+        assetStatus: newStatus,
+      };
+
+      if (newStatus === 'Damaged') {
+        updates.damagedQty = qty;
+        const currentDisposed = Number(exp.disposedQty ?? 0);
+        if (qty + currentDisposed > exp.quantity) {
+          updates.disposedQty = exp.quantity - qty;
+        } else {
+          updates.disposedQty = currentDisposed;
+        }
+      } else if (newStatus === 'Disposed') {
+        updates.disposedQty = qty;
+        const currentDamaged = Number(exp.damagedQty ?? 0);
+        if (qty + currentDamaged > exp.quantity) {
+          updates.damagedQty = exp.quantity - qty;
+        } else {
+          updates.damagedQty = currentDamaged;
+        }
+      }
+
+      const totalDamagedAndDisposed = (updates.damagedQty || 0) + (updates.disposedQty || 0);
+      if (totalDamagedAndDisposed < exp.quantity) {
+        updates.assetStatus = 'Active';
+      }
+
+      await updateDoc(doc(db, 'company_assets_expenses', expenseId), updates);
+      setSuccessMsg(`✓ Quantities updated successfully! Active: ${exp.quantity - totalDamagedAndDisposed}, Damaged: ${updates.damagedQty || 0}, Disposed: ${updates.disposedQty || 0}`);
       await fetchAllData();
-    } catch { setErrorMsg('Update nahi hua'); }
+    } catch (err) {
+      console.error(err);
+      setErrorMsg('Update nahi hua. Please retry karein.');
+    }
   };
 
   // ─────────────────────────────────────────
@@ -1880,7 +1944,24 @@ export const CompanyAssetsFundScreen: React.FC = () => {
                         <span className="text-sm font-black text-slate-800">{exp.itemName}</span>
                         <span className={`text-[9px] font-black px-2 py-0.5 rounded ${asc.cls}`}>{asc.label}</span>
                         {exp.quantity > 1 && (
-                          <span className="text-[9px] font-bold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">×{exp.quantity}</span>
+                          <span className="text-[9px] font-bold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">Total: {exp.quantity}</span>
+                        )}
+                        {(Number(exp.damagedQty ?? 0) > 0 || Number(exp.disposedQty ?? 0) > 0) && (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[9px] font-black bg-green-50 text-green-700 px-1.5 py-0.5 rounded border border-green-200">
+                              Active: {exp.quantity - Number(exp.damagedQty ?? 0) - Number(exp.disposedQty ?? 0)}
+                            </span>
+                            {Number(exp.damagedQty ?? 0) > 0 && (
+                              <span className="text-[9px] font-black bg-red-50 text-red-600 px-1.5 py-0.5 rounded border border-red-200">
+                                Damaged: {exp.damagedQty}
+                              </span>
+                            )}
+                            {Number(exp.disposedQty ?? 0) > 0 && (
+                              <span className="text-[9px] font-black bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200">
+                                Disposed: {exp.disposedQty}
+                              </span>
+                            )}
+                          </div>
                         )}
                         {exp.vendor && (
                           <span className="text-[8px] font-bold text-blue-600 bg-blue-50 px-1 py-0.5 rounded border border-blue-200 flex items-center gap-0.5">
