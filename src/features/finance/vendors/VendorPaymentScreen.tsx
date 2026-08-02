@@ -507,18 +507,55 @@ export const VendorPaymentScreen: React.FC = () => {
         }
       }
 
-      if (!expenseDocId) {
-        setErrorMsg(
-          'Payment stop: is vendor entry ka linked fund expense nahi mila. ' +
-          'Fund balance galat na ho isliye payment save nahi kiya.'
-        );
-        return;
-      }
-
       const batch = writeBatch(db);
       const entryRef = doc(db, 'vendor_entries', selectedEntryId);
-      const expenseRef = doc(db, fundExpCollection, expenseDocId);
       const paymentRef = doc(collection(db, 'vendor_payments'));
+
+      let expenseRef;
+      if (!expenseDocId) {
+        // Create a new expense doc inside the selected fund's expense collection
+        const newExpenseRef = doc(collection(db, fundExpCollection));
+        expenseDocId = newExpenseRef.id;
+        expenseRef = newExpenseRef;
+
+        batch.set(newExpenseRef, {
+          amount:        entry.totalAmount,
+          itemName:      entry.items[0]?.itemName || 'Vendor Entry Purchase',
+          vendor:        vendor.name,
+          vendorId:      selectedVendorId,
+          quantity:      entry.items.reduce((s, i: any) => s + Number(i.quantity ?? 0), 0) || 1,
+          unitPrice:     entry.items[0]?.unitPrice || entry.totalAmount,
+          remarks:       entry.remarks || `Vendor purchase: ${vendor.name}`,
+          billStatus:    entry.bills.length > 0 ? 'Received' : 'Pending',
+          billBase64:    entry.bills[0]?.base64 ?? '',
+          billFileName:  entry.bills[0]?.fileName ?? '',
+          billFileType:  entry.bills[0]?.fileType ?? '',
+          billFileSize:  entry.bills[0]?.fileSize ?? 0,
+          assetStatus:   'Active',
+          paidAmount:    newPaid,
+          dueAmount:     newDue,
+          status:        newStatus,
+          paymentMode:   payMode,
+          checkNumber:   payMode === 'Check' ? checkNumber : '',
+          transactionId: getPaymentRef(payMode, checkNumber, transactionId),
+          recordedBy:    paidBy,
+          date:          entry.entryDate || nowISO,
+          createdAt:     serverTimestamp(),
+          linkedEntryId: selectedEntryId,
+          linkedVendorId: selectedVendorId,
+        });
+      } else {
+        expenseRef = doc(db, fundExpCollection, expenseDocId);
+        batch.update(expenseRef, {
+          paidAmount:    newPaid,
+          dueAmount:     newDue,
+          status:        newStatus,
+          paymentMode:   payMode,
+          checkNumber:   payMode === 'Check' ? checkNumber : '',
+          transactionId: getPaymentRef(payMode, checkNumber, transactionId),
+          updatedAt:     serverTimestamp(),
+        });
+      }
 
       batch.update(entryRef, {
         paidAmount: newPaid,
@@ -527,16 +564,6 @@ export const VendorPaymentScreen: React.FC = () => {
         fundKey:    paymentFundKey,
         linkedExpenseId: expenseDocId,
         updatedAt:  serverTimestamp(),
-      });
-
-      batch.update(expenseRef, {
-        paidAmount:    newPaid,
-        dueAmount:     newDue,
-        status:        newStatus,
-        paymentMode:   payMode,
-        checkNumber:   payMode === 'Check' ? checkNumber : '',
-        transactionId: getPaymentRef(payMode, checkNumber, transactionId),
-        updatedAt:     serverTimestamp(),
       });
 
       batch.set(paymentRef, {

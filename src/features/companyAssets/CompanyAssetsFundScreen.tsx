@@ -8,7 +8,7 @@ import {
   Building2, Receipt,
   ShoppingCart,
   Landmark, Shield, Archive, Tag, ArrowRightLeft,
-  Boxes
+  Boxes, Layers
 } from 'lucide-react';
 
 import {
@@ -18,6 +18,7 @@ import {
 
 import { db } from '../../config/firebase';
 import { useAuth } from '../../contexts/AuthContext';
+import { useBatch } from '../../contexts/BatchContext';
 
 import {
   PaymentModeSelector,
@@ -138,6 +139,16 @@ const ASSET_STATUS_CONFIG: Record<string, { cls: string; label: string }> = {
 export const CompanyAssetsFundScreen: React.FC = () => {
   const { user } = useAuth();
   const recordedBy = user?.email ?? 'Quarter Master';
+
+  // ── BATCH CONTEXT ──
+  const { activeBatch, allBatches, loading: batchLoading } = useBatch();
+  const [selectedBatchId, setSelectedBatchId] = useState<string>('All');
+
+  useEffect(() => {
+    if (activeBatch && selectedBatchId === 'All') {
+      setSelectedBatchId(activeBatch.id);
+    }
+  }, [activeBatch]);
 
   // ── DATA STATE ──
   const [collections, setCollections]       = useState<AssetCollection[]>([]);
@@ -381,22 +392,30 @@ export const CompanyAssetsFundScreen: React.FC = () => {
   useEffect(() => { fetchAllData(); }, [fetchAllData]);
 
   // ── COMPUTED ──
-  const totalCollection = collections.reduce((s, c) => s + c.amount, 0);
-  const totalExpense    = expenses.reduce((s, e) => s + e.amount, 0);
-  const totalActuallyPaid = expenses.reduce((s, e) => {
+  const filteredCollectionsByBatch = selectedBatchId === 'All'
+    ? collections
+    : collections.filter(c => (c as any).batchId === selectedBatchId);
+
+  const filteredExpensesByBatch = selectedBatchId === 'All'
+    ? expenses
+    : expenses.filter(e => (e as any).batchId === selectedBatchId);
+
+  const totalCollection = filteredCollectionsByBatch.reduce((s, c) => s + c.amount, 0);
+  const totalExpense    = filteredExpensesByBatch.reduce((s, e) => s + e.amount, 0);
+  const totalActuallyPaid = filteredExpensesByBatch.reduce((s, e) => {
     if (e.vendorId) return s + (e.paidAmount ?? 0);
     return s + e.amount;
   }, 0);
   const fundBalance     = totalCollection - totalActuallyPaid - transferredOut;
-  const totalPendingDue = expenses.reduce((s, e) => s + (e.dueAmount ?? 0), 0);
+  const totalPendingDue = filteredExpensesByBatch.reduce((s, e) => s + (e.dueAmount ?? 0), 0);
 
   const colTotal        = Number(colPerHead) * Number(colTraineeCount);
   const autoAmount      = Number(expQty) * Number(expUnitPrice);
 
-  const totalAssets    = expenses.reduce((s, e) => s + e.quantity, 0);
-  const activeAssets   = expenses.filter(e => e.assetStatus === 'Active').reduce((s, e) => s + e.quantity, 0);
-  const damagedAssets  = expenses.filter(e => e.assetStatus === 'Damaged').reduce((s, e) => s + e.quantity, 0);
-  const disposedAssets = expenses.filter(e => e.assetStatus === 'Disposed').reduce((s, e) => s + e.quantity, 0);
+  const totalAssets    = filteredExpensesByBatch.reduce((s, e) => s + e.quantity, 0);
+  const activeAssets   = filteredExpensesByBatch.filter(e => e.assetStatus === 'Active').reduce((s, e) => s + e.quantity, 0);
+  const damagedAssets  = filteredExpensesByBatch.filter(e => e.assetStatus === 'Damaged').reduce((s, e) => s + e.quantity, 0);
+  const disposedAssets = filteredExpensesByBatch.filter(e => e.assetStatus === 'Disposed').reduce((s, e) => s + e.quantity, 0);
 
   const veTotal = veItems.reduce((s, i) => s + i.total, 0);
 
@@ -422,7 +441,7 @@ export const CompanyAssetsFundScreen: React.FC = () => {
       dueMap[ve.vendorId].entries     += 1;
     });
 
-    expenses.forEach(exp => {
+    filteredExpensesByBatch.forEach(exp => {
       if (!exp.vendorId || exp.linkedEntryId) return;
       if (exp.dueAmount <= 0) return;
       const vendor = vendors.find(v => v.id === exp.vendorId);
@@ -447,7 +466,7 @@ export const CompanyAssetsFundScreen: React.FC = () => {
 
   // Item-wise totals (with stock breakdown)
   const itemTotals = allItems.map(item => {
-    const itemExps   = expenses.filter(e => e.itemName === item.name);
+    const itemExps   = filteredExpensesByBatch.filter(e => e.itemName === item.name);
     const total      = itemExps.reduce((s, e) => s + e.amount, 0);
     const totalQty   = itemExps.reduce((s, e) => s + e.quantity, 0);
     const activeQty  = itemExps.filter(e => e.assetStatus === 'Active').reduce((s, e) => s + e.quantity, 0);
@@ -500,6 +519,7 @@ export const CompanyAssetsFundScreen: React.FC = () => {
         recordedBy,
         date:          new Date().toISOString(),
         createdAt:     serverTimestamp(),
+        batchId:       activeBatch?.id || '',
       });
       setSuccessMsg(`✓ Company Assets: ${formatCurrency(colTotal)} collected!`);
       setColPerHead(''); setColTraineeCount(''); setColRemarks('');
@@ -572,6 +592,7 @@ export const CompanyAssetsFundScreen: React.FC = () => {
         recordedBy,
         date:          new Date().toISOString(),
         createdAt:     serverTimestamp(),
+        batchId:       activeBatch?.id || '',
       });
 
       let linkedEntryId = '';
@@ -611,6 +632,7 @@ export const CompanyAssetsFundScreen: React.FC = () => {
           linkedExpenseId: expenseRef.id,
           createdBy:       recordedBy,
           createdAt:       serverTimestamp(),
+          batchId:         activeBatch?.id || '',
         });
         linkedEntryId = veRef.id;
 
@@ -717,6 +739,7 @@ export const CompanyAssetsFundScreen: React.FC = () => {
         fundKey:       'company_assets_fund',
         createdBy:     recordedBy,
         createdAt:     serverTimestamp(),
+        batchId:       activeBatch?.id || '',
       });
 
       await addDoc(collection(db, 'company_assets_expenses'), {
@@ -742,6 +765,7 @@ export const CompanyAssetsFundScreen: React.FC = () => {
         recordedBy,
         date:          new Date().toISOString(),
         createdAt:     serverTimestamp(),
+        batchId:       activeBatch?.id || '',
       });
 
       if (paidAmount > 0) {
@@ -862,8 +886,8 @@ export const CompanyAssetsFundScreen: React.FC = () => {
   };
 
   const filteredAssets = filterAssetStatus === 'All'
-    ? expenses
-    : expenses.filter(e => e.assetStatus === filterAssetStatus);
+    ? filteredExpensesByBatch
+    : filteredExpensesByBatch.filter(e => e.assetStatus === filterAssetStatus);
 
   // ═══════════════════════════════════════
   // RENDER
@@ -888,6 +912,29 @@ export const CompanyAssetsFundScreen: React.FC = () => {
           className="flex items-center gap-1.5 text-[11px] font-bold uppercase border border-slate-300 px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50 rounded">
           <RefreshCw size={12} className={dataLoading ? 'animate-spin' : ''} /> Refresh
         </button>
+      </div>
+
+      {/* BATCH SELECTOR CONTROL BAR */}
+      <div className="bg-white border border-slate-300 shadow-sm p-3 rounded flex items-center gap-3 flex-wrap">
+        <Layers size={14} className="text-slate-400" />
+        <span className="text-xs font-black uppercase text-slate-700">Select Batch Filter:</span>
+        <select
+          value={selectedBatchId}
+          onChange={e => setSelectedBatchId(e.target.value)}
+          className="text-xs font-bold border border-slate-300 px-3 py-1.5 focus:outline-none focus:border-green-600 bg-white rounded min-w-[200px]"
+        >
+          <option value="All">All Batches (Showing Combined Data)</option>
+          {allBatches.map((b: any) => (
+            <option key={b.id} value={b.id}>
+              {b.batchNumber} — {b.batchName}
+            </option>
+          ))}
+        </select>
+        {activeBatch && selectedBatchId === activeBatch.id && (
+          <span className="text-[10px] font-black text-green-700 bg-green-100 border border-green-200 px-2 py-0.5 rounded">
+            Active Batch
+          </span>
+        )}
       </div>
 
       {/* ALERTS */}
@@ -1692,13 +1739,13 @@ export const CompanyAssetsFundScreen: React.FC = () => {
       {/* TAB: COLLECTIONS */}
       {activeTab === 'collections' && (
         <div className="space-y-1">
-          {collections.length === 0 ? (
+          {filteredCollectionsByBatch.length === 0 ? (
             <div className="text-center py-16 text-slate-400">
               <Receipt size={40} className="mx-auto mb-3 text-slate-200" />
               <p className="text-sm font-bold">Koi collection nahi</p>
             </div>
           ) : (
-            collections.map(c => (
+            filteredCollectionsByBatch.map(c => (
               <div key={c.id} className="bg-white border p-3 rounded flex items-center justify-between">
                 <div>
                   <p className="text-xs font-black text-slate-800">{c.label}</p>
@@ -1722,13 +1769,13 @@ export const CompanyAssetsFundScreen: React.FC = () => {
       {/* TAB: PURCHASES */}
       {activeTab === 'expenses' && (
         <div className="space-y-1">
-          {expenses.length === 0 ? (
+          {filteredExpensesByBatch.length === 0 ? (
             <div className="text-center py-16 text-slate-400">
               <Archive size={40} className="mx-auto mb-3 text-slate-200" />
               <p className="text-sm font-bold">Koi purchase nahi</p>
             </div>
           ) : (
-            expenses.map(exp => {
+            filteredExpensesByBatch.map(exp => {
               const bsc  = BILL_STATUS_CONFIG[exp.billStatus] ?? BILL_STATUS_CONFIG['Pending'];
               const asc  = ASSET_STATUS_CONFIG[exp.assetStatus] ?? ASSET_STATUS_CONFIG['Active'];
               const item = allItems.find(a => a.name === exp.itemName);
@@ -1772,7 +1819,7 @@ export const CompanyAssetsFundScreen: React.FC = () => {
           <div className="flex flex-wrap items-center gap-2 bg-white border border-slate-200 rounded p-3">
             <Filter size={12} className="text-slate-400" />
             {(['All', 'Active', 'Damaged', 'Disposed'] as const).map(s => {
-              const cnt = s === 'All' ? expenses.length : expenses.filter(e => e.assetStatus === s).length;
+              const cnt = s === 'All' ? filteredExpensesByBatch.length : filteredExpensesByBatch.filter(e => e.assetStatus === s).length;
               return (
                 <button key={s} onClick={() => setFilterAssetStatus(s)}
                   className={`px-3 py-1 text-[10px] font-black uppercase rounded-full border ${
