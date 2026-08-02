@@ -51,7 +51,7 @@
 |---|---|
 | Git Commit | `85e5803` (rules+suites) · `b03a39e` (checklist/tag) · `7f12028` (release notes) |
 | Git Tag | `v1.0-security-rules` (⏳ Step 4.5 par create hoga) |
-| Emulator Tests | ⏳ PASS ☐ / FAIL ☐ · timestamp: __________ (IST) |
+| Emulator Tests | ✅ **PASS — 75/75 (2 files)** · 02-Aug-2026 05:39 IST · firebase-tools 15.25.1 + fresh emulator v1.22.0 · exit code 0 · tested rules SHA-256 = `7e3cf537…` = deploy-pending v1.1 (byte-identical — beech ke commits sirf tests/UI chhuwe) |
 | Rules Simulator (S1–S10) | ⏳ PASS ☐ / FAIL ☐ · timestamp: __________ |
 | Smoke Tests (M1–M10, 4 roles) | ⏳ PASS ☐ / FAIL ☐ · timestamp: __________ |
 | Build | ✅ PASS (vite 11.14s, commit `85e5803` par) |
