@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { UserPlus, Shield } from 'lucide-react';
-import { collection, getDocs, doc, setDoc, updateDoc } from 'firebase/firestore';
-import { db } from '../../config/firebase';
+import { UserPlus, Shield, KeyRound, Trash2 } from 'lucide-react';
+import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { db, firebaseConfig } from '../../config/firebase';
+import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
+import { getApps, initializeApp } from 'firebase/app';
 import { useAuth } from '../../contexts/AuthContext';
 
 interface UserModel {
@@ -54,10 +56,17 @@ export const UserManagementPage = () => {
     setMessage('');
     
     try {
-      const newUserId = `USR-${Date.now()}`; 
-      await setDoc(doc(db, 'users', newUserId), {
+      if (formData.password.length < 6) {
+        setMessage('ERROR: Password must be at least 6 characters.');
+        return;
+      }
+      // Create Auth account in a secondary Firebase app so Commander stays logged in.
+      const secondary = getApps().find(a => a.name === 'staff-provisioner') || initializeApp(firebaseConfig, 'staff-provisioner');
+      const staffAuth = getAuth(secondary);
+      const credential = await createUserWithEmailAndPassword(staffAuth, formData.email.trim().toLowerCase(), formData.password);
+      await setDoc(doc(db, 'users', credential.user.uid), {
         name: formData.name,
-        email: formData.email,
+        email: formData.email.trim().toLowerCase(),
         phone: formData.phone,
         designation: formData.designation,
         role: formData.role,
@@ -65,13 +74,31 @@ export const UserManagementPage = () => {
         createdAt: new Date().toISOString(),
         createdBy: user?.uid || 'System'
       });
-      
-      setMessage('SUCCESS: User profile added to database.');
+      await staffAuth.signOut();
+      setMessage('SUCCESS: Firebase login account and user profile created.');
       setFormData({ name: '', email: '', password: '', phone: '', designation: '', role: 'Clerk' });
       fetchUsers();
     } catch (error) {
       setMessage('ERROR: Failed to create user profile.');
     }
+  };
+
+  const resetPassword = async (email: string) => {
+    try {
+      await sendPasswordResetEmail(getAuth(), email);
+      setMessage(`SUCCESS: Password reset email sent to ${email}.`);
+    } catch (error: any) {
+      setMessage(`ERROR: Password reset failed: ${error?.message || 'check email'}`);
+    }
+  };
+
+  const deleteUserProfile = async (id: string, email: string) => {
+    if (!window.confirm(`Delete Firestore profile for ${email}? Auth account must be deleted separately from Firebase Authentication.`)) return;
+    try {
+      await deleteDoc(doc(db, 'users', id));
+      setMessage(`SUCCESS: Firestore profile deleted for ${email}.`);
+      fetchUsers();
+    } catch { setMessage('ERROR: Profile delete failed.'); }
   };
 
   const toggleUserStatus = async (id: string, currentStatus: boolean) => {
@@ -122,6 +149,9 @@ export const UserManagementPage = () => {
             
             <div><label className="text-[10px] font-bold text-slate-500 uppercase">Email (Login ID)</label>
             <input type="email" required value={formData.email} onChange={e=>setFormData({...formData, email: e.target.value})} className={inputClass} /></div>
+
+            <div><label className="text-[10px] font-bold text-slate-500 uppercase">Temporary Password (min 6)</label>
+            <input type="password" required minLength={6} value={formData.password} onChange={e=>setFormData({...formData, password: e.target.value})} className={inputClass} /></div>
 
             <div className="grid grid-cols-2 gap-2">
               <div><label className="text-[10px] font-bold text-slate-500 uppercase">Phone</label>
@@ -182,12 +212,11 @@ export const UserManagementPage = () => {
                         </span>
                       </td>
                       <td className="px-4 py-2 text-center">
-                        <button 
-                          onClick={() => toggleUserStatus(u.id, u.isActive)}
-                          className={`text-[10px] font-bold uppercase px-3 py-1 rounded-sm border ${u.isActive ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}
-                        >
-                          {u.isActive ? 'Active' : 'Disabled'}
-                        </button>
+                        <div className="flex items-center justify-center gap-1">
+                          <button onClick={() => toggleUserStatus(u.id, u.isActive)} className={`text-[10px] font-bold uppercase px-3 py-1 rounded-sm border ${u.isActive ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>{u.isActive ? 'Active' : 'Disabled'}</button>
+                          <button onClick={() => resetPassword(u.email)} title="Send password reset" className="rounded bg-blue-50 p-1.5 text-blue-700 hover:bg-blue-100"><KeyRound size={12}/></button>
+                          <button onClick={() => deleteUserProfile(u.id, u.email)} title="Delete Firestore profile" className="rounded bg-red-50 p-1.5 text-red-700 hover:bg-red-100"><Trash2 size={12}/></button>
+                        </div>
                       </td>
                     </tr>
                   ))
