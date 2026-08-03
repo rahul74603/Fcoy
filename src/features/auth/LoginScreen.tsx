@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { auth, db } from '../../config/firebase';
 import { sendPasswordResetEmail, signInWithEmailAndPassword } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { ShieldCheck, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -35,9 +35,14 @@ export const LoginScreen = () => {
       // 2. Fetch Role from Firestore Database
       const userDocRef = doc(db, 'users', user.uid);
       const userDocSnap = await getDoc(userDocRef);
+      const legacySnap = !userDocSnap.exists() && user.email
+        ? await getDocs(query(collection(db, 'users'), where('email', '==', user.email)))
+        : null;
+      const userData = userDocSnap.exists()
+        ? userDocSnap.data()
+        : legacySnap && !legacySnap.empty ? legacySnap.docs[0].data() : null;
 
-      if (userDocSnap.exists()) {
-        const userData = userDocSnap.data();
+      if (userData) {
         
         if (userData.isActive === false) {
           setError('Account is disabled. Contact Commander.');

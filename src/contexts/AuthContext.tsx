@@ -7,7 +7,7 @@ import {
   signOut,
   User as FirebaseUser
 } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
 
 // ─────────────────────────────────────────────
@@ -106,18 +106,38 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           createdBy:   String(userData['createdBy']   ?? 'Unknown'),
         });
       } else {
-        console.warn(`User doc not found in Firestore for uid: ${firebaseUser.uid}`);
-        setUser({
-          uid:         firebaseUser.uid,
-          email:       firebaseUser.email,
-          displayName: firebaseUser.displayName,
-          name:        firebaseUser.displayName ?? 'Pending User',
-          role:        'Unassigned',
-          phone:       'N/A',
-          designation: 'Unassigned',
-          isActive:    false,
-          createdBy:   'Unknown',
-        });
+        // Older User Management records used a random document id. Fall back
+        // to email lookup so those authenticated staff profiles still work.
+        const legacySnap = firebaseUser.email
+          ? await getDocs(query(collection(db, 'users'), where('email', '==', firebaseUser.email)))
+          : { empty: true, docs: [] } as any;
+        if (!legacySnap.empty) {
+          const userData = legacySnap.docs[0].data();
+          setUser({
+            uid: firebaseUser.uid,
+            email: firebaseUser.email,
+            displayName: firebaseUser.displayName,
+            name: String(userData['name'] ?? firebaseUser.displayName ?? 'User'),
+            role: normalizeRole(userData['role']),
+            phone: String(userData['phone'] ?? 'N/A'),
+            designation: String(userData['designation'] ?? 'Unassigned'),
+            isActive: userData['isActive'] !== false,
+            createdBy: String(userData['createdBy'] ?? 'Unknown'),
+          });
+        } else {
+          console.warn(`User doc not found for uid or email: ${firebaseUser.uid}`);
+          setUser({
+            uid: firebaseUser.uid,
+            email: firebaseUser.email,
+            displayName: firebaseUser.displayName,
+            name: firebaseUser.displayName ?? 'Pending User',
+            role: 'Unassigned',
+            phone: 'N/A',
+            designation: 'Unassigned',
+            isActive: false,
+            createdBy: 'Unknown',
+          });
+        }
       }
 
     } catch (error: unknown) {
