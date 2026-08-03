@@ -8,6 +8,7 @@ import { useUnitConfig } from '../../contexts/UnitConfigContext';
 
 // 🆕 Notification System Import
 import NotificationBell from '../../features/notifications/NotificationBell';
+import { GlobalSearch } from './GlobalSearch';
 
 interface EnterpriseLayoutProps {
   children: React.ReactNode;
@@ -72,6 +73,8 @@ export const EnterpriseLayout: React.FC<EnterpriseLayoutProps> = ({ children }) 
               </div>
             </div>
           </div>
+
+          <GlobalSearch />
 
           <div className="flex items-center space-x-6">
             {/* Live Date & Time */}

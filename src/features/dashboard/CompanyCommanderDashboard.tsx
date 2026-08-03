@@ -16,6 +16,9 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { useBatch } from '../../contexts/BatchContext';
+import { BatchProgressOverview } from './BatchProgressOverview';
+import { CommanderInformationBoard } from './CommanderInformationBoard';
+import { normalizePlatoon, PLATOON_OPTIONS } from '../../utils/platoon';
 
 
 // ─── Staff Module API ───────────────────────
@@ -1364,7 +1367,7 @@ const [staffLoading, setStaffLoading] = useState(false);
         const data = d.data();
         traineeList.push({
           id: d.id, name: data.name ?? '', chestNo: data.chestNo ?? '',
-          regNo: data.regNo ?? '', platoon: data.platoon ?? '', rank: data.rank ?? 'RCT',
+          regNo: data.regNo ?? '', platoon: normalizePlatoon(data.platoon), rank: data.rank ?? 'RCT',
           fatherName: data.fatherName ?? '', rifleNo: data.rifleNo ?? '',
           attn: data.attn ?? 'P', docsComplete: data.docsComplete ?? false,
           issuedKitItems: data.issuedKitItems ?? [], documents: data.documents ?? {},
@@ -1575,10 +1578,7 @@ const [staffLoading, setStaffLoading] = useState(false);
   const kitFullCount = trainees.filter(t => t.issuedKitItems && t.issuedKitItems.length >= allTrainingItems.length).length;
   const kitPendingCount = totalTrainees - kitFullCount;
 
-  const platoons = useMemo(() => {
-    const set = new Set(trainees.map(t => t.platoon).filter(Boolean));
-    return ['ALL', ...Array.from(set).sort()];
-  }, [trainees]);
+  const platoons = useMemo(() => ['ALL', ...PLATOON_OPTIONS], []);
 
   // FPT Analysis
   const fptTraineeMap: Record<string, any> = {};
@@ -1757,6 +1757,11 @@ const [staffLoading, setStaffLoading] = useState(false);
   // AWAY PANEL — full detail of all non-present trainees
   // ═══════════════════════════════════════
   const awayTrainees = trainees.filter(t => getDashboardAttnCode(t) !== 'P');
+  const batchProgress = activeBatch?.startDate && activeBatch?.endDate
+    ? Math.max(0, Math.min(100, Math.round(((Date.now() - new Date(activeBatch.startDate).getTime()) / Math.max(1, new Date(activeBatch.endDate).getTime() - new Date(activeBatch.startDate).getTime())) * 100)))
+    : 0;
+  const batchStartLabel = activeBatch?.startDate ? new Date(activeBatch.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+  const batchEndLabel = activeBatch?.endDate ? new Date(activeBatch.endDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
   // ══════════════════════════════════════════════════════════
   // RENDER
@@ -1842,255 +1847,25 @@ const [staffLoading, setStaffLoading] = useState(false);
         </div>
       ) : hasBatch && (
         <>
-          {/* ═══ COMMAND STRIP ═══ */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3">
-            {[
-              {
-                label: 'On Field',
-                value: `${onField}/${totalTrainees}`,
-                sub: `${attendancePct}% present`,
-                color: attendancePct >= 90 ? 'from-green-500 to-emerald-600' : attendancePct >= 75 ? 'from-amber-500 to-orange-600' : 'from-red-500 to-red-600',
-                icon: <Users size={20} className="text-white/60" />
-              },
-              {
-                label: 'Away Today',
-                value: String(notPresent),
-                    sub: `A:${absentCount} S:${sickCount} H:${hospitalCount} L:${leaveCount} R:${restCount}`,
-                color: notPresent > 0 ? 'from-amber-500 to-orange-600' : 'from-green-500 to-emerald-600',
-                icon: <UserCheck size={20} className="text-white/60" />
-              },
-              {
-                label: 'Avg Health',
-                value: `${avgHealthScore}`,
-                sub: 'Company Average',
-                color: avgHealthScore >= 80 ? 'from-green-500 to-emerald-600' : avgHealthScore >= 60 ? 'from-amber-500 to-orange-600' : 'from-red-500 to-red-600',
-                icon: <HeartPulse size={20} className="text-white/60" />
-              },
-              {
-                label: 'Fund Balance',
-                value: fmtCurrency(totalFundBalance),
-                sub: totalFundBalance >= 0 ? 'Surplus' : '⚠ DEFICIT',
-                color: totalFundBalance >= 0 ? 'from-green-500 to-emerald-600' : 'from-red-500 to-red-600',
-                icon: <Wallet size={20} className="text-white/60" />
-              },
-              {
-                label: 'Vendor Dues',
-                value: fmtCurrency(totalVendorDue),
-                sub: `${vendorDues.length} vendors`,
-                color: totalVendorDue > 0 ? 'from-red-500 to-red-600' : 'from-green-500 to-emerald-600',
-                icon: <Building2 size={20} className="text-white/60" />
-              },
-              {
-                label: 'Recovery',
-                value: fmtCurrency(totalRecoveryDue),
-                sub: `${pendingRecoveries.length} trainees`,
-                color: totalRecoveryDue > 0 ? 'from-amber-500 to-orange-600' : 'from-green-500 to-emerald-600',
-                icon: <CreditCard size={20} className="text-white/60" />
-              },
-              {
-                label: 'Alerts',
-                value: String(totalAlerts),
-                sub: 'Need Attention',
-                color: totalAlerts > 10 ? 'from-red-500 to-red-600' : totalAlerts > 0 ? 'from-amber-500 to-orange-600' : 'from-green-500 to-emerald-600',
-                icon: <AlertTriangle size={20} className="text-white/60" />
-              },
-            ].map(item => (
-              <div key={item.label} className={`bg-gradient-to-br ${item.color} rounded-2xl p-4 shadow-lg hover:shadow-xl transition-all hover:-translate-y-0.5 cursor-default`}>
-                <div className="flex items-center justify-between mb-2">{item.icon}</div>
-                <p className="text-xl font-black text-white">{item.value}</p>
-                <p className="text-[9px] text-white/80 font-bold uppercase mt-0.5">{item.label}</p>
-                <p className="text-[8px] text-white/60 mt-0.5">{item.sub}</p>
-              </div>
-            ))}
-          </div>
+          <CommanderInformationBoard />
+
+          <BatchProgressOverview />
 
           {/* ═══ STRENGTH & AWAY DETAIL — moved UP ═══ */}
-          <CollapsibleSection
-            title="Company Strength & Attendance"
-            subtitle="Live attendance + full detail of who is away, why, and when they return"
-            icon={<Users size={14} />}
-            urgentCount={absentCount + sickCount + hospitalCount}
-            accentColor="border-l-green-500"
-          >
-            <div className="space-y-4">
-              {/* Top row: count cards + donut */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                <div className="lg:col-span-2">
-                  <div className="grid grid-cols-4 md:grid-cols-8 gap-2">
-                    {[
-                      { label: 'Total', value: totalTrainees, filter: 'ALL', color: 'bg-military-50 border-military-200 text-military-800', dot: 'bg-military-500' },
-                      { label: 'Present', value: onField, filter: 'PRESENT', color: 'bg-green-50 border-green-200 text-green-700', dot: 'bg-green-500' },
-                      { label: 'Absent', value: absentCount, filter: 'ABSENT', color: absentCount > 0 ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-600', dot: absentCount > 0 ? 'bg-red-500' : 'bg-green-500' },
-                      { label: 'Sick', value: sickCount, filter: 'SICK', color: sickCount > 0 ? 'bg-orange-50 border-orange-200 text-orange-700' : 'bg-green-50 border-green-200 text-green-600', dot: sickCount > 0 ? 'bg-orange-500' : 'bg-green-500' },
-                      { label: 'Hospital', value: hospitalCount, filter: 'SICK', color: hospitalCount > 0 ? 'bg-purple-50 border-purple-200 text-purple-700' : 'bg-green-50 border-green-200 text-green-600', dot: hospitalCount > 0 ? 'bg-purple-500' : 'bg-green-500' },
-                      { label: 'Leave', value: leaveCount, filter: 'LEAVE', color: 'bg-blue-50 border-blue-200 text-blue-700', dot: 'bg-blue-500' },
-                      { label: 'B/C Rest', value: restCount, filter: 'REST', color: 'bg-indigo-50 border-indigo-200 text-indigo-700', dot: 'bg-indigo-500' },
-                      { label: 'Med Appt', value: medApptCount, filter: 'MED_APPT', color: 'bg-teal-50 border-teal-200 text-teal-700', dot: 'bg-teal-500' },
-                    ].map(c => (
-                      <button key={c.label} type="button" onClick={(e) => { e.stopPropagation(); focusRoster(c.filter); }}
-                        className={`p-3 border rounded-xl ${c.color} text-center hover:shadow-sm hover:scale-[1.01] transition-all cursor-pointer`}
-                        title={`Show ${c.label} trainees in Full Trainee Roster`}>
-                        <div className="flex items-center justify-center gap-1 mb-1">
-                          <div className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
-                          <p className="text-[8px] font-bold uppercase">{c.label}</p>
-                        </div>
-                        <p className="text-lg font-black">{c.value}</p>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="bg-slate-50 rounded-xl p-4 flex flex-col items-center justify-center gap-3">
-                  <div className="relative w-[100px] h-[100px]">
-                    <svg width={100} height={100} className="-rotate-90">
-                      <circle cx={50} cy={50} r={40} fill="none" stroke="#e2e8f0" strokeWidth={8} />
-                      <circle cx={50} cy={50} r={40} fill="none"
-                        stroke={attendancePct >= 90 ? '#22c55e' : attendancePct >= 75 ? '#f59e0b' : '#ef4444'}
-                        strokeWidth={8} strokeLinecap="round"
-                        strokeDasharray={2 * Math.PI * 40}
-                        strokeDashoffset={2 * Math.PI * 40 - (attendancePct / 100) * 2 * Math.PI * 40}
-                        className="transition-all duration-1000 ease-out" />
-                    </svg>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center">
-                      <span className="text-xl font-black text-slate-800">{attendancePct}%</span>
-                      <span className="text-[8px] text-slate-400 font-bold uppercase">Present</span>
-                    </div>
-                  </div>
-                  <div className="w-full space-y-2">
-                    <ProgressBar value={docsCompleteCount} max={totalTrainees} label="Docs Complete" color="bg-cyan-500" height={5} />
-                    <ProgressBar value={kitFullCount} max={totalTrainees} label="Kit Complete" color="bg-indigo-500" height={5} />
-                  </div>
-                </div>
-              </div>
-
-              {/* ── AWAY DETAIL TABLE — NEW ── */}
-              {awayTrainees.length > 0 ? (
-                <div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                    <h3 className="text-[11px] font-black text-slate-700 uppercase tracking-wider">
-                      Trainees Not On Field ({awayTrainees.length}) — Full Details
-                    </h3>
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); go(ROUTES.absentMgmt); }}
-                      className="ml-auto text-[9px] font-bold text-military-600 bg-military-50 px-3 py-1 rounded-lg border border-military-200 hover:bg-military-100 transition-colors flex items-center gap-1"
-                    >
-                      Manage Absences <ArrowRight size={10} />
-                    </button>
-                  </div>
-                  <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs">
-                        <thead className="bg-slate-50 border-b border-slate-200 sticky top-0">
-                          <tr>
-                            {['#', 'Chest', 'Name', 'Platoon', 'Status', 'Type', 'Reason / Permission', 'From', 'Expected Return', 'Days', 'Remarks'].map(h => (
-                              <th key={h} className="px-3 py-2.5 text-left text-[9px] font-bold text-slate-400 uppercase whitespace-nowrap">{h}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-50">
-                          {awayTrainees.map((t, idx) => {
-                            const typeInfo = getAbsentTypeInfo(getDashboardAttnCode(t));
-                            // Get the active absent record for this trainee
-                            const traineeAbsRecs = absentRecordsByTrainee[t.id] || [];
-                            const activeRec = traineeAbsRecs.find(r => r.status === 'Active') || null;
-                            const activeMed = activeMedicalByTrainee[t.id] || null;
-                            const displayRec = activeRec || (activeMed ? {
-                              type: getMedicalAttnCode(activeMed.category),
-                              reason: activeMed.diagnosis || activeMed.category,
-                              fromDate: activeMed.date,
-                              toDate: activeMed.date,
-                              totalDays: activeMed.recommendedDays || 1,
-                              remarks: activeMed.remarks || activeMed.wardNo || '',
-                            } : null);
-                            const histCount = traineeAbsRecs.filter(r => r.status !== 'Active').length;
-
-                            return (
-                              <tr
-                                key={t.id}
-                                className="hover:bg-amber-50/30 cursor-pointer transition-colors"
-                                onClick={(e) => handleAbsentClick(e, t)}
-                              >
-                                <td className="px-3 py-3 text-slate-400 font-mono text-[10px]">{idx + 1}</td>
-                                <td className="px-3 py-3">
-                                  <span className="text-[10px] font-mono font-black text-military-800 bg-military-50 border border-military-100 px-2 py-0.5 rounded-lg">
-                                    {t.chestNo}
-                                  </span>
-                                </td>
-                                <td className="px-3 py-3">
-                                  <p className="font-bold text-slate-800 text-[11px]">{t.rank || 'RCT'} {t.name}</p>
-                                  {histCount > 0 && (
-                                    <p className="text-[8px] text-slate-400 mt-0.5">{histCount} past absence(s)</p>
-                                  )}
-                                </td>
-                                <td className="px-3 py-3 text-slate-500 text-[10px]">{t.platoon || '—'}</td>
-                                <td className="px-3 py-3">
-                                  <span className={`text-[9px] font-black px-2 py-1 rounded-lg border ${typeInfo.bgColor} ${typeInfo.color}`}>
-                                    {typeInfo.icon} {typeInfo.shortLabel}
-                                  </span>
-                                </td>
-                                <td className="px-3 py-3 text-slate-600 text-[10px]">
-                                  {displayRec?.type ? (
-                                    <span className="font-bold text-slate-700">{getAbsentTypeInfo(displayRec.type).label}</span>
-                                  ) : (
-                                    <span className="text-slate-300">—</span>
-                                  )}
-                                </td>
-                                <td className="px-3 py-3 max-w-[180px]">
-                                  {displayRec?.reason ? (
-                                    <p className="text-[10px] font-bold text-slate-700 truncate" title={displayRec.reason}>
-                                      {displayRec.reason}
-                                    </p>
-                                  ) : (
-                                    <span className="text-[9px] text-red-400 font-bold">⚠ Not Recorded</span>
-                                  )}
-                                </td>
-                                <td className="px-3 py-3 font-mono text-[10px] text-slate-500">
-                                  {displayRec?.fromDate ? fmtDateStr(displayRec.fromDate) : <span className="text-slate-300">—</span>}
-                                </td>
-                                <td className="px-3 py-3 font-mono text-[10px]">
-                                  {displayRec?.toDate ? (
-                                    <span className="font-bold text-blue-600">{fmtDateStr(displayRec.toDate)}</span>
-                                  ) : (
-                                    <span className="text-slate-300">—</span>
-                                  )}
-                                </td>
-                                <td className="px-3 py-3">
-                                  {displayRec?.totalDays ? (
-                                    <span className="font-black text-red-600 text-[11px]">{displayRec.totalDays}d</span>
-                                  ) : (
-                                    <span className="text-slate-300">—</span>
-                                  )}
-                                </td>
-                                <td className="px-3 py-3 max-w-[120px]">
-                                  {displayRec?.remarks ? (
-                                    <p className="text-[9px] text-slate-500 truncate" title={displayRec.remarks}>{displayRec.remarks}</p>
-                                  ) : (
-                                    <span className="text-slate-200 text-[9px]">—</span>
-                                  )}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                    <div className="px-4 py-2 bg-amber-50 border-t border-amber-100 flex items-center gap-2">
-                      <AlertCircle size={12} className="text-amber-500 flex-shrink-0" />
-                      <p className="text-[9px] text-amber-600 font-bold">
-                        👆 Kisi bhi row par click karo full absence details ke liye · "⚠ Not Recorded" = Absent Management mein record missing hai
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-green-50 border border-green-200 rounded-xl p-6 text-center">
-                  <CheckCircle2 size={32} className="mx-auto text-green-400 mb-2" />
-                  <p className="text-sm font-black text-green-700">100% Present — Sab Field Par Hain! 🎉</p>
-                </div>
-              )}
+          {/* ═══ AWAY / ATTENTION ROSTER — intentionally kept prominent ═══ */}
+          <div className="overflow-hidden rounded-2xl border-2 border-red-200 bg-white shadow-md">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-red-100 bg-gradient-to-r from-red-50 to-amber-50 px-5 py-4">
+              <div><p className="text-[10px] font-black uppercase tracking-widest text-red-700">Live attention roster</p><h2 className="mt-1 text-sm font-black uppercase text-slate-800">Trainees Not On Field ({awayTrainees.length}) — Full Details</h2><p className="mt-1 text-[10px] text-slate-500">Who is away, why, and expected return</p></div>
+              <button type="button" onClick={() => go(ROUTES.absentMgmt)} className="rounded-lg bg-red-600 px-3 py-2 text-[10px] font-black uppercase text-white hover:bg-red-700">Manage Absences →</button>
             </div>
-          </CollapsibleSection>
+            {awayTrainees.length === 0 ? <div className="p-8 text-center text-sm font-bold text-emerald-700">✓ All trainees are on field.</div> : <div className="overflow-x-auto"><table className="w-full text-xs"><thead className="bg-slate-900 text-white"><tr>{['#','Chest','Name','Platoon','Status','Reason / Permission','From','Expected Return','Days','Remarks'].map(h => <th key={h} className="px-3 py-3 text-left text-[9px] font-black uppercase whitespace-nowrap">{h}</th>)}</tr></thead><tbody className="divide-y divide-red-100">{awayTrainees.map((t, idx) => { const code = getDashboardAttnCode(t); const info = getAbsentTypeInfo(code); const recs = absentRecordsByTrainee[t.id] || []; const rec = recs.find(r => r.status === 'Active') || recs[0]; const medical = activeMedicalByTrainee[t.id]; const reason = rec?.reason || medical?.diagnosis || medical?.category || 'Not recorded'; const rowColor = code === 'H' ? 'bg-purple-50/80 border-l-4 border-l-purple-500' : code === 'A' ? 'bg-red-50/80 border-l-4 border-l-red-500' : 'bg-amber-50/80 border-l-4 border-l-amber-500'; return <tr key={t.id} className={`${rowColor} hover:brightness-95`}><td className="px-3 py-3 font-black text-slate-400">{idx + 1}</td><td className="px-3 py-3 font-mono font-black">{t.chestNo || '—'}</td><td className="px-3 py-3 font-black text-slate-800 whitespace-nowrap">{t.rank || 'RCT'} {t.name}</td><td className="px-3 py-3">{t.platoon || '—'}</td><td className="px-3 py-3"><span className={`rounded-lg px-2 py-1 text-[9px] font-black ${info.bgColor} ${info.color}`}>{info.icon} {info.shortLabel}</span></td><td className="max-w-[180px] px-3 py-3 font-bold text-slate-700">{reason}</td><td className="px-3 py-3 font-mono text-[10px]">{rec?.fromDate || medical?.date || '—'}</td><td className="px-3 py-3 font-mono text-[10px] text-blue-700">{rec?.toDate || '—'}</td><td className="px-3 py-3 font-black text-red-600">{rec?.totalDays ? `${rec.totalDays}d` : '—'}</td><td className="max-w-[140px] px-3 py-3 text-[10px] text-slate-600">{rec?.remarks || '—'}</td></tr>; })}</tbody></table></div>}
+          </div>
+
+          {/* ═══ CLEAN ROSTER BOARD ═══ */}
+          <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><div><p className="text-[10px] font-black uppercase tracking-widest text-military-600">Roster command board</p><h2 className="mt-1 text-sm font-black uppercase text-slate-800">Platoon-wise live strength</h2></div><button onClick={() => focusRoster('ALL')} className="rounded-lg bg-military-800 px-3 py-2 text-[10px] font-black uppercase text-white hover:bg-military-700">Open full roster →</button></div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">{platoons.filter(p => p !== 'ALL').map(p => { const members = trainees.filter(t => t.platoon === p); const presentCount = members.filter(t => getDashboardAttnCode(t) === 'P').length; const pct = members.length ? Math.round(presentCount / members.length * 100) : 0; return <button key={p} onClick={() => focusRoster(p)} className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:-translate-y-0.5 hover:border-military-400 hover:bg-white hover:shadow-md"><div className="flex items-center justify-between"><span className="text-xs font-black text-slate-800">{p}</span><span className={`rounded-full px-2 py-1 text-[9px] font-black ${pct >= 90 ? 'bg-green-100 text-green-700' : pct >= 75 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>{pct}%</span></div><div className="mt-3 h-2 rounded-full bg-slate-200"><div className={`h-full rounded-full ${pct >= 90 ? 'bg-green-500' : pct >= 75 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${pct}%` }} /></div><div className="mt-3 flex justify-between text-[10px] font-bold"><span className="text-slate-600">{members.length} total</span><span className="text-green-700">{presentCount} present</span><span className="text-red-600">{members.length - presentCount} away</span></div></button>; })}</div>
+          </div>
 
           {/* ═══ TRAINEE ROSTER — moved UP ═══ */}
           <div ref={rosterSectionRef}>
@@ -2179,6 +1954,19 @@ const [staffLoading, setStaffLoading] = useState(false);
                         : attnCode === 'L' ? 'bg-blue-100 text-blue-700'
                         : attnCode === 'R' ? 'bg-indigo-100 text-indigo-700'
                         : 'bg-teal-100 text-teal-700';
+                      const rowHighlight = attnCode === 'P'
+                        ? 'bg-green-50/30 border-l-4 border-l-green-400'
+                        : attnCode === 'A'
+                        ? 'bg-red-50/75 border-l-4 border-l-red-500'
+                        : attnCode === 'S'
+                        ? 'bg-orange-50/75 border-l-4 border-l-orange-500'
+                        : attnCode === 'H'
+                        ? 'bg-purple-50/80 border-l-4 border-l-purple-500'
+                        : attnCode === 'L'
+                        ? 'bg-blue-50/75 border-l-4 border-l-blue-500'
+                        : attnCode === 'R'
+                        ? 'bg-indigo-50/75 border-l-4 border-l-indigo-500'
+                        : 'bg-teal-50/75 border-l-4 border-l-teal-500';
                       const recovery = pendingRecoveries.find(r => r.traineeId === t.id);
                       const hsColor = hs >= 80 ? 'text-green-600 bg-green-50' : hs >= 60 ? 'text-amber-600 bg-amber-50' : 'text-red-600 bg-red-50';
 
@@ -2195,7 +1983,7 @@ const [staffLoading, setStaffLoading] = useState(false);
                       return (
                         <tr
                           key={t.id}
-                          className={`hover:bg-military-50/50 cursor-pointer transition-colors ${isAway ? 'bg-amber-50/30' : ''}`}
+                          className={`hover:brightness-95 cursor-pointer transition-colors ${rowHighlight}`}
                           onClick={() => {
                             if (isAway) {
                               setAbsentModalTrainee(t);

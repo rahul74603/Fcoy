@@ -13,6 +13,15 @@ import { auth, db } from '../config/firebase';
 // ─────────────────────────────────────────────
 // TYPES
 // ─────────────────────────────────────────────
+const normalizeRole = (value: unknown): string => {
+  const key = String(value ?? '').trim().toLowerCase();
+  if (key === 'qm' || key === 'quartermaster') return 'Quarter Master';
+  if (key === 'cc' || key === 'commander' || key === 'company commander') return 'Company Commander';
+  if (key === 'clerk') return 'Clerk';
+  if (key === 'ustad' || key === 'instructor') return 'Ustad';
+  return String(value ?? 'Unassigned');
+};
+
 interface AppUser {
   uid: string;
   email: string | null;
@@ -90,10 +99,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           email:       firebaseUser.email,
           displayName: firebaseUser.displayName,
           name:        String(userData['name']        ?? 'Unknown User'),
-          role:        String(userData['role']        ?? 'Unassigned'),
+          role:        normalizeRole(userData['role']),
           phone:       String(userData['phone']       ?? 'N/A'),
           designation: String(userData['designation'] ?? 'Unassigned'),
-          isActive:    Boolean(userData['isActive']   ?? false),
+          isActive:    userData['isActive'] !== false,
           createdBy:   String(userData['createdBy']   ?? 'Unknown'),
         });
       } else {
@@ -171,10 +180,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           email:       currentFirebaseUser.email,
           displayName: currentFirebaseUser.displayName,
           name:        String(userData['name']        ?? 'Unknown User'),
-          role:        String(userData['role']        ?? 'Unassigned'),
+          role:        normalizeRole(userData['role']),
           phone:       String(userData['phone']       ?? 'N/A'),
           designation: String(userData['designation'] ?? 'Unassigned'),
-          isActive:    Boolean(userData['isActive']   ?? false),
+          isActive:    userData['isActive'] !== false,
           createdBy:   String(userData['createdBy']   ?? 'Unknown'),
         });
 

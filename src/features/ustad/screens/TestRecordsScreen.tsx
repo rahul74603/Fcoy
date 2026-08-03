@@ -711,6 +711,14 @@ const TestRecordsScreen: React.FC = () => {
           </div>
         )}
 
+        {/* QUICK GUIDE — makes the dashboard readable at a glance */}
+        {hasBatch && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <div><p className="text-[10px] font-black uppercase tracking-wider text-slate-700">Quick guide</p><p className="text-[10px] text-slate-500">Green = good performance · Amber = needs review · Red = immediate attention</p></div>
+            <div className="flex flex-wrap gap-2 text-[10px] font-bold"><span className="rounded-full bg-green-100 px-2.5 py-1 text-green-700">✓ Pass</span><span className="rounded-full bg-red-100 px-2.5 py-1 text-red-700">✕ Fail</span><span className="rounded-full bg-amber-100 px-2.5 py-1 text-amber-700">● Review</span><span className="rounded-full bg-blue-100 px-2.5 py-1 text-blue-700">Blue = test information</span></div>
+          </div>
+        )}
+
         {/* ═══════════════════════════════════════
             ANALYTICS PANEL
         ═══════════════════════════════════════ */}

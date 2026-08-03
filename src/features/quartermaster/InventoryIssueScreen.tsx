@@ -1,6 +1,7 @@
 // D:\ALL PROJECTS\BSF COYs\frontend\src\features\quartermaster\InventoryIssueScreen.tsx
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Search, Save, User, Crosshair, Activity, FileText,
   CheckCircle2, XCircle, Plus, Trash2, ShoppingCart,
@@ -15,6 +16,8 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { useAuth } from '../../contexts/AuthContext';
+import { useBatch } from '../../contexts/BatchContext';
+import { ModuleReportButton } from '../system/ModuleReportButton';
 
 const SHOE_SIZES  = ['5', '6', '7', '8', '9', '10', '11', '12', '13'];
 const SHIRT_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'];
@@ -644,7 +647,11 @@ const KitStatusPanel: React.FC<KitStatusPanelProps> = ({
 // ═══════════════════════════════════════════════════════════
 export const InventoryIssueScreen: React.FC = () => {
   const { user } = useAuth();
+  const location = useLocation();
+  const { activeBatch } = useBatch();
   const issuedBy = user?.email ?? 'Quarter Master';
+  // Records created before batches existed are owned by the current active batch.
+  const belongsToActiveBatch = (data: any) => !data.batchId || data.batchId === activeBatch?.id;
 
   const [searchQuery,   setSearchQuery]   = useState('');
   const [trainee,       setTrainee]       = useState<Trainee | null>(null);
@@ -670,6 +677,11 @@ export const InventoryIssueScreen: React.FC = () => {
 
   const dropdownRef   = useRef<HTMLDivElement>(null);
   const itemSearchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const term = new URLSearchParams(location.search).get('search');
+    if (term) setItemSearchText(term);
+  }, [location.search]);
 
   // ── REAL-TIME TRAINEE SYNC ──
   useEffect(() => {
@@ -771,6 +783,7 @@ export const InventoryIssueScreen: React.FC = () => {
 
       expSnap.forEach(d => {
         const data     = d.data() as any;
+        if (!belongsToActiveBatch(data)) return;
         const itemName = String(data.itemName ?? '').trim();
         if (!itemName) return;
         const meta     = catalogMap.get(normalizeName(itemName));
@@ -809,6 +822,7 @@ export const InventoryIssueScreen: React.FC = () => {
 
       issueSnap.forEach(d => {
         const data = d.data() as any;
+        if (!belongsToActiveBatch(data)) return;
         const isTrainingIssue =
           data.issueSource === 'TRAINING_ESSENTIALS' ||
           data.issueType   === 'TRAINING_ESSENTIALS';
@@ -905,7 +919,7 @@ export const InventoryIssueScreen: React.FC = () => {
     } finally {
       setItemsLoading(false);
     }
-  }, []);
+  }, [activeBatch?.id]);
 
   useEffect(() => { fetchItems(); }, [fetchItems]);
 
@@ -944,6 +958,10 @@ export const InventoryIssueScreen: React.FC = () => {
       if (!snap.empty) {
         const docSnap = snap.docs[0];
         const data    = docSnap.data() as any;
+        if (!belongsToActiveBatch(data)) {
+          setErrorMsg('Trainee belongs to another batch. Select the correct active batch.');
+          return;
+        }
         const foundTrainee: Trainee = {
           id:               docSnap.id,
           name:             data.name             ?? 'Unknown',
@@ -1137,6 +1155,7 @@ export const InventoryIssueScreen: React.FC = () => {
         totalUnits,
         totalValue,
         issuedBy,
+        batchId:          activeBatch?.id ?? '',
         issuedAt:         serverTimestamp(),
         issueDateISO,
       });
@@ -1196,7 +1215,9 @@ export const InventoryIssueScreen: React.FC = () => {
             </span>
           </p>
         </div>
-        <button 
+        <div className="flex items-center gap-2">
+          <ModuleReportButton module="inventory" stats={[{ label: 'Stock Items', value: allItems.length }, { label: 'Purchased Units', value: allItems.reduce((s, i) => s + i.totalPurchased, 0) }, { label: 'Issued Units', value: allItems.reduce((s, i) => s + i.totalIssued, 0) }, { label: 'Available Units', value: totalAvailableUnits }, { label: 'Low Stock', value: kitStatusItems.filter(i => i.currentStock <= i.minStockAlert).length }, ...(trainee ? [{ label: 'Selected Chest', value: trainee.chestNo }] : [])]} rows={[...allItems.map(i => ({ item: i.itemName, quantity: i.currentStock, unitPrice: i.unitPrice, amount: i.unitPrice * i.totalPurchased, status: `Purchased ${i.totalPurchased} · Issued ${i.totalIssued} · Available ${i.currentStock}`, detail: i.category })), ...(trainee?.issuedKitItems || []).map(i => ({ item: `ISSUE · ${i.itemName}`, quantity: i.quantity, amount: '—', status: `Chest ${trainee.chestNo}`, detail: `${i.assignedSize || 'N/A'} · ${i.issueDate ? new Date(i.issueDate).toLocaleDateString('en-IN') : ''}` }))]} />
+          <button 
           onClick={fetchItems} 
           disabled={itemsLoading}
           className="flex items-center gap-1.5 text-[11px] font-bold uppercase border border-slate-300 px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50 rounded"
@@ -1204,6 +1225,7 @@ export const InventoryIssueScreen: React.FC = () => {
           <RefreshCw size={12} className={itemsLoading ? 'animate-spin' : ''} />
           Refresh Stock
         </button>
+        </div>
       </div>
 
       {/* STOCK SUMMARY */}

@@ -9,7 +9,7 @@ import {
   Layers, CalendarDays, BarChart3,
   PieChart, Menu,
   Bot, Sparkles,
-  UserCog, ClipboardList,
+  UserCog, ClipboardList, Boxes,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBatch } from '../../contexts/BatchContext';
@@ -371,6 +371,8 @@ export const Sidebar = () => {
                   bgColor="bg-orange-900/30"
                 />
                 <NavItem title="QM Dashboard" icon={LayoutDashboard} path="/quartermaster" />
+                <NavItem title="QM Reports" icon={BarChart3} path="/reports?scope=qm" />
+                <NavItem title="Inventory & Stock Hub" icon={Boxes} path="/inventory" badge={<NewBadge />} />
                 <NavGroup
                   title="Stock Management"
                   icon={Archive}
@@ -453,6 +455,7 @@ export const Sidebar = () => {
                   bgColor="bg-cyan-900/30"
                 />
                 <NavItem title="Clerk Dashboard" icon={Activity} path="/clerk" />
+                <NavItem title="Clerk Reports" icon={BarChart3} path="/reports" />
                 {user?.role !== 'Company Commander' && (
                   <NavGroup
                     title="Batch View"
@@ -515,7 +518,6 @@ export const Sidebar = () => {
                   <SubItem title="Reports Center" path="/reports" dot="bg-blue-400" />
                   <SubItem title="Settings" path="/settings" dot="bg-slate-400" />
                   <SubItem title="User Management" path="/users" dot="bg-purple-400" />
-                  <SubItem title="🌱 Seed Staff Data" path="/seed-staff" dot="bg-green-400" />
                 </NavGroup>
               </>
             )}

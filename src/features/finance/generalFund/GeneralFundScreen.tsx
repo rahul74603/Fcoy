@@ -30,6 +30,7 @@ import {
 import { BILL_STATUS_CONFIG } from '../shared/constants';
 import type { Vendor, VendorEntry, BillAttachment } from '../vendors/types';
 import BillPreviewModal from '../shared/BillPreviewModal';
+import { ModuleReportButton } from '../../system/ModuleReportButton';
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -812,13 +813,10 @@ export const GeneralFundScreen: React.FC = () => {
             </p>
           </div>
         </div>
-        <button
-          onClick={fetchAllData}
-          disabled={dataLoading}
-          className="flex items-center gap-1.5 text-[11px] font-bold uppercase border border-slate-300 px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50 rounded"
-        >
-          <RefreshCw size={12} className={dataLoading ? 'animate-spin' : ''} /> Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <ModuleReportButton module="general" stats={[{ label: 'Collections', value: formatCurrency(totalCollection) }, { label: 'Purchases', value: formatCurrency(totalOrders) }, { label: 'Paid', value: formatCurrency(totalActuallyPaid) }, { label: 'Balance', value: formatCurrency(generalBalance) }, { label: 'Vendor Due', value: formatCurrency(generalVendorDues.reduce((s, v) => s + v.totalDue, 0)) }]} rows={[...collections.map(c => ({ item: c.label || 'Collection', quantity: 1, amount: c.amount, status: c.collectionType === 'transfer_in' ? 'Transfer In' : 'Collection', detail: c.sourceFundLabel || c.remarks })), ...vendorEntries.filter(v => (v as any).fundKey === 'general_fund').flatMap(v => (v.items || []).map(i => ({ item: i.itemName || 'Purchase', quantity: i.quantity, unitPrice: i.unitPrice, amount: i.total || i.quantity * i.unitPrice, status: v.dueAmount > 0 ? `Due ${formatCurrency(v.dueAmount)}` : 'Paid', detail: v.vendorName }))), ...expenses.filter(e => !vendorEntries.some(v => v.id === e.linkedEntryId)).map(e => ({ item: e.itemName || e.remarks || 'Expense', quantity: 1, amount: e.amount, status: e.dueAmount > 0 ? `Due ${formatCurrency(e.dueAmount)}` : 'Paid', detail: e.vendor || e.remarks }))]} />
+          <button onClick={fetchAllData} disabled={dataLoading} className="flex items-center gap-1.5 text-[11px] font-bold uppercase border border-slate-300 px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50 rounded"><RefreshCw size={12} className={dataLoading ? 'animate-spin' : ''} /> Refresh</button>
+        </div>
       </div>
 
       {/* ALERTS */}

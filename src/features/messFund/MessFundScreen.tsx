@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { useAuth } from '../../contexts/AuthContext';
+import { useBatch } from '../../contexts/BatchContext';
 import {
   PaymentModeSelector,
   PaymentModeBadge,
@@ -30,6 +31,7 @@ import {
 import { BILL_STATUS_CONFIG } from '../finance/shared/constants';
 import type { Vendor, VendorEntry, VendorItem, BillAttachment } from '../finance/vendors/types';
 import BillPreviewModal from '../finance/shared/BillPreviewModal';
+import { ModuleReportButton } from '../system/ModuleReportButton';
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -87,6 +89,8 @@ interface VendorDueSummary {
 // ═════════════════════════════════════════════
 export const MessFundScreen: React.FC = () => {
   const { user } = useAuth();
+  const { activeBatch } = useBatch();
+  const belongsToBatch = (data: any) => !data.batchId || data.batchId === activeBatch?.id;
   const recordedBy = user?.email ?? 'Quarter Master';
 
   // ── DATA ──
@@ -189,13 +193,14 @@ export const MessFundScreen: React.FC = () => {
     setDataLoading(true);
     try {
       const tSnap = await getDocs(collection(db, 'trainees'));
-      setTraineeCount(tSnap.size);
+      setTraineeCount(tSnap.docs.filter(d => belongsToBatch(d.data())).length);
 
       // Collections
       const cSnap = await getDocs(collection(db, 'mess_fund_collections'));
       const cList: MessCollection[] = [];
       cSnap.forEach(d => {
         const data = d.data();
+        if (!belongsToBatch(data)) return;
         cList.push({
           id: d.id,
           amount: Number(data.amount ?? 0),
@@ -219,6 +224,7 @@ export const MessFundScreen: React.FC = () => {
       const eList: MessExpense[] = [];
       eSnap.forEach(d => {
         const data = d.data();
+        if (!belongsToBatch(data)) return;
         const catKey = data.category ?? 'other';
         eList.push({
           id: d.id,
@@ -287,6 +293,7 @@ export const MessFundScreen: React.FC = () => {
       const veList: VendorEntry[] = [];
       veSnap.forEach(d => {
         const data = d.data();
+        if (!belongsToBatch(data)) return;
         veList.push({
           id: d.id,
           vendorId: data.vendorId ?? '',
@@ -327,7 +334,7 @@ export const MessFundScreen: React.FC = () => {
     } finally {
       setDataLoading(false);
     }
-  }, []);
+  }, [activeBatch?.id]);
 
   useEffect(() => { fetchAllData(); }, [fetchAllData]);
 
@@ -843,10 +850,13 @@ export const MessFundScreen: React.FC = () => {
             </p>
           </div>
         </div>
-        <button onClick={fetchAllData} disabled={dataLoading}
-          className="flex items-center gap-1.5 text-[11px] font-bold uppercase border border-slate-300 px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50 rounded">
-          <RefreshCw size={12} className={dataLoading ? 'animate-spin' : ''} /> Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <ModuleReportButton module="mess" stats={[{ label: 'Collections', value: formatCurrency(totalCollection) }, { label: 'Purchases', value: formatCurrency(totalExpense) }, { label: 'Paid', value: formatCurrency(totalActuallyPaid) }, { label: 'Balance', value: formatCurrency(messBalance) }, { label: 'Vendor Due', value: formatCurrency(totalMessVendorDue) }]} rows={[...collections.map(c => ({ item: `Collection · ${c.monthLabel || 'Mess Cutting'}`, amount: c.amount, quantity: c.traineeCount, status: 'Collection' })), ...vendorEntries.flatMap(v => (v.items || []).map(i => ({ item: i.itemName || 'Mess Item', quantity: i.quantity, unitPrice: i.unitPrice, amount: i.total || (i.quantity * i.unitPrice), status: v.dueAmount > 0 ? `Due ${formatCurrency(v.dueAmount)}` : 'Paid', detail: `${v.vendorName || 'Vendor'} · ${v.entryDate || ''}` }))), ...expenses.filter(e => !vendorEntries.some(v => v.id === e.linkedEntryId)).map(e => ({ item: e.categoryLabel || e.category || 'Mess Purchase', quantity: 1, unitPrice: e.amount, amount: e.amount, status: e.dueAmount > 0 ? `Due ${formatCurrency(e.dueAmount)}` : 'Paid', detail: e.vendor || e.remarks }))]} />
+          <button onClick={fetchAllData} disabled={dataLoading}
+            className="flex items-center gap-1.5 text-[11px] font-bold uppercase border border-slate-300 px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50 rounded">
+            <RefreshCw size={12} className={dataLoading ? 'animate-spin' : ''} /> Refresh
+          </button>
+        </div>
       </div>
 
       {/* ALERTS */}

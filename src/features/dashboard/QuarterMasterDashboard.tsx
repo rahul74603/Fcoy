@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore';
 import { db, auth } from '../../config/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import { useBatch } from '../../contexts/BatchContext';
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -97,9 +98,9 @@ const ROUTES = {
   companyAssets: '/company-assets-fund',
   generalFund: '/general-fund',
     fundsDashboard: '/funds',
-  vendorPayments: '/vendor-payment',
+  vendorPayments: '/vendor-payments',
   messBoySalary: '/mess-boy-salary',
-  bills: '/bills',
+  bills: '/vendor-payments',
   reports: '/reports',
 } as const;
 
@@ -145,6 +146,8 @@ const CardSkeleton = () => (
 export const QuarterMasterDashboard: React.FC = () => {
   const navigate = useNavigate();
   const go = (route: string) => navigate(route);
+  const { activeBatch } = useBatch();
+  const belongsToBatch = (data: any) => !data.batchId || data.batchId === activeBatch?.id;
 
   // ── STATE ──
   const [loading, setLoading] = useState(true);
@@ -190,8 +193,9 @@ export const QuarterMasterDashboard: React.FC = () => {
       // ── TRANSFERS ──
       const transferSnap = await getDocs(collection(db, 'fund_transfers'));
       const transferList: any[] = [];
-      transferSnap.forEach(d => {
+        transferSnap.forEach(d => {
         const data = d.data();
+        if (!belongsToBatch(data)) return;
         transferList.push({
           id: d.id,
           fromFundKey: data.fromFundKey ?? '',
@@ -241,12 +245,14 @@ export const QuarterMasterDashboard: React.FC = () => {
         let pendingBills = 0;
 
         colSnap.forEach(d => {
+          if (!belongsToBatch(d.data())) return;
           totalCollection += Number(d.data().amount ?? 0);
           entries++;
         });
 
         expSnap.forEach(d => {
           const data = d.data();
+          if (!belongsToBatch(data)) return;
           entries++;
           if ((data.billStatus ?? '') === 'Pending') pendingBills++;
           expList.push({
@@ -305,6 +311,7 @@ export const QuarterMasterDashboard: React.FC = () => {
       const vDueMap: Record<string, VendorDueSummary> = {};
       veSnap.forEach(d => {
         const data = d.data();
+        if (!belongsToBatch(data)) return;
         const due = Number(data.dueAmount ?? 0);
         if (due <= 0) return;
         const vId = data.vendorId ?? '';
@@ -326,11 +333,11 @@ export const QuarterMasterDashboard: React.FC = () => {
 
       // ── TRAINEES ──
       const tSnap = await getDocs(collection(db, 'trainees'));
-      setTraineeCount(tSnap.size);
+      setTraineeCount(tSnap.docs.filter(d => belongsToBatch(d.data())).length);
 
       // ── ISSUE RECORDS ──
       const issueSnap = await getDocs(collection(db, 'issue_records'));
-      setTotalIssueRecords(issueSnap.size);
+      setTotalIssueRecords(issueSnap.docs.filter(d => belongsToBatch(d.data())).length);
 
       // ── TRAINING STOCK ALERTS ──
       // Build purchased vs issued for training items
@@ -356,6 +363,7 @@ export const QuarterMasterDashboard: React.FC = () => {
 
       trainingExpSnap.forEach(d => {
         const data = d.data();
+        if (!belongsToBatch(data)) return;
         const name = String(data.itemName ?? '').trim();
         if (!name) return;
         const key = normalizeName(name);
@@ -427,6 +435,7 @@ export const QuarterMasterDashboard: React.FC = () => {
       let recExpected = 0, recPaid = 0, recPending = 0, recPaidCount = 0;
       recSnap.forEach(d => {
         const data = d.data();
+        if (!belongsToBatch(data)) return;
         recExpected += Number(data.expectedAmount ?? 0);
         recPaid += Number(data.paidAmount ?? 0);
         if (data.status === 'Paid') recPaidCount++;
@@ -502,7 +511,7 @@ export const QuarterMasterDashboard: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [authReady]);
+  }, [authReady, activeBatch?.id]);
 
   useEffect(() => {
     if (authReady) fetchAllData();

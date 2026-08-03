@@ -1,6 +1,7 @@
 // D:\ALL PROJECTS\BSF COYs\frontend\src\features\finance\companyAssets\CompanyAssetsFundScreen.tsx
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Wallet, Plus, Loader2, X, CheckCircle2, AlertTriangle,
   RefreshCw, TrendingUp, TrendingDown, Info, Trash2,
@@ -39,6 +40,7 @@ import { BILL_STATUS_CONFIG } from '../finance/shared/constants';
 import type { Vendor, VendorEntry, VendorItem, BillAttachment } from '../finance/vendors/types';
 
 import BillPreviewModal from '../finance/shared/BillPreviewModal';
+import { ModuleReportButton } from '../system/ModuleReportButton';
 
 
 // ─────────────────────────────────────────────
@@ -46,6 +48,7 @@ import BillPreviewModal from '../finance/shared/BillPreviewModal';
 // ─────────────────────────────────────────────
 interface AssetCollection {
   id: string;
+  batchId?: string;
   amount: number;
   perHead: number;
   traineeCount: number;
@@ -60,6 +63,7 @@ interface AssetCollection {
 
 interface AssetExpense {
   id: string;
+  batchId?: string;
   amount: number;
   itemName: string;
   vendor: string;
@@ -140,6 +144,7 @@ const ASSET_STATUS_CONFIG: Record<string, { cls: string; label: string }> = {
 // ═════════════════════════════════════════════
 export const CompanyAssetsFundScreen: React.FC = () => {
   const { user } = useAuth();
+  const location = useLocation();
   const recordedBy = user?.email ?? 'Quarter Master';
 
   // ── BATCH CONTEXT ──
@@ -224,6 +229,12 @@ export const CompanyAssetsFundScreen: React.FC = () => {
   const [successMsg, setSuccessMsg]         = useState('');
   const [errorMsg, setErrorMsg]             = useState('');
   const [filterAssetStatus, setFilterAssetStatus] = useState<string>('All');
+  const [assetSearchText, setAssetSearchText] = useState('');
+
+  useEffect(() => {
+    const term = new URLSearchParams(location.search).get('search');
+    if (term) setAssetSearchText(term);
+  }, [location.search]);
   const [previewBill, setPreviewBill]       = useState<BillAttachment | null>(null);
   const [deleteConfirm, setDeleteConfirm]   = useState<{
     type: 'col' | 'exp' | 'item';
@@ -263,6 +274,7 @@ export const CompanyAssetsFundScreen: React.FC = () => {
         const data = d.data();
         cList.push({
           id:            d.id,
+          batchId:       data.batchId ?? '',
           amount:        Number(data.amount ?? 0),
           perHead:       Number(data.perHead ?? 0),
           traineeCount:  Number(data.traineeCount ?? 0),
@@ -285,6 +297,7 @@ export const CompanyAssetsFundScreen: React.FC = () => {
         const data = d.data();
         eList.push({
           id:            d.id,
+          batchId:       data.batchId ?? '',
           amount:        Number(data.amount ?? 0),
           itemName:      data.itemName ?? '',
           vendor:        data.vendor ?? '',
@@ -404,13 +417,13 @@ export const CompanyAssetsFundScreen: React.FC = () => {
         return bId === selectedBatchId;
       });
 
-  const filteredExpensesByBatch = selectedBatchId === 'All'
+  const filteredExpensesByBatch = (selectedBatchId === 'All'
     ? expenses
     : expenses.filter(e => {
         const bId = (e as any).batchId;
         if (!bId) return selectedBatchId === activeBatch?.id;
         return bId === selectedBatchId;
-      });
+      })).filter(e => !assetSearchText.trim() || e.itemName.toLowerCase().includes(assetSearchText.trim().toLowerCase()) || e.vendor.toLowerCase().includes(assetSearchText.trim().toLowerCase()));
 
   const totalCollection = filteredCollectionsByBatch.reduce((s, c) => s + c.amount, 0);
   const totalExpense    = filteredExpensesByBatch.reduce((s, e) => s + e.amount, 0);
@@ -980,10 +993,13 @@ export const CompanyAssetsFundScreen: React.FC = () => {
             </p>
           </div>
         </div>
-        <button onClick={fetchAllData} disabled={dataLoading}
-          className="flex items-center gap-1.5 text-[11px] font-bold uppercase border border-slate-300 px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50 rounded">
-          <RefreshCw size={12} className={dataLoading ? 'animate-spin' : ''} /> Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <ModuleReportButton module="assets" stats={[{ label: 'Valuation', value: formatCurrency(totalExpense) }, { label: 'Purchased Units', value: totalAssets }, { label: 'Active Units', value: activeAssets }, { label: 'Damaged Units', value: damagedAssets }, { label: 'Disposed Units', value: disposedAssets }, { label: 'Vendor Due', value: formatCurrency(totalPendingDue) }]} rows={filteredExpensesByBatch.map(e => ({ item: e.itemName, quantity: e.quantity, unitPrice: e.unitPrice, amount: e.amount, status: `Active ${Math.max(0, e.quantity - Number(e.damagedQty || 0) - Number(e.disposedQty || 0))} · Damaged ${Number(e.damagedQty || 0)} · Disposed ${Number(e.disposedQty || 0)}`, detail: e.vendor || e.remarks }))} />
+          <button onClick={fetchAllData} disabled={dataLoading}
+            className="flex items-center gap-1.5 text-[11px] font-bold uppercase border border-slate-300 px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50 rounded">
+            <RefreshCw size={12} className={dataLoading ? 'animate-spin' : ''} /> Refresh
+          </button>
+        </div>
       </div>
 
       {/* BATCH SELECTOR CONTROL BAR */}

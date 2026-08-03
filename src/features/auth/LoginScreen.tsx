@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { auth, db } from '../../config/firebase';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { sendPasswordResetEmail, signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { ShieldCheck, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -11,6 +11,16 @@ export const LoginScreen = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+
+  const handleResetPassword = async () => {
+    if (!email.trim()) { setError('Pehle registered email enter karein.'); return; }
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+      setError('Password reset email bhej diya gaya hai. Inbox / spam check karein.');
+    } catch (err: any) {
+      setError(err?.code === 'auth/user-not-found' ? 'Ye email Firebase Authentication mein registered nahi hai.' : 'Password reset nahi bheja ja saka. Email check karein.');
+    }
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,14 +39,20 @@ export const LoginScreen = () => {
       if (userDocSnap.exists()) {
         const userData = userDocSnap.data();
         
-        if (!userData.isActive) {
+        if (userData.isActive === false) {
           setError('Account is disabled. Contact Commander.');
           auth.signOut();
           return;
         }
 
-        // 3. Role-Based Dashboard Redirection
-        switch (userData.role) {
+        // 3. Role-Based Dashboard Redirection. Accept legacy role spellings.
+        const roleKey = String(userData.role ?? '').trim().toLowerCase();
+        const normalizedRole = roleKey === 'qm' || roleKey === 'quartermaster' ? 'Quarter Master'
+          : roleKey === 'cc' || roleKey === 'commander' || roleKey === 'company commander' ? 'Company Commander'
+          : roleKey === 'clerk' ? 'Clerk'
+          : roleKey === 'ustad' || roleKey === 'instructor' ? 'Ustad'
+          : String(userData.role ?? '');
+        switch (normalizedRole) {
           case 'Company Commander':
             navigate('/commander');
             break;
@@ -59,7 +75,15 @@ export const LoginScreen = () => {
       }
     } catch (err: any) {
       console.error(err);
-      setError('Invalid email or password. Access Denied.');
+      // Authentication may succeed but the profile read can still fail when
+      // Firestore rules are not deployed. Do not misreport that as bad credentials.
+      if (err?.code === 'permission-denied') {
+        setError('Login succeeded, but Firestore permissions are not deployed. Deploy firestore.rules and try again.');
+      } else if (err?.code === 'auth/invalid-credential' || err?.code === 'auth/wrong-password' || err?.code === 'auth/user-not-found') {
+        setError('Invalid email or password. Access Denied.');
+      } else {
+        setError('Login service error. Check Firebase connection and try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -113,6 +137,7 @@ export const LoginScreen = () => {
           >
             {loading ? 'Authenticating...' : 'Secure Login'}
           </button>
+          <button type="button" onClick={handleResetPassword} className="w-full text-[10px] font-bold text-military-700 underline hover:text-military-900">Forgot password?</button>
         </form>
       </div>
     </div>
