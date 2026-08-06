@@ -10,6 +10,7 @@
 
 import { collection, getDocs, query, where, limit as fbLimit } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+import { showDoc } from '../../../utils/devDataFilter';
 import { COLLECTION_MAP, type CollectionDef } from '../knowledge/collectionRegistry';
 
 // ─────────────────────────────────────────────
@@ -98,7 +99,7 @@ async function fetchCollection(name: string, max: number): Promise<any[]> {
   if (hit && Date.now() - hit.at < CACHE_TTL) return hit.docs;
 
   const snap = await getDocs(query(collection(db, name), fbLimit(max)));
-  const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const docs = snap.docs.filter(d => showDoc(d.data() as Record<string, unknown>)).map(d => ({ id: d.id, ...d.data() } as any));
   docCache.set(key, { at: Date.now(), docs });
   return docs;
 }

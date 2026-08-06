@@ -17,6 +17,7 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+import { showDoc } from '../../../utils/devDataFilter';
 import {
   Subject,
   SubjectFormData,
@@ -114,7 +115,7 @@ export const getAllSubjects = async (): Promise<Subject[]> => {
     );
     const snapshot = await getDocs(q);
 
-    return snapshot.docs.map((doc) =>
+    return snapshot.docs.filter(d => showDoc(d.data() as Record<string, unknown>)).map((doc) =>
       docToSubject(doc.id, doc.data() as Record<string, unknown>)
     );
   } catch (error) {
@@ -132,7 +133,7 @@ export const getActiveSubjects = async (): Promise<Subject[]> => {
     );
     const snapshot = await getDocs(q);
 
-    return snapshot.docs.map((doc) =>
+    return snapshot.docs.filter(d => showDoc(d.data() as Record<string, unknown>)).map((doc) =>
       docToSubject(doc.id, doc.data() as Record<string, unknown>)
     );
   } catch (error) {
@@ -264,7 +265,7 @@ export const getAssignmentsByStaff = async (
     );
     const snapshot = await getDocs(q);
 
-    return snapshot.docs.map((doc) =>
+    return snapshot.docs.filter(d => showDoc(d.data() as Record<string, unknown>)).map((doc) =>
       docToAssignment(doc.id, doc.data() as Record<string, unknown>)
     );
   } catch (error) {
@@ -284,7 +285,7 @@ export const getAssignmentsBySubject = async (
     );
     const snapshot = await getDocs(q);
 
-    return snapshot.docs.map((doc) =>
+    return snapshot.docs.filter(d => showDoc(d.data() as Record<string, unknown>)).map((doc) =>
       docToAssignment(doc.id, doc.data() as Record<string, unknown>)
     );
   } catch (error) {
@@ -303,7 +304,7 @@ export const getAllAssignments = async (): Promise<
     );
     const snapshot = await getDocs(q);
 
-    return snapshot.docs.map((doc) =>
+    return snapshot.docs.filter(d => showDoc(d.data() as Record<string, unknown>)).map((doc) =>
       docToAssignment(doc.id, doc.data() as Record<string, unknown>)
     );
   } catch (error) {

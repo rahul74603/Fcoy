@@ -15,6 +15,7 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+import { showDoc } from '../../../utils/devDataFilter';
 import {
   StaffLeave,
   LeaveFormData,
@@ -122,7 +123,7 @@ export const addLeaveType = async (
 export const getAllLeaveTypes = async (): Promise<LeaveType[]> => {
   try {
     const snapshot = await getDocs(collection(db, LEAVE_TYPE_COL));
-    return snapshot.docs.map((doc) =>
+    return snapshot.docs.filter(d => showDoc(d.data() as Record<string, unknown>)).map((doc) =>
       docToLeaveType(doc.id, doc.data() as Record<string, unknown>)
     );
   } catch (error) {
@@ -137,7 +138,7 @@ export const getActiveLeaveTypes = async (): Promise<LeaveType[]> => {
       where('isActive', '==', true)
     );
     const snapshot = await getDocs(q);
-    return snapshot.docs.map((doc) =>
+    return snapshot.docs.filter(d => showDoc(d.data() as Record<string, unknown>)).map((doc) =>
       docToLeaveType(doc.id, doc.data() as Record<string, unknown>)
     );
   } catch (error) {
@@ -301,7 +302,7 @@ export const getLeaveByStaff = async (
       orderBy('appliedAt', 'desc')
     );
     const snapshot = await getDocs(q);
-    return snapshot.docs.map((doc) =>
+    return snapshot.docs.filter(d => showDoc(d.data() as Record<string, unknown>)).map((doc) =>
       docToLeave(doc.id, doc.data() as Record<string, unknown>)
     );
   } catch (error) {
@@ -318,7 +319,7 @@ export const getPendingLeaves = async (): Promise<StaffLeave[]> => {
       orderBy('appliedAt', 'asc')
     );
     const snapshot = await getDocs(q);
-    return snapshot.docs.map((doc) =>
+    return snapshot.docs.filter(d => showDoc(d.data() as Record<string, unknown>)).map((doc) =>
       docToLeave(doc.id, doc.data() as Record<string, unknown>)
     );
   } catch (error) {
@@ -337,7 +338,7 @@ export const getCurrentLeaves = async (): Promise<StaffLeave[]> => {
     );
     const snapshot = await getDocs(q);
 
-    const allApprovedLeaves = snapshot.docs.map((doc) =>
+    const allApprovedLeaves = snapshot.docs.filter(d => showDoc(d.data() as Record<string, unknown>)).map((doc) =>
       docToLeave(doc.id, doc.data() as Record<string, unknown>)
     );
 
@@ -378,7 +379,7 @@ export const getAllLeaves = async (batchId?: string): Promise<StaffLeave[]> => {
       orderBy('appliedAt', 'desc')
     );
     const snapshot = await getDocs(q);
-    let records = snapshot.docs.map((doc) =>
+    let records = snapshot.docs.filter(d => showDoc(d.data() as Record<string, unknown>)).map((doc) =>
       docToLeave(doc.id, doc.data() as Record<string, unknown>)
     );
 

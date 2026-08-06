@@ -13,6 +13,7 @@ import {
 
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../../config/firebase';
+import { showDoc } from '../../utils/devDataFilter';
 import { useAuth } from '../../contexts/AuthContext';
 
 // ─── Staff Module Types ───────────────────
@@ -310,7 +311,8 @@ export const ReportsScreen: React.FC = () => {
   const safeFetch = async (collName: string) => {
     try {
       const snap = await getDocs(collection(db, collName));
-      return snap.docs;
+      // 🧪 dev-tagged docs non-dev users ko nahi dikhenge
+      return snap.docs.filter(d => showDoc(d.data() as Record<string, unknown>));
     } catch (err) {
       console.warn(`Collection ${collName} fetch failed:`, err);
       return [];

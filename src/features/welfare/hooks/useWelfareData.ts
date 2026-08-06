@@ -10,6 +10,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+import { showDoc } from '../../../utils/devDataFilter';
 import { useBatch } from '../../../contexts/BatchContext';
 
 import type {
@@ -56,7 +57,7 @@ export const useWelfareData = () => {
     const unsub = onSnapshot(
       collection(db, 'trainees'),
       snap => {
-        const list: WelfareTrainee[] = snap.docs.map(d => ({
+        const list: WelfareTrainee[] = snap.docs.filter(d => showDoc(d.data() as Record<string, unknown>)).map(d => ({
           id: d.id,
           ...(d.data() as Record<string, any>),
         }));

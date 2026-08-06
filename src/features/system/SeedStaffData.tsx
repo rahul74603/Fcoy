@@ -5,6 +5,7 @@ import React, { useState } from 'react';
 import { Loader2, Plus, AlertTriangle, Layers, RefreshCw } from 'lucide-react';
 import { collection, addDoc, getDocs, deleteDoc, doc, query, where, updateDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
+import { showDoc } from '../../utils/devDataFilter';
 import { useBatch } from '../../contexts/BatchContext';
 
 // ═══════════════════════════════════════════════════════════
@@ -191,6 +192,7 @@ const SeedStaffData: React.FC = () => {
 
       for (const staffDoc of staffSnap.docs) {
         const data = staffDoc.data();
+        if (!showDoc(data)) continue; // 🧪 dev-tagged staff ko touch mat karo
         const hasLeave = activeLeaves.some((l: any) => l.staffId === staffDoc.id);
         const current = data.status;
         const shouldBe = hasLeave ? 'leave' : 'active';

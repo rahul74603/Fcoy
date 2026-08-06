@@ -10,10 +10,11 @@
 // ─────────────────────────────────────────────
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   FlaskConical, Play, Trash2, ShieldCheck, AlertTriangle,
   Loader2, CheckCircle2, X, RefreshCw, UserPlus, Eye, EyeOff,
-  Database, History, Ban, Info,
+  Database, History, Ban, Info, Crown, Users, Dumbbell,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import {
@@ -27,6 +28,10 @@ import {
   fetchSessionMeta, KNOWN_COLLECTIONS,
   CleanupPlan, CleanupReport, PracticeSnapshot,
 } from './api/devPractice.api';
+import {
+  countDevSeedData, wipeTestBatch, generateTestBatch,
+  DEV_BATCH_NUMBER, SEEDED_COLLECTIONS, SeedProgress,
+} from './api/testBatchSeed.api';
 
 // ─────────────────────────────────────────────
 // MAIN COMPONENT
@@ -231,6 +236,7 @@ const DevConsole = ({
   error: string; setError: (s: string) => void;
 }) => {
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   const [snapshot, setSnapshot] = useState<PracticeSnapshot | null>(null);
   const [meta, setMeta] = useState<Record<string, unknown> | null>(null);
@@ -445,6 +451,43 @@ const DevConsole = ({
         </div>
       </div>
 
+      {/* ── QUICK ACCESS (dev tools) ── */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <button onClick={() => navigate('/subscription')}
+          className="bg-white border border-amber-300 rounded-xl p-3.5 flex items-center gap-3 hover:bg-amber-50 transition-colors text-left">
+          <div className="w-9 h-9 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
+            <Crown size={17} className="text-amber-600" />
+          </div>
+          <div>
+            <p className="text-xs font-black text-slate-800 uppercase">Subscription & License</p>
+            <p className="text-[10px] text-slate-500">Plans · pricing · renew — sirf dev mode se</p>
+          </div>
+        </button>
+        <button onClick={() => navigate('/batches')}
+          className="bg-white border border-slate-200 rounded-xl p-3.5 flex items-center gap-3 hover:bg-slate-50 transition-colors text-left">
+          <div className="w-9 h-9 rounded-lg bg-green-100 flex items-center justify-center flex-shrink-0">
+            <Database size={17} className="text-green-700" />
+          </div>
+          <div>
+            <p className="text-xs font-black text-slate-800 uppercase">View Batches</p>
+            <p className="text-[10px] text-slate-500">Test batch yahan dikhega (sirf tumhe)</p>
+          </div>
+        </button>
+        <button onClick={() => navigate('/profile')}
+          className="bg-white border border-slate-200 rounded-xl p-3.5 flex items-center gap-3 hover:bg-slate-50 transition-colors text-left">
+          <div className="w-9 h-9 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
+            <Users size={17} className="text-blue-700" />
+          </div>
+          <div>
+            <p className="text-xs font-black text-slate-800 uppercase">Trainee Profiles</p>
+            <p className="text-[10px] text-slate-500">100 demo trainees ka profile</p>
+          </div>
+        </button>
+      </div>
+
+      {/* ── FULL TEST BATCH (100 trainees) ── */}
+      <TestBatchCard />
+
       {/* ── PREVIEW RESULT ── */}
       {plan && (
         <div className="bg-white border-2 border-orange-400 rounded-xl overflow-hidden shadow-sm">
@@ -583,3 +626,167 @@ const DevConsole = ({
 };
 
 export default DevPracticeScreen;
+
+// ─────────────────────────────────────────────
+// 🏋️ TEST BATCH CARD — 100 trainees full demo batch
+// isDevData tagged → sirf dev ko dikhta hai
+// ─────────────────────────────────────────────
+const TestBatchCard = () => {
+  const navigate = useNavigate();
+
+  const [counts, setCounts] = useState<{ collection: string; count: number }[]>([]);
+  const [checked, setChecked] = useState(false);
+  const [busy, setBusy] = useState<'none' | 'generate' | 'wipe' | 'check'>('check');
+  const [progress, setProgress] = useState<SeedProgress | null>(null);
+  const [msg, setMsg] = useState('');
+  const [err, setErr] = useState('');
+
+  const totalDocs = counts.reduce((s, c) => s + c.count, 0);
+  const exists = totalDocs > 0;
+
+  const refreshCounts = useCallback(async () => {
+    setCounts(await countDevSeedData());
+    setChecked(true);
+  }, []);
+
+  useEffect(() => { setBusy('check'); refreshCounts().finally(() => setBusy('none')); }, [refreshCounts]);
+
+  const handleGenerate = async () => {
+    if (exists && !window.confirm(
+      `Purana test data (${totalDocs} docs) WIPE hokar fresh batch banega. Pakka?`
+    )) return;
+    setBusy('generate'); setErr(''); setMsg('');
+    try {
+      if (exists) await wipeTestBatch(setProgress);
+      const res = await generateTestBatch(setProgress);
+      setMsg(`✓ TEST BATCH TAIYAAR! Batch "${DEV_BATCH_NUMBER}" (completed) me ${res.totalDocs} documents — 100 trainees, staff, subjects, tests sab. Ab /batches ya /profile kholo — sab sirf TUMHE dikhega.`);
+      await refreshCounts();
+    } catch (e: any) {
+      setErr(`Generate failed: ${e.message}`);
+    } finally {
+      setBusy('none'); setProgress(null);
+    }
+  };
+
+  const handleWipe = async () => {
+    if (!exists) return;
+    if (!window.confirm(`${totalDocs} test documents PERMANENT delete ho jayenge. Real data safe rahega. Pakka?`)) return;
+    setBusy('wipe'); setErr(''); setMsg('');
+    try {
+      const n = await wipeTestBatch(setProgress);
+      setMsg(`✓ ${n} test documents delete — test batch poori tarah saaf.`);
+      await refreshCounts();
+    } catch (e: any) {
+      setErr(`Wipe failed: ${e.message}`);
+    } finally {
+      setBusy('none'); setProgress(null);
+    }
+  };
+
+  return (
+    <div className="bg-white border-2 border-purple-300 rounded-xl overflow-hidden shadow-sm">
+      <div className="bg-purple-50 px-4 py-3 border-b border-purple-200 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Dumbbell size={15} className="text-purple-700" />
+          <h3 className="text-xs font-black text-slate-800 uppercase">
+            Full Test Batch — 100 Trainees (Demo)
+          </h3>
+        </div>
+        <span className={`text-[9px] font-black px-2.5 py-1 rounded-full ${
+          !checked ? 'bg-slate-200 text-slate-500'
+          : exists ? 'bg-purple-600 text-white'
+          : 'bg-slate-200 text-slate-600'
+        }`}>
+          {!checked ? 'CHECKING...' : exists ? `● SEEDED (${totalDocs} docs)` : '○ NOT SEEDED'}
+        </span>
+      </div>
+
+      <div className="p-5 space-y-4">
+        <p className="text-[11px] text-slate-600 leading-relaxed">
+          Ek <strong>completed batch "TEST-77"</strong> banta hai jaisa purana batch hota hai:
+          <strong> 100 trainees</strong> (religion, state, mobile, medical, kit — poori details),
+          <strong> 8 staff</strong>, <strong>8 subjects</strong> + assignments,
+          <strong> FPT + 2 weekly tests</strong> (pass/fail results ke saath),
+          absent/medical records, staff attendance/leave/duty, schedule, weekly programs.
+          <br />
+          <span className="text-purple-700 font-black">
+            🔒 Ye data SIRF tumhare dev account ko dikhega — Clerk, QM, Ustad, Asli CC — kisi ko kabhi nahi
+            (har collection se hidden, counts me bhi nahi aata).
+          </span>
+        </p>
+
+        {msg && (
+          <div className="bg-green-50 border border-green-300 text-green-800 px-3 py-2 rounded text-[11px] font-semibold flex items-start gap-1.5">
+            <CheckCircle2 size={13} className="flex-shrink-0 mt-0.5" /> {msg}
+          </div>
+        )}
+        {err && (
+          <div className="bg-red-50 border border-red-300 text-red-700 px-3 py-2 rounded text-[11px] font-semibold flex items-start gap-1.5">
+            <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" /> {err}
+          </div>
+        )}
+
+        {busy !== 'none' && progress && (
+          <div className="bg-slate-50 border border-slate-200 rounded p-2.5">
+            <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-purple-500 transition-all"
+                style={{ width: `${progress.total ? Math.round((progress.done / progress.total) * 100) : 0}%` }}
+              />
+            </div>
+            <p className="text-[10px] text-slate-500 font-bold mt-1">
+              {progress.step} — {progress.done}/{progress.total}
+            </p>
+          </div>
+        )}
+
+        {exists && busy === 'none' && (
+          <div className="flex flex-wrap gap-1.5">
+            {counts.map(c => (
+              <span key={c.collection} className="text-[9px] font-bold bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full border border-purple-200">
+                {c.collection}: {c.count}
+              </span>
+            ))}
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-2.5 pt-2 border-t border-slate-100">
+          <button
+            onClick={handleGenerate}
+            disabled={busy !== 'none'}
+            className="bg-purple-700 text-white px-5 py-2.5 text-xs font-black uppercase hover:bg-purple-800 disabled:opacity-50 rounded-lg inline-flex items-center gap-2"
+          >
+            {busy === 'generate'
+              ? <><Loader2 size={13} className="animate-spin" /> Generating...</>
+              : <><Dumbbell size={13} /> {exists ? 'Re-Generate (Wipe + Fresh)' : 'Generate Test Batch'}</>}
+          </button>
+
+          {exists && (
+            <>
+              <button
+                onClick={handleWipe}
+                disabled={busy !== 'none'}
+                className="bg-red-50 border border-red-300 text-red-700 px-5 py-2.5 text-xs font-black uppercase hover:bg-red-100 disabled:opacity-50 rounded-lg inline-flex items-center gap-2"
+              >
+                {busy === 'wipe'
+                  ? <><Loader2 size={13} className="animate-spin" /> Wiping...</>
+                  : <><Trash2 size={13} /> Wipe Test Data</>}
+              </button>
+              <button
+                onClick={() => navigate('/batches')}
+                className="bg-slate-700 text-white px-4 py-2.5 text-xs font-black uppercase hover:bg-slate-800 rounded-lg"
+              >
+                View in App →
+              </button>
+            </>
+          )}
+        </div>
+
+        <p className="text-[9px] text-slate-400 font-semibold">
+          Tip: Batch completed hai isliye tumhara asli active batch touch nahi hota.
+          Re-generate = purana test data wipe + fresh. Collections: {SEEDED_COLLECTIONS.length}.
+        </p>
+      </div>
+    </div>
+  );
+};

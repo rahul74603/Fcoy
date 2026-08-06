@@ -7,6 +7,7 @@ import {
   getDocs, query, where, serverTimestamp, Timestamp,
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+import { showDoc } from '../../../utils/devDataFilter';
 import {
   DeputationRecord, DeputationFormData,
   DeputationStatus, DeputationDirection,
@@ -92,7 +93,7 @@ export const getDeputationsByBatch = async (batchId: string): Promise<Deputation
     );
 
     const snap = await getDocs(q);
-    const records = snap.docs.map(d =>
+    const records = snap.docs.filter(d => showDoc(d.data() as Record<string, unknown>)).map(d =>
       docToDeputation(d.id, d.data() as Record<string, unknown>)
     );
 

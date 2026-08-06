@@ -15,6 +15,7 @@ import {
   deleteDoc, serverTimestamp, query, where, increment
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
+import { visibleDocCount } from '../../utils/devDataFilter';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   PaymentModeSelector, PaymentModeBadge, validatePaymentMode,
@@ -434,7 +435,7 @@ export const TrainingFundScreen: React.FC = () => {
     try {
       // ── Trainee count ──
       const tSnap = await getDocs(collection(db, 'trainees'));
-      setTraineeCount(tSnap.size);
+      setTraineeCount(visibleDocCount(tSnap));
 
       // ── Collections ──
       const colSnap = await getDocs(collection(db, 'training_fund_collections'));

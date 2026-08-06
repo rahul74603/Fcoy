@@ -7,6 +7,7 @@ import {
   query, where, orderBy, serverTimestamp, Timestamp, writeBatch,
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+import { showDoc } from '../../../utils/devDataFilter';
 import {
   StaffAttendance,
   AttendanceStatus,
@@ -119,7 +120,7 @@ export const getAttendanceByDate = async (
     );
     const snapshot = await getDocs(q);
 
-    let records = snapshot.docs.map((doc) =>
+    let records = snapshot.docs.filter(d => showDoc(d.data() as Record<string, unknown>)).map((doc) =>
       docToAttendance(doc.id, doc.data() as Record<string, unknown>)
     );
 
@@ -156,7 +157,7 @@ export const getStaffAttendanceByMonth = async (
     );
     const snapshot = await getDocs(q);
 
-    return snapshot.docs.map((doc) =>
+    return snapshot.docs.filter(d => showDoc(d.data() as Record<string, unknown>)).map((doc) =>
       docToAttendance(doc.id, doc.data() as Record<string, unknown>)
     );
   } catch (error) {
@@ -181,7 +182,7 @@ export const getAllAttendanceByMonth = async (
     );
     const snapshot = await getDocs(q);
 
-    return snapshot.docs.map((doc) =>
+    return snapshot.docs.filter(d => showDoc(d.data() as Record<string, unknown>)).map((doc) =>
       docToAttendance(doc.id, doc.data() as Record<string, unknown>)
     );
   } catch (error) {

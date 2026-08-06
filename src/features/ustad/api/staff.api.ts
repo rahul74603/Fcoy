@@ -16,6 +16,7 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+import { showDoc } from '../../../utils/devDataFilter';
 import {
   Staff,
   StaffFormData,
@@ -123,7 +124,7 @@ export const getStaffByBatch = async (batchId: string): Promise<Staff[]> => {
     );
     const snapshot = await getDocs(q);
 
-    const staffList = snapshot.docs.map(doc =>
+    const staffList = snapshot.docs.filter(d => showDoc(d.data() as Record<string, unknown>)).map(doc =>
       docToStaff(doc.id, doc.data() as Record<string, unknown>)
     );
 
@@ -267,7 +268,7 @@ export const getStaffSummary = async (batchId: string): Promise<{
 export const getAllStaff = async (): Promise<Staff[]> => {
   console.warn('getAllStaff is deprecated. Use getStaffByBatch instead.');
   const snapshot = await getDocs(staffCol());
-  return snapshot.docs.map(doc =>
+  return snapshot.docs.filter(d => showDoc(d.data() as Record<string, unknown>)).map(doc =>
     docToStaff(doc.id, doc.data() as Record<string, unknown>)
   );
 };

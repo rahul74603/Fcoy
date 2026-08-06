@@ -81,6 +81,23 @@ export const SubscriptionScreen = () => {
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
+  // ═════════════════════════════════════════
+  // 🔒 DEV-ONLY GATE — subscription management
+  // sirf Developer account se (baaki kisi ko nahi)
+  // ═════════════════════════════════════════
+  if (!user?.isDeveloper) {
+    return (
+      <div className="max-w-lg mx-auto mt-16 bg-amber-50 border border-amber-300 rounded-xl p-6 text-center">
+        <Crown size={32} className="mx-auto mb-3 text-amber-500" />
+        <h2 className="text-sm font-black text-amber-800 uppercase">Developer Mode Only</h2>
+        <p className="text-xs text-amber-700 mt-1.5 leading-relaxed">
+          Subscription & License management sirf <strong>Developer account</strong> se hota hai.<br />
+          Dev account se login karo → <strong>/dev-practice</strong> (Practice Console) → "👑 Subscription & License".
+        </p>
+      </div>
+    );
+  }
+
   const state = computeSubscriptionState(current);
   const meta = STATUS_META[state.status];
   const monthlyPlan = plans.find(p => p.durationMonths === 1);

@@ -7,6 +7,7 @@ import {
   getDocs, query, where, serverTimestamp, Timestamp,
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+import { showDoc } from '../../../utils/devDataFilter';
 import {
   TrainingSchedule, ScheduleFormData, ScheduleStatus, DAYS_OF_WEEK,
 } from '../types/schedule.types';
@@ -118,7 +119,7 @@ export const getSchedulesByDate = async (
     );
 
     const snap = await getDocs(q);
-    const schedules = snap.docs.map(d =>
+    const schedules = snap.docs.filter(d => showDoc(d.data() as Record<string, unknown>)).map(d =>
       docToSchedule(d.id, d.data() as Record<string, unknown>)
     );
 
@@ -151,7 +152,7 @@ export const getSchedulesByDateRange = async (
     );
 
     const snap = await getDocs(q);
-    return snap.docs.map(d =>
+    return snap.docs.filter(d => showDoc(d.data() as Record<string, unknown>)).map(d =>
       docToSchedule(d.id, d.data() as Record<string, unknown>)
     );
   } catch (error) {
@@ -174,7 +175,7 @@ export const getSchedulesByUstad = async (
     );
 
     const snap = await getDocs(q);
-    return snap.docs.map(d =>
+    return snap.docs.filter(d => showDoc(d.data() as Record<string, unknown>)).map(d =>
       docToSchedule(d.id, d.data() as Record<string, unknown>)
     );
   } catch (error) {

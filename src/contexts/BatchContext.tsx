@@ -6,6 +6,7 @@ import {
   updateDoc, query, orderBy, writeBatch
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
+import { isDevViewer, onDevViewerChange, DEV_TAG } from '../utils/devDataFilter';
 
 // ─── Types ───
 export interface Batch {
@@ -61,6 +62,11 @@ export const BatchProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  // 🧪 Dev viewer flag — dev-tagged batches sirf dev account ko dikhenge
+  const [isDev, setIsDev] = useState(isDevViewer());
+
+  useEffect(() => onDevViewerChange(setIsDev), []);
+
   // ── Real-time listener for all batches ──
   useEffect(() => {
     const unsubscribe = onSnapshot(
@@ -70,10 +76,16 @@ export const BatchProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         snapshot.forEach((doc) => {
           batches.push({ id: doc.id, ...doc.data() } as Batch);
         });
-        setAllBatches(batches);
+
+        // 🧪 Dev/test batches (isDevData: true) — non-dev users ko KABHI nahi dikhenge
+        const visible = isDev
+          ? batches
+          : batches.filter(b => (b as unknown as Record<string, unknown>)[DEV_TAG] !== true);
+
+        setAllBatches(visible);
 
         // Find active batch
-        const active = batches.find(b => b.status === 'active') || null;
+        const active = visible.find(b => b.status === 'active') || null;
         setActiveBatch(active);
         setLoading(false);
       },
@@ -85,7 +97,7 @@ export const BatchProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     );
 
     return () => unsubscribe();
-  }, []);
+  }, [isDev]);
 
   // ── Create New Batch ──
   const createNewBatch = useCallback(async (data: CreateBatchForm) => {

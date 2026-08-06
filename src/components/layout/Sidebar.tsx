@@ -9,7 +9,7 @@ import {
   Layers, CalendarDays, BarChart3,
   PieChart, Menu,
   Bot, Sparkles,
-  UserCog, ClipboardList, FlaskConical,
+  UserCog, ClipboardList, FlaskConical, Crown,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBatch } from '../../contexts/BatchContext';
@@ -512,7 +512,6 @@ export const Sidebar = () => {
                   icon={Settings}
                   menuKey="ccSystem"
                 >
-                  <SubItem title="👑 Subscription & License" path="/subscription" dot="bg-amber-400" />
                   <SubItem title="Reports Center" path="/reports" dot="bg-blue-400" />
                   <SubItem title="Settings" path="/settings" dot="bg-slate-400" />
                   <SubItem title="User Management" path="/users" dot="bg-purple-400" />
@@ -535,6 +534,7 @@ export const Sidebar = () => {
                   bgColor="bg-orange-900/40"
                 />
                 <NavItem title="🧪 Practice Console" icon={FlaskConical} path="/dev-practice" />
+                <NavItem title="👑 Subscription & License" icon={Crown} path="/subscription" />
               </>
             )}
 

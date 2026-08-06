@@ -17,6 +17,7 @@ import {
 } from 'firebase/firestore';
 
 import { db } from '../../config/firebase';
+import { visibleDocCount } from '../../utils/devDataFilter';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBatch } from '../../contexts/BatchContext';
 
@@ -254,7 +255,7 @@ export const CompanyAssetsFundScreen: React.FC = () => {
     setDataLoading(true);
     try {
       const tSnap = await getDocs(collection(db, 'trainees'));
-      setTraineeCount(tSnap.size);
+      setTraineeCount(visibleDocCount(tSnap));
 
       // Collections
       const cSnap = await getDocs(collection(db, 'company_assets_collections'));

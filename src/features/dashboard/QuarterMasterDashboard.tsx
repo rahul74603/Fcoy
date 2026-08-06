@@ -14,6 +14,7 @@ import {
   collection, getDocs
 } from 'firebase/firestore';
 import { db, auth } from '../../config/firebase';
+import { visibleDocCount } from '../../utils/devDataFilter';
 import { onAuthStateChanged } from 'firebase/auth';
 
 // ─────────────────────────────────────────────
@@ -326,7 +327,7 @@ export const QuarterMasterDashboard: React.FC = () => {
 
       // ── TRAINEES ──
       const tSnap = await getDocs(collection(db, 'trainees'));
-      setTraineeCount(tSnap.size);
+      setTraineeCount(visibleDocCount(tSnap));
 
       // ── ISSUE RECORDS ──
       const issueSnap = await getDocs(collection(db, 'issue_records'));

@@ -9,6 +9,7 @@ import {
 } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
+import { setDevViewer } from '../utils/devDataFilter';
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -71,6 +72,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           await loadUserData(firebaseUser);
         } else {
           setUser(null);
+          setDevViewer(false);
           setLoading(false);
         }
       }
@@ -98,6 +100,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           createdBy:   String(userData['createdBy']   ?? 'Unknown'),
           isDeveloper: Boolean(userData['isDeveloper'] ?? false),
         });
+        setDevViewer(Boolean(userData['isDeveloper'] ?? false));
       } else {
         console.warn(`User doc not found in Firestore for uid: ${firebaseUser.uid}`);
         setUser({
@@ -112,6 +115,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           createdBy:   'Unknown',
           isDeveloper: false,
         });
+        setDevViewer(false);
       }
 
     } catch (error: unknown) {
@@ -134,12 +138,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (fbErr.code === 'unauthenticated') {
         console.warn('Auth token expired. Logging out.');
         setUser(null);
+        setDevViewer(false);
       } else if (fbErr.code === 'permission-denied') {
         console.warn('Firestore permission denied. Using basic auth info.');
         setUser(fallbackUser);
       } else if (fbErr.code === 'unavailable') {
         console.warn('Firestore unavailable. Keeping session alive.');
         setUser(fallbackUser);
+        setDevViewer(false);
       } else {
         console.error('Unknown error loading user data.', fbErr);
         setUser(fallbackUser);
@@ -182,6 +188,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           createdBy:   String(userData['createdBy']   ?? 'Unknown'),
           isDeveloper: Boolean(userData['isDeveloper'] ?? false),
         });
+        setDevViewer(Boolean(userData['isDeveloper'] ?? false));
 
         console.log('✓ User data refreshed from Firestore');
       } else {
@@ -215,6 +222,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setLoading(true);
       await signOut(auth);
       setUser(null);
+      setDevViewer(false);
     } catch (error: unknown) {
       const fbErr = error as FirebaseError;
       console.error('Logout error:', fbErr.message ?? error);

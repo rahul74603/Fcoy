@@ -16,6 +16,7 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+import { showDoc } from '../../../utils/devDataFilter';
 import {
   StaffDuty,
   DutyFormData,
@@ -92,7 +93,7 @@ export const addDutyType = async (
 
 export const getAllDutyTypes = async (): Promise<DutyType[]> => {
   const snapshot = await getDocs(collection(db, DUTY_TYPE_COL));
-  return snapshot.docs.map((d) =>
+  return snapshot.docs.filter(d => showDoc(d.data() as Record<string, unknown>)).map((d) =>
     docToDutyType(d.id, d.data() as Record<string, unknown>)
   );
 };
@@ -103,7 +104,7 @@ export const getActiveDutyTypes = async (): Promise<DutyType[]> => {
     where('isActive', '==', true)
   );
   const snapshot = await getDocs(q);
-  return snapshot.docs.map((d) =>
+  return snapshot.docs.filter(d => showDoc(d.data() as Record<string, unknown>)).map((d) =>
     docToDutyType(d.id, d.data() as Record<string, unknown>)
   );
 };
@@ -220,7 +221,7 @@ export const getDutiesByDate = async (
   );
 
   const snapshot = await getDocs(q);
-  let records = snapshot.docs.map((d) =>
+  let records = snapshot.docs.filter(d => showDoc(d.data() as Record<string, unknown>)).map((d) =>
     docToDuty(d.id, d.data() as Record<string, unknown>)
   );
 
@@ -252,7 +253,7 @@ export const getDutiesByStaff = async (
   );
 
   const snapshot = await getDocs(q);
-  let records = snapshot.docs.map((d) =>
+  let records = snapshot.docs.filter(d => showDoc(d.data() as Record<string, unknown>)).map((d) =>
     docToDuty(d.id, d.data() as Record<string, unknown>)
   );
 
