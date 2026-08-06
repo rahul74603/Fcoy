@@ -9,7 +9,7 @@ import {
   Layers, CalendarDays, BarChart3,
   PieChart, Menu,
   Bot, Sparkles,
-  UserCog, ClipboardList,
+  UserCog, ClipboardList, FlaskConical,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBatch } from '../../contexts/BatchContext';
@@ -518,6 +518,23 @@ export const Sidebar = () => {
                   <SubItem title="User Management" path="/users" dot="bg-purple-400" />
                   <SubItem title="🌱 Seed Staff Data" path="/seed-staff" dot="bg-green-400" />
                 </NavGroup>
+              </>
+            )}
+
+            {/* ═══════════════════════════════════════════════
+                🧪 DEVELOPER — sirf dev account ko dikhta hai
+            ═══════════════════════════════════════════════ */}
+            {user?.isDeveloper && (
+              <>
+                <div className="mx-4 my-2 h-px bg-military-800" />
+                <RoleSectionHeader
+                  icon="🧪"
+                  title="Developer"
+                  subtitle="Practice · Testing Zone"
+                  color="border-orange-500"
+                  bgColor="bg-orange-900/40"
+                />
+                <NavItem title="🧪 Practice Console" icon={FlaskConical} path="/dev-practice" />
               </>
             )}
 

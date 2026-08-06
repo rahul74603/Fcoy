@@ -23,6 +23,7 @@ interface AppUser {
   designation: string;
   isActive: boolean;
   createdBy: string;
+  isDeveloper: boolean; // 🧪 Dev/Practice account flag
 }
 
 interface AuthContextType {
@@ -95,6 +96,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           designation: String(userData['designation'] ?? 'Unassigned'),
           isActive:    Boolean(userData['isActive']   ?? false),
           createdBy:   String(userData['createdBy']   ?? 'Unknown'),
+          isDeveloper: Boolean(userData['isDeveloper'] ?? false),
         });
       } else {
         console.warn(`User doc not found in Firestore for uid: ${firebaseUser.uid}`);
@@ -108,6 +110,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           designation: 'Unassigned',
           isActive:    false,
           createdBy:   'Unknown',
+          isDeveloper: false,
         });
       }
 
@@ -125,6 +128,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         designation: 'Unassigned',
         isActive:    false,
         createdBy:   'Unknown',
+        isDeveloper: false,
       };
 
       if (fbErr.code === 'unauthenticated') {
@@ -176,6 +180,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           designation: String(userData['designation'] ?? 'Unassigned'),
           isActive:    Boolean(userData['isActive']   ?? false),
           createdBy:   String(userData['createdBy']   ?? 'Unknown'),
+          isDeveloper: Boolean(userData['isDeveloper'] ?? false),
         });
 
         console.log('✓ User data refreshed from Firestore');

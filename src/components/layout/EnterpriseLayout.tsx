@@ -12,6 +12,9 @@ import NotificationBell from '../../features/notifications/NotificationBell';
 // 🆕 Subscription Expiry Banner
 import SubscriptionBanner from '../../features/subscription/components/SubscriptionBanner';
 
+// 🧪 Dev Practice Mode Banner
+import PracticeBanner from '../../features/developer/components/PracticeBanner';
+
 interface EnterpriseLayoutProps {
   children: React.ReactNode;
 }
@@ -121,6 +124,9 @@ export const EnterpriseLayout: React.FC<EnterpriseLayoutProps> = ({ children }) 
             </div>
           </div>
         </header>
+
+        {/* 🧪 Practice Mode Banner (sirf dev account ko) */}
+        <PracticeBanner />
 
         {/* 🆕 Subscription Expiry / Grace / Expired Warning */}
         <SubscriptionBanner />

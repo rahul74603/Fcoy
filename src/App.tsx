@@ -17,6 +17,9 @@ import { ProtectedRoute }       from './components/ProtectedRoute';
 // --- Subscription ---
 import { SubscriptionScreen } from './features/subscription/SubscriptionScreen';
 
+// --- Developer Practice ---
+import { DevPracticeScreen } from './features/developer/DevPracticeScreen';
+
 // --- Dashboards ---
 import { CompanyCommanderDashboard } from './features/dashboard/CompanyCommanderDashboard';
 import { QuarterMasterDashboard }    from './features/dashboard/QuarterMasterDashboard';
@@ -458,6 +461,20 @@ function App() {
                 }
               />
               
+              {/* ════════════════════════════════
+                  🧪 DEVELOPER PRACTICE (CC only)
+                  CC: dev account banata hai
+                  Dev account: console se test data clean
+              ════════════════════════════════ */}
+              <Route
+                path="/dev-practice"
+                element={
+                  <ProtectedRoute allowedRoles={['Company Commander']}>
+                    <EnterpriseLayout><DevPracticeScreen /></EnterpriseLayout>
+                  </ProtectedRoute>
+                }
+              />
+
               {/* ── 404 Fallback ── */}
               <Route path="*" element={<Navigate to="/login" replace />} />
 
