@@ -542,7 +542,7 @@ export const Sidebar = () => {
 
           {/* FOOTER */}
           <div className="p-4 bg-military-950 border-t border-military-800 text-xs text-military-400 text-center">
-            v1.3.0 · Report System
+            v1.3.1 · X-Ray
           </div>
 
         </div>

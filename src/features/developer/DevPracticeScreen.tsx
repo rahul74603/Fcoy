@@ -21,6 +21,8 @@ import {
   Building2, CreditCard, Zap, FlaskConical, Search,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { collection, getDocs } from 'firebase/firestore';
+import { db } from '../../config/firebase';
 import {
   loadSnapshot, startPracticeSession, previewCleanup, runCleanup,
   fetchSessionMeta, KNOWN_COLLECTIONS,
@@ -74,7 +76,7 @@ export const DevPracticeScreen = () => {
 // ═════════════════════════════════════════════
 const OwnerPanel = () => {
   const { user } = useAuth();
-  const [tab, setTab] = useState<'customers' | 'subscriptions' | 'testbatch' | 'practice'>('customers');
+  const [tab, setTab] = useState<'customers' | 'subscriptions' | 'testbatch' | 'xray' | 'practice'>('customers');
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerWithSub | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -102,6 +104,7 @@ const OwnerPanel = () => {
           { key: 'customers',     label: '🏢 Customers (CC)',  icon: <Building2 size={13} /> },
           { key: 'subscriptions', label: '👑 Subscriptions',   icon: <Crown size={13} />     },
           { key: 'testbatch',     label: '🏋️ Test Batch',      icon: <Dumbbell size={13} />  },
+          { key: 'xray',          label: '🔍 X-Ray',           icon: <Search size={13} />    },
           { key: 'practice',      label: '🧪 Practice',        icon: <FlaskConical size={13} /> },
         ] as const).map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
@@ -128,6 +131,7 @@ const OwnerPanel = () => {
         />
       )}
       {tab === 'testbatch' && <TestBatchCard />}
+      {tab === 'xray' && <XRayTab />}
       {tab === 'practice' && <PracticeTab />}
     </div>
   );
@@ -185,7 +189,7 @@ const CustomersTab = ({ onManage, refreshKey }: { onManage: (c: CustomerWithSub)
         uid: user?.uid ?? '', email: user?.email ?? '', name: user?.name ?? 'Owner',
       }, devPassword);
       setCreatedId(customerId);
-      setSuccess(`✓ CC account ban gaya! Customer ID: ${customerId} — ab "Subscriptions" tab se plan assign karo.`);
+      setSuccess(`✓ CC account ban gaya! Customer ID: ${customerId} — ab "Subscriptions" tab se plan assign karo. ℹ️ Tum abhi bhi OWNER login ho (system tumhe wapas owner bana deta hai) — CC ka view dekhne ke liye LOGOUT karke naye CC email+password se login karo.`);
       setForm({ unitName: '', commanderName: '', email: '', password: '', phone: '', location: '', notes: '', isLocalUnit: false });
       setDevPassword('');
       setShowForm(false);
@@ -1093,6 +1097,215 @@ const TestBatchCard = () => {
           Batch completed hai — asli active batch touch nahi hota. Collections: {SEEDED_COLLECTIONS.length}. Demo dene ke liye perfect (kal kisi ko app dikhaoge to ready-made company milegi).
         </p>
       </div>
+    </div>
+  );
+};
+
+// ═════════════════════════════════════════════
+// 🔍 X-RAY TAB — poore DB ka 1-click scan
+// Real vs Test data ka EXACT hisaab — kisko kya dikhega
+// ═════════════════════════════════════════════
+interface XRayResult {
+  usersTotal: number;
+  usersBroken: { id: string; email: string }[];
+  devAccounts: number;
+  ccCount: number;
+  batches: { id: string; batchNumber: string; status: string; isDev: boolean }[];
+  traineesTotal: number;
+  traineesDev: number;
+  staffTotal: number;
+  staffDev: number;
+  byBatch: { batchId: string; count: number; dev: number }[];
+}
+
+const XRayTab = () => {
+  const [loading, setLoading] = useState(false);
+  const [res, setRes] = useState<XRayResult | null>(null);
+  const [err, setErr] = useState('');
+
+  const scan = async () => {
+    setLoading(true); setErr('');
+    try {
+      const [uSnap, bSnap, tSnap, sSnap] = await Promise.all([
+        getDocs(collection(db, 'users')),
+        getDocs(collection(db, 'batches')),
+        getDocs(collection(db, 'trainees')),
+        getDocs(collection(db, 'staff')),
+      ]);
+
+      const usersBroken = uSnap.docs
+        .filter(d => !/^[A-Za-z0-9]{20,36}$/.test(d.id))
+        .map(d => ({ id: d.id, email: String(d.data().email ?? '') }));
+      const devAccounts = uSnap.docs.filter(d => d.data().isDeveloper === true).length;
+      const ccCount = uSnap.docs.filter(d => d.data().role === 'Company Commander').length;
+
+      const batches = bSnap.docs
+        .map(d => ({
+          id: d.id,
+          batchNumber: String(d.data().batchNumber ?? d.id),
+          status: String(d.data().status ?? '?'),
+          isDev: d.data().isDevData === true,
+        }))
+        .sort((a, b) => a.batchNumber.localeCompare(b.batchNumber));
+
+      let traineesDev = 0;
+      const perBatch = new Map<string, { count: number; dev: number }>();
+      tSnap.docs.forEach(d => {
+        const data = d.data();
+        const dev = data.isDevData === true;
+        if (dev) traineesDev++;
+        const bid = String(data.batchId ?? '(no batchId)');
+        const cur = perBatch.get(bid) ?? { count: 0, dev: 0 };
+        cur.count++; if (dev) cur.dev++;
+        perBatch.set(bid, cur);
+      });
+      const byBatch = [...perBatch.entries()]
+        .map(([batchId, v]) => ({ batchId, ...v }))
+        .sort((a, b) => b.count - a.count);
+
+      const staffDev = sSnap.docs.filter(d => d.data().isDevData === true).length;
+
+      setRes({
+        usersTotal: uSnap.size, usersBroken, devAccounts, ccCount,
+        batches,
+        traineesTotal: tSnap.size, traineesDev,
+        staffTotal: sSnap.size, staffDev,
+        byBatch,
+      });
+    } catch (e: any) { setErr(e.message); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { scan(); }, []);
+
+  const badgeCls = (dev: boolean) =>
+    `text-[9px] font-black px-2 py-0.5 rounded-full border ${dev ? 'bg-purple-100 text-purple-700 border-purple-300' : 'bg-green-100 text-green-700 border-green-300'}`;
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <h3 className="text-sm font-black text-slate-800 uppercase flex items-center gap-2">
+            <Search size={15} className="text-orange-600" /> Database X-Ray
+          </h3>
+          <p className="text-[10px] text-slate-500 font-semibold mt-0.5">
+            Ek click me poora hisaab — Real vs 🧪 Test data, kaun kya dekhta hai
+          </p>
+        </div>
+        <button onClick={scan} disabled={loading}
+          className="bg-slate-700 text-white px-4 py-2 text-[11px] font-black uppercase rounded-lg hover:bg-slate-800 disabled:opacity-50 flex items-center gap-1.5">
+          <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> {res ? 'Re-Scan' : 'Scan'}
+        </button>
+      </div>
+
+      {err && <div className="bg-red-50 border border-red-300 text-red-700 px-4 py-2.5 rounded text-xs font-semibold flex items-center gap-2"><AlertTriangle size={14} /> {err}</div>}
+      {loading && !res && <div className="p-10 text-center"><Loader2 size={26} className="animate-spin text-orange-600 mx-auto" /><p className="text-xs font-bold text-slate-400 mt-2">Database scan ho raha hai...</p></div>}
+
+      {res && (
+        <>
+          {/* ── VERDICT STRIP ── */}
+          <div className="bg-green-50 border-2 border-green-400 rounded-xl p-4">
+            <p className="text-xs font-black text-green-800 uppercase flex items-center gap-1.5"><CheckCircle2 size={14} /> Verdict — kisko kya dikhega</p>
+            <p className="text-[11px] text-green-800 font-semibold mt-2 leading-relaxed">
+              👑 <strong>Owner (tum):</strong> {res.traineesTotal} trainees + {res.staffTotal} staff — sab kuch (real + test)<br />
+              🏢 <strong>CC / QM / Clerk / Ustad:</strong> sirf <strong>{res.traineesTotal - res.traineesDev} trainees</strong> + {res.staffTotal - res.staffDev} staff — test data unhe <strong>KABHI nahi</strong> dikhega<br />
+              🧪 <strong>Test data:</strong> {res.traineesDev} trainees + {res.staffDev} staff — sirf dev account me
+            </p>
+          </div>
+
+          {/* ── SUMMARY CARDS ── */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[
+              { label: 'Trainees (Total)', total: res.traineesTotal, dev: res.traineesDev, icon: '🎓' },
+              { label: 'Staff (Total)', total: res.staffTotal, dev: res.staffDev, icon: '🎖️' },
+              { label: 'Users (Accounts)', total: res.usersTotal, dev: res.devAccounts, devLabel: 'dev accounts', icon: '👤' },
+              { label: 'Batches', total: res.batches.length, dev: res.batches.filter(b => b.isDev).length, devLabel: 'test batches', icon: '📚' },
+            ].map(c => (
+              <div key={c.label} className="bg-white border border-slate-200 rounded-xl p-3.5 text-center shadow-sm">
+                <p className="text-lg">{c.icon}</p>
+                <p className="text-2xl font-black text-slate-800 mt-1">{c.total}</p>
+                <p className="text-[9px] font-black text-slate-400 uppercase mt-0.5">{c.label}</p>
+                <p className="text-[10px] font-bold text-purple-700 mt-1">🧪 {c.dev} {c.devLabel ?? 'test'}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* ── BATCHES TABLE ── */}
+          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+            <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex items-center gap-2">
+              <span className="text-xs font-black text-slate-800 uppercase">📚 Batches ({res.batches.length})</span>
+              <span className="text-[9px] font-bold text-slate-500">— completed batches neeche scroll me dikhte hain (/batches page)</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-slate-50 border-b border-slate-200">
+                  <tr>{['Batch', 'Status', 'Type', 'Doc ID'].map(h => (
+                    <th key={h} className="px-3 py-2 text-[9px] font-black text-slate-500 uppercase text-left">{h}</th>
+                  ))}</tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {res.batches.map(b => (
+                    <tr key={b.id} className="hover:bg-slate-50">
+                      <td className="px-3 py-2 font-black text-slate-800">{b.batchNumber}</td>
+                      <td className="px-3 py-2">
+                        <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${b.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>
+                          {b.status.toUpperCase()}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2"><span className={badgeCls(b.isDev)}>{b.isDev ? '🧪 TEST' : '✅ REAL'}</span></td>
+                      <td className="px-3 py-2 text-slate-400 font-mono text-[10px]">{b.id}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* ── TRAINEES BY BATCH ── */}
+          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+            <div className="bg-slate-50 px-4 py-3 border-b border-slate-200">
+              <span className="text-xs font-black text-slate-800 uppercase">🎓 Trainees — batch ke hisaab se</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-slate-50 border-b border-slate-200">
+                  <tr>{['Batch ID', 'Total', '🧪 Test', '✅ Real (CC ko ye dikhenge)'].map(h => (
+                    <th key={h} className="px-3 py-2 text-[9px] font-black text-slate-500 uppercase text-left">{h}</th>
+                  ))}</tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {res.byBatch.map(r => (
+                    <tr key={r.batchId} className="hover:bg-slate-50">
+                      <td className="px-3 py-2 font-bold text-slate-700 font-mono text-[11px]">{r.batchId}</td>
+                      <td className="px-3 py-2 font-black text-slate-800">{r.count}</td>
+                      <td className="px-3 py-2 font-bold text-purple-700">{r.dev}</td>
+                      <td className="px-3 py-2 font-bold text-green-700">{r.count - r.dev}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* ── USERS HEALTH ── */}
+          <div className={`border-2 rounded-xl p-4 ${res.usersBroken.length ? 'bg-red-50 border-red-300' : 'bg-white border-slate-200'}`}>
+            <p className="text-xs font-black text-slate-800 uppercase">
+              👤 Users: {res.usersTotal} total · {res.ccCount} CC · {res.devAccounts} dev
+              {res.usersBroken.length > 0 && <span className="text-red-600 ml-2">⚠ {res.usersBroken.length} broken profile</span>}
+            </p>
+            {res.usersBroken.length > 0 && (
+              <div className="mt-2 space-y-1">
+                <p className="text-[10px] text-red-700 font-bold">⚠ Broken (doc ID Auth UID se match nahi karta — inse login KABHI nahi hoga; delete karo):</p>
+                {res.usersBroken.map(u => (
+                  <p key={u.id} className="text-[11px] font-mono text-red-800 bg-white border border-red-200 rounded px-2 py-1">
+                    ID: {u.id} — {u.email}
+                  </p>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 };
