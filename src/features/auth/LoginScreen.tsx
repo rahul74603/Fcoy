@@ -30,7 +30,7 @@ export const LoginScreen = () => {
         const userData = userDocSnap.data();
         
         if (!userData.isActive) {
-          setError('Account is disabled. Contact Commander.');
+          setError('Account disabled hai ya "isActive" field missing hai. Apne App Owner / Commander se contact karo.');
           auth.signOut();
           return;
         }
@@ -54,12 +54,21 @@ export const LoginScreen = () => {
             auth.signOut();
         }
       } else {
-        setError('User profile missing in database.');
+        setError(`Profile missing: Firestore > users me is UID ka document nahi hai — ${user.uid} — App Owner se contact karo.`);
         auth.signOut();
       }
     } catch (err: any) {
       console.error(err);
-      setError('Invalid email or password. Access Denied.');
+      if (err?.code === 'permission-denied') {
+        setError('Database permission error (Firestore rules). App Owner se contact karo.');
+      } else if (err?.code === 'auth/too-many-requests') {
+        setError('Bahut zyada attempts ho gaye. Thodi der baad try karo.');
+      } else if (err?.code === 'auth/network-request-failed') {
+        setError('Internet connection check karo.');
+      } else {
+        setError('Invalid email or password. Access Denied.');
+      }
+      auth.signOut();
     } finally {
       setLoading(false);
     }

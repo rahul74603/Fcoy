@@ -108,12 +108,48 @@ Kal kisi unit ko app dena ho:
 Abhi ye system **ek Firebase project = ek unit** ke saath aata hai:
 
 1. Naye customer ke liye repo ka naya deployment + uska apna Firebase project (agar poori isolation chahiye)
-2. PEHLA OWNER account wahan bhi one-time bootstrap se banta hai:
-   - Naye app me pehla login CC se karo (seed/demo users)
-   - `/dev-practice` kholo → koi owner nahi mila to **"Create Owner Account"** automatically dikhega
-   - Owner banao → logout → owner se login → wapas wahi Owner Panel
+2. PEHLA OWNER account Firebase Console se banega (2 min — neeche "Owner Recovery" section me step-by-step hai)
+3. Owner login karo → Owner Panel → Customers tab → naye unit ka CC account banao → plan assign karo
 
-> ⚠️ Ek owner account hone ke baad bootstrap option gayab ho jata hai — koi aur owner nahi bana sakta CC se.
+> ⚠️ CC ke andar koi "owner banao" option NAHI hota (hamesha locked) — owner sirf tum ho, Console se hi banta/recover hota hai.
+
+---
+
+## 🆘 Owner Recovery — "Login Nahi Ho Raha" Fix (2 min)
+
+Ye app me account **2 jagah** hota hai — dono **same UID** se linked hone chahiye:
+
+| Jagah | Kya hota hai |
+|---|---|
+| Firebase **Authentication** | email + password (login) |
+| Firestore **users** collection | role / isDeveloper / isActive — **Document ID = Auth UID** |
+
+⚠️ **Sabse common login problem:** Auth user hai, lekin Firestore me `users/<UID>` document nahi hai (ya uska Document ID alag hai, jaise `USR-173...`) — tab login "Profile missing" / "Account disabled" jaisa fail hota hai.
+
+### Fix — UID ko Firestore me lagana (exact steps):
+
+1. Firebase Console → **Authentication** → apne owner email pe UID copy karo (e.g. `QKlz...62`)
+2. **Firestore Database** → `users` collection → **+ Add document**
+3. **Document ID:** wo UID **exactly paste** karo (no spaces)
+4. Ye fields daalo:
+
+   | Field | Type | Value |
+   |---|---|---|
+   | `name` | string | App Owner (ya tumhara naam) |
+   | `email` | string | wahi login email |
+   | `phone` | string | (blank ok) |
+   | `designation` | string | App Owner (Developer) |
+   | `role` | string | `Company Commander` |
+   | `isActive` | **boolean** | `true` |
+   | `isDeveloper` | **boolean** | `true` |
+   | `customerId` | string | `OWNER` |
+   | `createdBy` | string | self |
+   | `createdAt` | string | `2026-08-06T00:00:00.000Z` |
+
+5. Save → app me wapas login karo → **Owner Admin Panel** khul jayega 🎉
+6. Agar `users` me koi purana doc hai jiska ID `USR-...` jaisa hai → wo **broken** hai (kabhi login nahi hoga usse) → delete kar do. (User Management page pe aise profiles red **"NO LOGIN (broken)"** badge se dikhte hain — wahan se bhi delete ho jate hain.)
+
+> 💡 Password bhool gaye? Console → Authentication → user → **Reset password**.
 
 ---
 

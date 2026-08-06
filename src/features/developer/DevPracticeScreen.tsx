@@ -9,9 +9,7 @@
 //   3. TEST BATCH — 100 trainees + 20 staff demo batch
 //   4. PRACTICE SESSION — snapshot + 1-click cleanup
 //
-// CC (non-dev) ko ye panel NAHI dikhta.
-// (Bootstrap: pehli baar koi dev account nahi hai to CC
-//  yahan se ek dev account bana sakta hai — one-time.)
+// CC (non-dev) ko ye panel BILKUL NAHI dikhta — hamesha locked.
 // ─────────────────────────────────────────────
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -20,15 +18,9 @@ import {
   Flame, Play, Trash2, ShieldCheck, AlertTriangle,
   Loader2, CheckCircle2, X, RefreshCw, UserPlus, Eye, EyeOff,
   Database, History, Ban, Info, Crown, Dumbbell,
-  Building2, CreditCard, Zap, FlaskConical,
+  Building2, CreditCard, Zap, FlaskConical, Search,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import {
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-} from 'firebase/auth';
-import { collection, doc, getDocs, query, setDoc, where, limit } from 'firebase/firestore';
-import { auth as firebaseAuth, db } from '../../config/firebase';
 import {
   loadSnapshot, startPracticeSession, previewCleanup, runCleanup,
   fetchSessionMeta, KNOWN_COLLECTIONS,
@@ -55,172 +47,26 @@ const labelCls = 'text-[10px] font-bold text-slate-300 uppercase block mb-1';
 const by = (u: { name?: string; email?: string | null }) => u?.name || u?.email || 'Owner';
 
 // ─────────────────────────────────────────────
-// MAIN — GATES
+// MAIN — GATE (sirf Owner isDeveloper=true ko khulta hai)
+// CC ko yahan "account banao" card BILKUL NAHI dikhta — hamesha locked.
 // ─────────────────────────────────────────────
 export const DevPracticeScreen = () => {
   const { user } = useAuth();
-  const [bootstrapAllowed, setBootstrapAllowed] = useState<boolean | null>(null);
-
-  const isCommander = user?.role === 'Company Commander';
   const isDevAccount = Boolean(user?.isDeveloper);
 
-  // Bootstrap: koi dev account exist nahi karta → CC ko one-time create option
-  useEffect(() => {
-    const check = async () => {
-      if (isDevAccount) { setBootstrapAllowed(false); return; }
-      if (!isCommander) { setBootstrapAllowed(false); return; }
-      try {
-        const q = query(collection(db, 'users'), where('isDeveloper', '==', true), limit(1));
-        const snap = await getDocs(q);
-        setBootstrapAllowed(snap.empty);
-      } catch {
-        setBootstrapAllowed(false);
-      }
-    };
-    check();
-  }, [user, isCommander, isDevAccount]);
-
-  if (!isCommander && !isDevAccount) {
+  if (!isDevAccount) {
     return (
       <div className="max-w-lg mx-auto mt-16 bg-red-50 border border-red-200 rounded-xl p-6 text-center">
         <Ban size={32} className="mx-auto mb-3 text-red-400" />
-        <h2 className="text-sm font-black text-red-700 uppercase">Access Denied</h2>
-        <p className="text-xs text-red-600 mt-1">Ye panel sirf App Owner (Developer) ke liye hai.</p>
+        <h2 className="text-sm font-black text-red-700 uppercase">Owner / Developer Only</h2>
+        <p className="text-xs text-red-600 mt-1.5 leading-relaxed">
+          Ye <strong>Owner Admin Panel</strong> hai — sirf App Owner (Developer) account se khulta hai.
+        </p>
       </div>
     );
   }
 
-  if (isDevAccount) return <OwnerPanel />;
-
-  if (bootstrapAllowed === null) {
-    return (
-      <div className="p-12 text-center">
-        <Loader2 size={24} className="animate-spin text-orange-600 mx-auto mb-2" />
-      </div>
-    );
-  }
-
-  return bootstrapAllowed ? <CreateDevAccountCard /> : (
-    <div className="max-w-lg mx-auto mt-16 bg-orange-50 border border-orange-300 rounded-xl p-6 text-center">
-      <Flame size={32} className="mx-auto mb-3 text-orange-500" />
-      <h2 className="text-sm font-black text-orange-800 uppercase">Owner / Developer Only</h2>
-      <p className="text-xs text-orange-700 mt-1.5 leading-relaxed">
-        Ye <strong>Owner Admin Panel</strong> hai — sirf Developer account se khulta hai.<br />
-        CC accounts, subscriptions aur testing sab Developer manage karta hai.
-      </p>
-    </div>
-  );
-};
-
-// ─────────────────────────────────────────────
-// BOOTSTRAP: First Dev Account (one-time, CC only)
-// ─────────────────────────────────────────────
-const CreateDevAccountCard = () => {
-  const { user } = useAuth();
-  const [form, setForm] = useState({ name: 'App Owner', email: 'owner@fcoy.com', password: '', cmdPassword: '' });
-  const [showPw, setShowPw] = useState(false);
-  const [showCmdPw, setShowCmdPw] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState('');
-  const [error, setError] = useState('');
-
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (form.password.length < 6) { setError('Dev password min 6 characters ka hona chahiye'); return; }
-    if (!form.cmdPassword) { setError('Apna (Commander) password enter karo'); return; }
-    setLoading(true); setError(''); setSuccess('');
-    const ccEmail = user?.email ?? '';
-    try {
-      const cred = await createUserWithEmailAndPassword(firebaseAuth, form.email, form.password);
-      await setDoc(doc(db, 'users', cred.user.uid), {
-        name: form.name, email: form.email, phone: '',
-        designation: 'App Owner (Developer)',
-        role: 'Company Commander',
-        isDeveloper: true,
-        isActive: true,
-        customerId: 'OWNER',
-        createdBy: user?.uid ?? '',
-        createdAt: new Date().toISOString(),
-      });
-      await signInWithEmailAndPassword(firebaseAuth, ccEmail, form.cmdPassword);
-      setSuccess(`✓ Owner account ban gaya! Ab LOGOUT karke "${form.email}" se login karo — Owner Admin Panel milega.`);
-    } catch (err: any) {
-      if (err.code === 'auth/email-already-in-use') setError('Ye email already registered hai');
-      else if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') setError('Aapka (CC) password galat hai');
-      else setError(`Error: ${err.message}`);
-      try { await signInWithEmailAndPassword(firebaseAuth, ccEmail, form.cmdPassword); } catch { /* ok */ }
-    } finally { setLoading(false); }
-  };
-
-  return (
-    <div className="max-w-xl mx-auto space-y-4 pb-8">
-      <div className="border-b-2 border-orange-600 pb-3">
-        <h1 className="text-2xl font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
-          <Flame size={22} className="text-orange-600" />
-          Owner Setup (One-Time)
-        </h1>
-        <p className="text-xs text-slate-500 font-semibold mt-0.5">
-          Owner (Developer) account banao — iske baad CC accounts YEHI account banayega
-        </p>
-      </div>
-
-      <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-        <p className="text-[11px] text-orange-800 font-semibold leading-relaxed">
-          <strong>Hierarchy:</strong> 👑 Owner (Developer) → CC accounts banata hai → har CC ko ek{' '}
-          <strong>Customer ID</strong> milti hai → usi ID pe subscription manage hota hai.
-          CC apni company chalayega, Owner sabke customers/subscriptions dekhega.
-        </p>
-      </div>
-
-      {success && <div className="bg-green-50 border border-green-300 text-green-800 px-4 py-3 rounded text-xs font-semibold flex items-start gap-2"><CheckCircle2 size={15} className="flex-shrink-0 mt-0.5" /> {success}</div>}
-      {error && <div className="bg-red-50 border border-red-300 text-red-700 px-4 py-3 rounded text-xs font-semibold flex items-center gap-2"><AlertTriangle size={14} /> {error}<button onClick={() => setError('')} className="ml-auto"><X size={13} /></button></div>}
-
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-        <div className="bg-orange-50 px-4 py-3 border-b border-slate-200 flex items-center gap-2">
-          <UserPlus size={14} className="text-orange-700" />
-          <h3 className="text-xs font-black text-slate-800 uppercase">Create Owner Account</h3>
-        </div>
-        <form onSubmit={handleCreate} className="p-5 space-y-4">
-          <div>
-            <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Owner Ka Naam</label>
-            <input type="text" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
-              className="w-full border border-slate-300 px-3 py-2 text-xs rounded focus:outline-none focus:border-orange-600" />
-          </div>
-          <div>
-            <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Owner Email *</label>
-            <input type="email" required value={form.email} onChange={e => setForm({ ...form, email: e.target.value })}
-              className="w-full border border-slate-300 px-3 py-2 text-xs rounded focus:outline-none focus:border-orange-600" />
-          </div>
-          <div>
-            <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Owner Password *</label>
-            <div className="relative">
-              <input type={showPw ? 'text' : 'password'} required minLength={6} value={form.password}
-                onChange={e => setForm({ ...form, password: e.target.value })}
-                className="w-full border border-slate-300 px-3 py-2 text-xs rounded focus:outline-none focus:border-orange-600" placeholder="Min 6 characters" />
-              <button type="button" onClick={() => setShowPw(!showPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
-                {showPw ? <EyeOff size={13} /> : <Eye size={13} />}
-              </button>
-            </div>
-          </div>
-          <div className="bg-amber-50 border border-amber-200 rounded p-3">
-            <label className="text-[10px] font-black text-amber-800 uppercase block mb-1.5">🔐 Aapka (CC) Password *</label>
-            <div className="relative">
-              <input type={showCmdPw ? 'text' : 'password'} required value={form.cmdPassword}
-                onChange={e => setForm({ ...form, cmdPassword: e.target.value })}
-                className="w-full border border-amber-300 px-3 py-2 text-xs rounded focus:outline-none focus:border-amber-500 bg-white" />
-              <button type="button" onClick={() => setShowCmdPw(!showCmdPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
-                {showCmdPw ? <EyeOff size={13} /> : <Eye size={13} />}
-              </button>
-            </div>
-          </div>
-          <button type="submit" disabled={loading}
-            className="w-full bg-orange-600 text-white py-2.5 text-xs font-black uppercase hover:bg-orange-700 disabled:opacity-50 rounded flex items-center justify-center gap-2">
-            {loading ? <><Loader2 size={13} className="animate-spin" /> Creating...</> : <><UserPlus size={13} /> Create Owner Account</>}
-          </button>
-        </form>
-      </div>
-    </div>
-  );
+  return <OwnerPanel />;
 };
 
 // ═════════════════════════════════════════════
@@ -306,6 +152,7 @@ const CustomersTab = ({ onManage, refreshKey }: { onManage: (c: CustomerWithSub)
   const [showDevPw, setShowDevPw] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createdId, setCreatedId] = useState('');
+  const [search, setSearch] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -315,6 +162,18 @@ const CustomersTab = ({ onManage, refreshKey }: { onManage: (c: CustomerWithSub)
   }, []);
 
   useEffect(() => { load(); }, [load, refreshKey]);
+
+  // 🔍 Search: Customer ID / unit / commander / email / phone
+  const q = search.trim().toLowerCase();
+  const filteredList = q
+    ? list.filter(c =>
+        [c.customerId, c.unitName, c.commanderName, c.email, c.phone]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+          .includes(q)
+      )
+    : list;
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -445,11 +304,23 @@ const CustomersTab = ({ onManage, refreshKey }: { onManage: (c: CustomerWithSub)
 
       {/* ── CUSTOMERS TABLE ── */}
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-        <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+        <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
             <Building2 size={14} className="text-military-700" />
             <h3 className="text-xs font-black text-slate-800 uppercase">Customers (CC Accounts)</h3>
-            <span className="text-[9px] font-bold text-slate-500 bg-white px-2 py-0.5 rounded-full border">{list.length}</span>
+            <span className="text-[9px] font-bold text-slate-500 bg-white px-2 py-0.5 rounded-full border">
+              {search ? `${filteredList.length}/` : ''}{list.length}
+            </span>
+          </div>
+          {/* 🔍 Search bar */}
+          <div className="relative flex-1 max-w-xs min-w-[180px]">
+            <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search ID / unit / commander..."
+              className="w-full border border-slate-300 bg-white pl-7 pr-2 py-1.5 text-[11px] rounded focus:outline-none focus:border-orange-500"
+            />
           </div>
           <button onClick={load} disabled={loading} className="text-[10px] font-bold text-military-700 flex items-center gap-1">
             <RefreshCw size={11} className={loading ? 'animate-spin' : ''} /> Refresh
@@ -475,7 +346,15 @@ const CustomersTab = ({ onManage, refreshKey }: { onManage: (c: CustomerWithSub)
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {list.map(c => <CustomerRow key={c.id} customer={c} onManage={() => onManage(c)} />)}
+                {filteredList.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-3 py-8 text-center text-[11px] font-bold text-slate-400">
+                      "{search}" se koi customer match nahi hua
+                    </td>
+                  </tr>
+                ) : (
+                  filteredList.map(c => <CustomerRow key={c.id} customer={c} onManage={() => onManage(c)} />)
+                )}
               </tbody>
             </table>
           </div>
