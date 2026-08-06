@@ -14,8 +14,8 @@ import {
   onSnapshot
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
+import { ModuleReportButton } from '../system/ModuleReportButton';
 import { useAuth } from '../../contexts/AuthContext';
-import { ReportButton } from '../../components/common/ReportButton';
 
 const SHOE_SIZES  = ['5', '6', '7', '8', '9', '10', '11', '12', '13'];
 const SHIRT_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'];
@@ -645,7 +645,7 @@ const KitStatusPanel: React.FC<KitStatusPanelProps> = ({
 // ═══════════════════════════════════════════════════════════
 export const InventoryIssueScreen: React.FC = () => {
   const { user } = useAuth();
-  const issuedBy = user?.email ?? 'Quarter Master';
+    const issuedBy = user?.email ?? 'Quarter Master';
 
   const [searchQuery,   setSearchQuery]   = useState('');
   const [trainee,       setTrainee]       = useState<Trainee | null>(null);
@@ -1197,15 +1197,17 @@ export const InventoryIssueScreen: React.FC = () => {
             </span>
           </p>
         </div>
-        <button 
-          onClick={fetchItems} 
-          disabled={itemsLoading}
-          className="flex items-center gap-1.5 text-[11px] font-bold uppercase border border-slate-300 px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50 rounded"
-        >
-          <RefreshCw size={12} className={itemsLoading ? 'animate-spin' : ''} />
-          Refresh Stock
-        </button>
-        <ReportButton />
+        <div className="flex items-center gap-2">
+          <ModuleReportButton module="inventory" stats={[{ label: 'Stock Items', value: allItems.length }, { label: 'Purchased Units', value: allItems.reduce((s2, i) => s2 + i.totalPurchased, 0) }, { label: 'Issued Units', value: allItems.reduce((s2, i) => s2 + i.totalIssued, 0) }, { label: 'Available Units', value: totalAvailableUnits }, { label: 'Low Stock', value: kitStatusItems.filter(i => i.currentStock <= i.minStockAlert).length }, ...(trainee ? [{ label: 'Selected Chest', value: trainee.chestNo }] : [])]} rows={[...allItems.map(i => ({ item: i.itemName, quantity: i.currentStock, unitPrice: i.unitPrice, amount: i.unitPrice * i.totalPurchased, status: `Purchased ${i.totalPurchased} · Issued ${i.totalIssued} · Available ${i.currentStock}`, detail: i.category })), ...(trainee?.issuedKitItems || []).map(i => ({ item: `ISSUE · ${i.itemName}`, quantity: i.quantity, amount: '—', status: `Chest ${trainee?.chestNo}`, detail: `${i.assignedSize || 'N/A'} · ${i.issueDate ? new Date(i.issueDate).toLocaleDateString('en-IN') : ''}` }))]} />
+          <button 
+            onClick={fetchItems} 
+            disabled={itemsLoading}
+            className="flex items-center gap-1.5 text-[11px] font-bold uppercase border border-slate-300 px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50 rounded"
+          >
+            <RefreshCw size={12} className={itemsLoading ? 'animate-spin' : ''} />
+            Refresh Stock
+          </button>
+        </div>
       </div>
 
       {/* STOCK SUMMARY */}

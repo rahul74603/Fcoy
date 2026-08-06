@@ -15,7 +15,8 @@ import {
   deleteDoc, serverTimestamp, query, where, increment
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
-import { visibleDocCount } from '../../utils/devDataFilter';
+import { showDoc } from '../../utils/devDataFilter';
+import { useBatch } from '../../contexts/BatchContext';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   PaymentModeSelector, PaymentModeBadge, validatePaymentMode,
@@ -28,7 +29,7 @@ import {
 import { BILL_STATUS_CONFIG } from '../finance/shared/constants';
 import type { Vendor, VendorEntry, VendorItem, BillAttachment } from '../finance/vendors/types';
 import BillPreviewModal from '../finance/shared/BillPreviewModal';
-import { ReportButton } from '../../components/common/ReportButton';
+import { ModuleReportButton } from '../system/ModuleReportButton';
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -308,6 +309,8 @@ const RecoveryPayModal: React.FC<{
 // ═════════════════════════════════════════════
 export const TrainingFundScreen: React.FC = () => {
   const { user } = useAuth();
+  const { activeBatch } = useBatch();
+  const belongsToBatch = (data: any) => !data.batchId || data.batchId === activeBatch?.id;
   const recordedBy = user?.email ?? 'Quarter Master';
 
   // ── DATA STATE ──
@@ -436,13 +439,14 @@ export const TrainingFundScreen: React.FC = () => {
     try {
       // ── Trainee count ──
       const tSnap = await getDocs(collection(db, 'trainees'));
-      setTraineeCount(visibleDocCount(tSnap));
+      setTraineeCount(tSnap.docs.filter(d => belongsToBatch(d.data()) && showDoc(d.data())).length);
 
       // ── Collections ──
       const colSnap = await getDocs(collection(db, 'training_fund_collections'));
       const colList: TrainingCollection[] = [];
       colSnap.forEach(d => {
         const data = d.data();
+        if (!belongsToBatch(data) || !showDoc(data)) return;
         colList.push({
           id:             d.id,
           amount:         Number(data.amount ?? 0),
@@ -466,6 +470,7 @@ export const TrainingFundScreen: React.FC = () => {
       const expList: TrainingExpense[] = [];
       expSnap.forEach(d => {
         const data = d.data();
+        if (!belongsToBatch(data) || !showDoc(data)) return;
         expList.push({
           id:            d.id,
           amount:        Number(data.amount ?? 0),
@@ -499,6 +504,7 @@ export const TrainingFundScreen: React.FC = () => {
       const recList: TrainingRecovery[] = [];
       recSnap.forEach(d => {
         const data     = d.data();
+        if (!belongsToBatch(data) || !showDoc(data)) return;
         const expected = Number(data.expectedAmount ?? 0);
         const paid     = Number(data.paidAmount ?? 0);
         recList.push({
@@ -526,6 +532,7 @@ export const TrainingFundScreen: React.FC = () => {
       const vList: Vendor[] = [];
       vSnap.forEach(d => {
         const data = d.data();
+        if (!belongsToBatch(data) || !showDoc(data)) return;
         if (data.isActive === false) return;
         vList.push({
           id:            d.id,
@@ -547,6 +554,7 @@ export const TrainingFundScreen: React.FC = () => {
       const veList: VendorEntry[] = [];
       veSnap.forEach(d => {
         const data = d.data();
+        if (!belongsToBatch(data) || !showDoc(data)) return;
         veList.push({
           id:            d.id,
           vendorId:      data.vendorId ?? '',
@@ -573,6 +581,7 @@ export const TrainingFundScreen: React.FC = () => {
       const ciList: TrainingItem[] = [];
       ciSnap.forEach(d => {
         const data = d.data();
+        if (!belongsToBatch(data) || !showDoc(data)) return;
         ciList.push({
           name:        data.name ?? '',
           emoji:       data.emoji ?? '📦',
@@ -589,6 +598,7 @@ export const TrainingFundScreen: React.FC = () => {
       let trainingTransferred = 0;
       transferSnap.forEach(d => {
         const data = d.data();
+        if (!belongsToBatch(data) || !showDoc(data)) return;
         if (data.fromFundKey === 'training_fund') {
           trainingTransferred += Number(data.amount ?? 0);
         }
@@ -718,7 +728,7 @@ export const TrainingFundScreen: React.FC = () => {
     } finally {
       setDataLoading(false);
     }
-  }, []);
+  }, [activeBatch?.id]);
 
   useEffect(() => { fetchAllData(); }, [fetchAllData]);
 
@@ -1406,11 +1416,13 @@ export const TrainingFundScreen: React.FC = () => {
             </p>
           </div>
         </div>
-        <button onClick={fetchAllData} disabled={dataLoading}
-          className="flex items-center gap-1.5 text-[11px] font-bold uppercase border border-slate-300 px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50 rounded">
-          <RefreshCw size={12} className={dataLoading ? 'animate-spin' : ''} /> Refresh
-        </button>
-        <ReportButton />
+        <div className="flex items-center gap-2">
+          <ModuleReportButton module="training" stats={[{ label: 'Collections', value: formatCurrency(totalCollection) }, { label: 'Purchases', value: formatCurrency(totalExpense) }, { label: 'Paid', value: formatCurrency(totalActuallyPaid) }, { label: 'Balance', value: formatCurrency(totalCollection - totalActuallyPaid) }, { label: 'Vendor Due', value: formatCurrency(totalPendingDue) }, { label: 'Recovery Due', value: formatCurrency(totalRecoveryDue) }]} rows={expenses.map(e => ({ item: e.itemName, quantity: e.quantity, unitPrice: e.unitPrice, amount: e.amount, status: e.dueAmount > 0 ? `Due ${formatCurrency(e.dueAmount)}` : 'Paid', detail: e.vendor || e.remarks }))} />
+          <button onClick={fetchAllData} disabled={dataLoading}
+            className="flex items-center gap-1.5 text-[11px] font-bold uppercase border border-slate-300 px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50 rounded">
+            <RefreshCw size={12} className={dataLoading ? 'animate-spin' : ''} /> Refresh
+          </button>
+        </div>
       </div>
 
       {/* ALERTS */}

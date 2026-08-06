@@ -40,7 +40,7 @@ import { BILL_STATUS_CONFIG } from '../finance/shared/constants';
 import type { Vendor, VendorEntry, VendorItem, BillAttachment } from '../finance/vendors/types';
 
 import BillPreviewModal from '../finance/shared/BillPreviewModal';
-import { ReportButton } from '../../components/common/ReportButton';
+import { ModuleReportButton } from '../system/ModuleReportButton';
 
 
 // ─────────────────────────────────────────────
@@ -982,11 +982,13 @@ export const CompanyAssetsFundScreen: React.FC = () => {
             </p>
           </div>
         </div>
-        <button onClick={fetchAllData} disabled={dataLoading}
-          className="flex items-center gap-1.5 text-[11px] font-bold uppercase border border-slate-300 px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50 rounded">
-          <RefreshCw size={12} className={dataLoading ? 'animate-spin' : ''} /> Refresh
-        </button>
-        <ReportButton />
+        <div className="flex items-center gap-2">
+          <ModuleReportButton module="assets" stats={[{ label: 'Valuation', value: formatCurrency(totalExpense) }, { label: 'Purchased Units', value: totalAssets }, { label: 'Active Units', value: activeAssets }, { label: 'Damaged Units', value: damagedAssets }, { label: 'Disposed Units', value: disposedAssets }, { label: 'Vendor Due', value: formatCurrency(totalPendingDue) }]} rows={filteredExpensesByBatch.map(e => ({ item: e.itemName, quantity: e.quantity, unitPrice: e.unitPrice, amount: e.amount, status: `Active ${Math.max(0, e.quantity - Number(e.damagedQty || 0) - Number(e.disposedQty || 0))} · Damaged ${Number(e.damagedQty || 0)} · Disposed ${Number(e.disposedQty || 0)}`, detail: e.vendor || e.remarks }))} />
+          <button onClick={fetchAllData} disabled={dataLoading}
+            className="flex items-center gap-1.5 text-[11px] font-bold uppercase border border-slate-300 px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50 rounded">
+            <RefreshCw size={12} className={dataLoading ? 'animate-spin' : ''} /> Refresh
+          </button>
+        </div>
       </div>
 
       {/* BATCH SELECTOR CONTROL BAR */}

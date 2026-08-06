@@ -15,6 +15,9 @@ import SubscriptionBanner from '../../features/subscription/components/Subscript
 // 🧪 Dev Practice Mode Banner
 import PracticeBanner from '../../features/developer/components/PracticeBanner';
 
+// 🔍 Global Search (har role apni permitted cheezein search kare)
+import { GlobalSearch } from './GlobalSearch';
+
 interface EnterpriseLayoutProps {
   children: React.ReactNode;
 }
@@ -78,6 +81,9 @@ export const EnterpriseLayout: React.FC<EnterpriseLayoutProps> = ({ children }) 
               </div>
             </div>
           </div>
+
+          {/* 🔍 GLOBAL SEARCH — "Search everything you can access" */}
+          <GlobalSearch />
 
           <div className="flex items-center space-x-6">
             {/* Live Date & Time */}
