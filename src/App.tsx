@@ -7,11 +7,15 @@ import SeedStaffData from './features/system/SeedStaffData';
 import AIAgentScreen from './features/aiAgent/components/AIAgentScreen';
 
 // --- Contexts ---
-import { AuthProvider }       from './contexts/AuthContext';
-import { UnitConfigProvider } from './contexts/UnitConfigContext';
-import { BatchProvider }      from './contexts/BatchContext';
-import { LoginScreen }        from './features/auth/LoginScreen';
-import { ProtectedRoute }     from './components/ProtectedRoute';
+import { AuthProvider }         from './contexts/AuthContext';
+import { UnitConfigProvider }   from './contexts/UnitConfigContext';
+import { BatchProvider }        from './contexts/BatchContext';
+import { SubscriptionProvider } from './contexts/SubscriptionContext';
+import { LoginScreen }          from './features/auth/LoginScreen';
+import { ProtectedRoute }       from './components/ProtectedRoute';
+
+// --- Subscription ---
+import { SubscriptionScreen } from './features/subscription/SubscriptionScreen';
 
 // --- Dashboards ---
 import { CompanyCommanderDashboard } from './features/dashboard/CompanyCommanderDashboard';
@@ -87,6 +91,7 @@ function App() {
   return (
     <AuthProvider>
       <UnitConfigProvider>
+        <SubscriptionProvider>
         <BatchProvider>
           <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
             <Routes>
@@ -429,6 +434,14 @@ function App() {
                   SYSTEM ROUTES (CC Only)
               ════════════════════════════════ */}
               <Route
+                path="/subscription"
+                element={
+                  <ProtectedRoute allowedRoles={['Company Commander']}>
+                    <EnterpriseLayout><SubscriptionScreen /></EnterpriseLayout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="/settings"
                 element={
                   <ProtectedRoute allowedRoles={['Company Commander']}>
@@ -451,6 +464,7 @@ function App() {
             </Routes>
           </Router>
         </BatchProvider>
+        </SubscriptionProvider>
       </UnitConfigProvider>
     </AuthProvider>
   );

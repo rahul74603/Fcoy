@@ -9,6 +9,9 @@ import { useUnitConfig } from '../../contexts/UnitConfigContext';
 // 🆕 Notification System Import
 import NotificationBell from '../../features/notifications/NotificationBell';
 
+// 🆕 Subscription Expiry Banner
+import SubscriptionBanner from '../../features/subscription/components/SubscriptionBanner';
+
 interface EnterpriseLayoutProps {
   children: React.ReactNode;
 }
@@ -118,6 +121,9 @@ export const EnterpriseLayout: React.FC<EnterpriseLayoutProps> = ({ children }) 
             </div>
           </div>
         </header>
+
+        {/* 🆕 Subscription Expiry / Grace / Expired Warning */}
+        <SubscriptionBanner />
 
         {/* Scrollable Page Content */}
         <main className="flex-1 overflow-x-hidden overflow-y-auto p-4 custom-scrollbar bg-slate-50">

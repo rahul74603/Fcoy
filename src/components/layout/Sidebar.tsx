@@ -512,6 +512,7 @@ export const Sidebar = () => {
                   icon={Settings}
                   menuKey="ccSystem"
                 >
+                  <SubItem title="👑 Subscription & License" path="/subscription" dot="bg-amber-400" />
                   <SubItem title="Reports Center" path="/reports" dot="bg-blue-400" />
                   <SubItem title="Settings" path="/settings" dot="bg-slate-400" />
                   <SubItem title="User Management" path="/users" dot="bg-purple-400" />
