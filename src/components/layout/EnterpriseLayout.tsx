@@ -95,7 +95,7 @@ export const EnterpriseLayout: React.FC<EnterpriseLayoutProps> = ({ children }) 
             </div>
 
             {/* 🆕 LIVE NOTIFICATION BELL (Was static before) */}
-            <NotificationBell />
+            <div className="print:hidden"><NotificationBell /></div>
 
             {/* Dynamic User Profile & Logout */}
             <div className="flex items-center space-x-4 pl-2 border-l border-slate-300">
@@ -116,7 +116,7 @@ export const EnterpriseLayout: React.FC<EnterpriseLayoutProps> = ({ children }) 
               {/* Logout Button */}
               <button
                 onClick={logout}
-                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-sm transition-colors border border-transparent hover:border-red-200"
+                className="print:hidden p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-sm transition-colors border border-transparent hover:border-red-200"
                 title="Secure Logout"
               >
                 <LogOut size={18} />
@@ -126,10 +126,10 @@ export const EnterpriseLayout: React.FC<EnterpriseLayoutProps> = ({ children }) 
         </header>
 
         {/* 🧪 Practice Mode Banner (sirf dev account ko) */}
-        <PracticeBanner />
+        <div className="app-banner"><PracticeBanner /></div>
 
         {/* 🆕 Subscription Expiry / Grace / Expired Warning */}
-        <SubscriptionBanner />
+        <div className="app-banner"><SubscriptionBanner /></div>
 
         {/* Scrollable Page Content */}
         <main className="flex-1 overflow-x-hidden overflow-y-auto p-4 custom-scrollbar bg-slate-50">

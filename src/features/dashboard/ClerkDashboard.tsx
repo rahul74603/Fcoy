@@ -14,6 +14,7 @@ import {
 import { db } from '../../config/firebase';
 import { useBatch } from '../../contexts/BatchContext';
 import { useNavigate } from 'react-router-dom';
+import { ReportButton } from '../../components/common/ReportButton';
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -512,6 +513,7 @@ const navigate = useNavigate();
               className="bg-military-800 text-white px-3 py-1.5 text-[10px] font-bold uppercase hover:bg-military-700 flex items-center gap-1.5 border border-military-600">
               <RefreshCw size={12} /> Refresh
             </button>
+        <ReportButton />
           </div>
         </div>
         {lastRefresh && (

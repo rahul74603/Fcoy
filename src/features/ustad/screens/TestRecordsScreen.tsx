@@ -25,6 +25,7 @@ import {
 } from '../types/testRecord.types';
 import FormModal from '../components/shared/FormModal';
 import ConfirmDialog from '../components/shared/ConfirmDialog';
+import { ReportButton } from '../../../components/common/ReportButton';
 
 const TestResultDetailsPanel: React.FC<{ test: TestRecord }> = ({ test }) => {
   const [openRows, setOpenRows] = useState<Record<string, boolean>>({});
@@ -1600,6 +1601,7 @@ const TestRecordsScreen: React.FC = () => {
                 className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm"
               />
             </div>
+            <ReportButton className="self-center" />
             <div className="flex gap-2 text-xs">
               <span className="bg-green-100 text-green-700 px-2 py-1 rounded-full font-bold">
                 Pass: {results.filter(r => r.status === 'pass').length}

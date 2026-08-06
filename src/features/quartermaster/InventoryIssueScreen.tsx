@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { useAuth } from '../../contexts/AuthContext';
+import { ReportButton } from '../../components/common/ReportButton';
 
 const SHOE_SIZES  = ['5', '6', '7', '8', '9', '10', '11', '12', '13'];
 const SHIRT_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'];
@@ -1204,6 +1205,7 @@ export const InventoryIssueScreen: React.FC = () => {
           <RefreshCw size={12} className={itemsLoading ? 'animate-spin' : ''} />
           Refresh Stock
         </button>
+        <ReportButton />
       </div>
 
       {/* STOCK SUMMARY */}

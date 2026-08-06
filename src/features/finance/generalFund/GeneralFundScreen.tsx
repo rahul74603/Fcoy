@@ -30,6 +30,7 @@ import {
 import { BILL_STATUS_CONFIG } from '../shared/constants';
 import type { Vendor, VendorEntry, BillAttachment } from '../vendors/types';
 import BillPreviewModal from '../shared/BillPreviewModal';
+import { ReportButton } from '../../../components/common/ReportButton';
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -819,6 +820,7 @@ export const GeneralFundScreen: React.FC = () => {
         >
           <RefreshCw size={12} className={dataLoading ? 'animate-spin' : ''} /> Refresh
         </button>
+        <ReportButton />
       </div>
 
       {/* ALERTS */}

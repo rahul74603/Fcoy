@@ -261,13 +261,13 @@ export const Sidebar = () => {
       {isSidebarOpen && (
         <div
           onClick={() => setIsSidebarOpen(false)}
-          className="fixed inset-0 bg-black/30 z-30 lg:hidden"
+          className="app-sidebar fixed inset-0 bg-black/30 z-30 lg:hidden"
         />
       )}
 
       {/* SIDEBAR WRAPPER */}
       <div
-        className={`relative h-full flex-shrink-0 overflow-visible transition-all duration-300 ease-in-out ${
+        className={`app-sidebar relative h-full flex-shrink-0 overflow-visible transition-all duration-300 ease-in-out ${
           isSidebarOpen ? 'w-64' : 'w-0'
         }`}
       >
@@ -542,7 +542,7 @@ export const Sidebar = () => {
 
           {/* FOOTER */}
           <div className="p-4 bg-military-950 border-t border-military-800 text-xs text-military-400 text-center">
-            v1.2.1 · Owner Panel
+            v1.3.0 · Report System
           </div>
 
         </div>

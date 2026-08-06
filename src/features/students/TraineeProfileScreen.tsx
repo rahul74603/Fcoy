@@ -15,6 +15,7 @@ import { db } from '../../config/firebase';
 
 import { useTraineeSearch } from '../../hooks/useTraineeSearch';
 import type { TraineeSearchResult } from '../../hooks/useTraineeSearch';
+import { ReportButton } from '../../components/common/ReportButton';
 
 type TraineeData = TraineeSearchResult;
 
@@ -1156,6 +1157,7 @@ export const TraineeProfileScreen = () => {
                     className="text-[10px] font-bold text-military-700 flex items-center gap-1 border border-slate-300 px-2 py-1 hover:bg-slate-50">
                     <RefreshCw size={12} className={qmCatalogLoading ? 'animate-spin' : ''} />Refresh QM
                   </button>
+        <ReportButton />
                 </div>
 
                 {(() => {

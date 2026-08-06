@@ -22,6 +22,7 @@ import {
 } from '../shared/utils';
 import type { Vendor, VendorItem, VendorEntry, BillAttachment } from './types';
 import BillPreviewModal from '../shared/BillPreviewModal';
+import { ReportButton } from '../../../components/common/ReportButton';
 export type { Vendor, VendorItem, VendorEntry, BillAttachment } from './types';
 
 
@@ -490,6 +491,7 @@ export const VendorManagementScreen: React.FC = () => {
             className="flex items-center gap-1.5 text-[11px] font-bold uppercase border border-slate-300 px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50 rounded">
             <RefreshCw size={12} className={dataLoading ? 'animate-spin' : ''} /> Refresh
           </button>
+        <ReportButton />
           <button onClick={() => { resetVendorForm(); setShowAddVendor(true); }}
             className="flex items-center gap-1.5 bg-green-700 text-white px-4 py-2 text-[11px] font-black uppercase hover:bg-green-800 rounded">
             <Plus size={13} /> Add Vendor

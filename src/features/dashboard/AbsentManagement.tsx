@@ -13,6 +13,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { useBatch } from '../../contexts/BatchContext';
+import { ReportButton } from '../../components/common/ReportButton';
 
 // ─── Types ───
 interface AbsentRecord {
@@ -595,6 +596,7 @@ export const AbsentManagement: React.FC = () => {
               <Search size={12} className="absolute left-2 top-1.5 text-slate-400" />
             </div>
           </div>
+          <ReportButton />
           <span className="text-[10px] font-bold text-slate-500 bg-white border px-2 py-0.5">
             {filteredRecords.length} Records
           </span>

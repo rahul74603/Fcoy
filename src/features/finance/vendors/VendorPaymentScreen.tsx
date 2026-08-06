@@ -23,6 +23,7 @@ import type { PaymentMode } from '../../shared/PaymentModeSelector';
 import { formatCurrency, formatDate } from '../shared/utils';
 import type { VendorEntry, Vendor, BillAttachment } from './types';
 import BillPreviewModal from '../shared/BillPreviewModal';
+import { ReportButton } from '../../../components/common/ReportButton';
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -635,6 +636,7 @@ export const VendorPaymentScreen: React.FC = () => {
           className="flex items-center gap-1.5 text-[11px] font-bold uppercase border border-slate-300 px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50 rounded">
           <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> Refresh
         </button>
+        <ReportButton />
       </div>
 
       {/* ALERTS */}

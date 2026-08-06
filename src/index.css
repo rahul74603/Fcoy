@@ -13,3 +13,48 @@
   background: #cbd5e1; 
   border-radius: 3px;
 }
+/* ═══════════════════════════════════════════════
+   📄 PRINT / PAGE REPORT — ReportButton (window.print)
+   Print pe: sidebar, banners, saare action buttons hide;
+   page ka data/table full-width clean output.
+   Header (unit + coy + date-time) = report letterhead.
+   ═══════════════════════════════════════════════ */
+@media print {
+  button,
+  [role="button"],
+  .app-sidebar,
+  .app-banner,
+  .app-no-print {
+    display: none !important;
+  }
+
+  .fixed {
+    position: absolute !important;
+  }
+
+  main,
+  .custom-scrollbar,
+  .overflow-y-auto,
+  .overflow-y-scroll {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+  }
+
+  * {
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  body,
+  #root {
+    background: #ffffff !important;
+  }
+
+  table {
+    page-break-inside: auto;
+  }
+  tr {
+    page-break-inside: avoid;
+  }
+}

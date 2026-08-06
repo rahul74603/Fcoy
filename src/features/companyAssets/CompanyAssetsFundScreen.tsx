@@ -40,6 +40,7 @@ import { BILL_STATUS_CONFIG } from '../finance/shared/constants';
 import type { Vendor, VendorEntry, VendorItem, BillAttachment } from '../finance/vendors/types';
 
 import BillPreviewModal from '../finance/shared/BillPreviewModal';
+import { ReportButton } from '../../components/common/ReportButton';
 
 
 // ─────────────────────────────────────────────
@@ -985,6 +986,7 @@ export const CompanyAssetsFundScreen: React.FC = () => {
           className="flex items-center gap-1.5 text-[11px] font-bold uppercase border border-slate-300 px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50 rounded">
           <RefreshCw size={12} className={dataLoading ? 'animate-spin' : ''} /> Refresh
         </button>
+        <ReportButton />
       </div>
 
       {/* BATCH SELECTOR CONTROL BAR */}
