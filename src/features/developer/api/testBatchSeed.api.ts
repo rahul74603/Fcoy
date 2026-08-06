@@ -131,14 +131,26 @@ const REC_CENTERS = ['STC Tekanpur', 'RTC Delhi', 'BTC Bhanu', 'STT Kashmir'] as
 const KIT_ITEMS = ['OG Uniform', 'BPT Dress', 'PT Shoes', 'Beret Cap', 'Belt', 'Kit Bag', 'Water Bottle', 'Bedding Set'];
 
 const STAFF_SEED = [
-  { name: 'Rajendra Prasad', rank: 'HC', spec: 'DEV PT', status: 'active' },
-  { name: 'Suresh Yadav', rank: 'NK', spec: 'DEV Weapon Handling', status: 'active' },
-  { name: 'Manoj Kumar', rank: 'CT', spec: 'DEV Map Reading', status: 'active' },
-  { name: 'Devi Singh Rathore', rank: 'Insp', spec: 'DEV Law & Order', status: 'active' },
+  { name: 'Rajendra Prasad', rank: 'Insp', spec: 'DEV Law & Order', status: 'active' },
+  { name: 'Devi Singh Rathore', rank: 'SI', spec: 'DEV Field Craft', status: 'active' },
+  { name: 'Suresh Yadav', rank: 'HC', spec: 'DEV Weapon Handling', status: 'active' },
   { name: 'Anil Sharma', rank: 'HC', spec: 'DEV First Aid', status: 'active' },
-  { name: 'Gurmeet Singh', rank: 'CT', spec: 'DEV Field Craft', status: 'active' },
+  { name: 'Vikram Singh', rank: 'HC', spec: 'DEV PT', status: 'active' },
+  { name: 'Sanjeev Kumar', rank: 'HC', spec: 'DEV Drill', status: 'active' },
   { name: 'Pramod Kumar', rank: 'NK', spec: 'DEV Drill', status: 'leave' },
   { name: 'Rohit Verma', rank: 'CT', spec: 'DEV BSF Ethics', status: 'td' },
+  { name: 'Manoj Kumar', rank: 'NK', spec: 'DEV Map Reading', status: 'active' },
+  { name: 'Gurmeet Singh', rank: 'CT', spec: 'DEV Field Craft', status: 'active' },
+  { name: 'Deepak Choudhary', rank: 'CT', spec: 'DEV PT', status: 'active' },
+  { name: 'Sachin Kumar', rank: 'CT', spec: 'DEV Weapon Handling', status: 'active' },
+  { name: 'Ramesh Chandra', rank: 'NK', spec: 'DEV First Aid', status: 'active' },
+  { name: 'Anuj Pratap Singh', rank: 'HC', spec: 'DEV Map Reading', status: 'active' },
+  { name: 'Mohan Lal', rank: 'CT', spec: 'DEV Drill', status: 'hospital' },
+  { name: 'Harish Rawat', rank: 'CT', spec: 'DEV BSF Ethics', status: 'active' },
+  { name: 'Kishor Singh', rank: 'NK', spec: 'DEV PT', status: 'leave' },
+  { name: 'Irfan Khan', rank: 'CT', spec: 'DEV Weapon Handling', status: 'active' },
+  { name: 'Baldev Singh', rank: 'HC', spec: 'DEV Field Craft', status: 'active' },
+  { name: 'Nitin Tyagi', rank: 'CT', spec: 'DEV Map Reading', status: 'active' },
 ] as const;
 
 const SUBJECTS_SEED = [

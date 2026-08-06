@@ -7,6 +7,7 @@ import { collection, addDoc, getDocs, deleteDoc, doc, query, where, updateDoc } 
 import { db } from '../../config/firebase';
 import { showDoc } from '../../utils/devDataFilter';
 import { useBatch } from '../../contexts/BatchContext';
+import { useAuth } from '../../contexts/AuthContext';
 
 // ═══════════════════════════════════════════════════════════
 // DUMMY DATA
@@ -67,7 +68,7 @@ const DUTY_TYPES = [
 // ═══════════════════════════════════════════════════════════
 // COMPONENT
 // ═══════════════════════════════════════════════════════════
-const SeedStaffData: React.FC = () => {
+const SeedStaffDataInner: React.FC = () => {
   const { activeBatch } = useBatch();
   const [status, setStatus] = useState<'idle' | 'busy'>('idle');
   const [logs, setLogs] = useState<string[]>([]);
@@ -573,6 +574,25 @@ const SeedStaffData: React.FC = () => {
       )}
     </div>
   );
+};
+
+// ─────────────────────────────────────────────
+// 🔒 DEV-ONLY GATE — Seed tools sirf Developer/Owner ko
+// ─────────────────────────────────────────────
+const SeedStaffData: React.FC = () => {
+  const { user } = useAuth();
+  if (!user?.isDeveloper) {
+    return (
+      <div className="max-w-lg mx-auto mt-16 bg-orange-50 border border-orange-300 rounded-xl p-6 text-center">
+        <AlertTriangle size={32} className="mx-auto mb-3 text-orange-500" />
+        <h2 className="text-sm font-black text-orange-800 uppercase">Developer Mode Only</h2>
+        <p className="text-xs text-orange-700 mt-1.5">
+          Seed tools sirf Developer account ke liye hain.
+        </p>
+      </div>
+    );
+  }
+  return <SeedStaffDataInner />;
 };
 
 export default SeedStaffData;
