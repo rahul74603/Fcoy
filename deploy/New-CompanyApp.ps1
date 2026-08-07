@@ -19,6 +19,11 @@
 #   -> VS Code / terminal band karke NAYA terminal kholo
 #   gcloud auth login        (browser me apna Google login)
 #   firebase login           (wahi Google login)
+#
+# NOTE: $ErrorActionPreference = 'Continue' RAKHA GAYA HAI (Stop nahi!).
+# PS5.1 me native command (gcloud/npm) ka stderr output Stop preference ke
+# saath NativeCommandError maar deta hai - isliye har step pe $LASTEXITCODE
+# manually check hota hai.
 # ===============================================================
 param(
   [Parameter(Mandatory=$true)][ValidatePattern('^[a-z0-9]+$')][string]$Code,
@@ -26,7 +31,7 @@ param(
   [switch]$SkipDeploy
 )
 
-$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Continue'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
@@ -34,7 +39,7 @@ function Fail([string]$m) { throw "[X] $m" }
 
 # -- Registry padho --
 $registryPath = "deploy\companies.json"
-$registry = Get-Content $registryPath -Raw | ConvertFrom-Json
+$registry = Get-Content $registryPath -Raw -ErrorAction Stop | ConvertFrom-Json
 $company = $registry.$Code
 if (-not $company) {
   $names = $registry.PSObject.Properties.Name -join ', '
@@ -66,7 +71,8 @@ foreach ($cmd in 'gcloud','firebase') {
 
 # -- 1. Project create (idempotent) --
 Write-Host ">> 1/7 Firebase project check/create..." -ForegroundColor Yellow
-$null = gcloud projects describe $projId --quiet 2>$null
+# cmd /c wrapper: native stderr se script NAHI maregi
+cmd /c "gcloud projects describe $projId --quiet >nul 2>&1"
 if ($LASTEXITCODE -ne 0) {
   Write-Host "  Project nahi mila - bana rahe hain..." -ForegroundColor DarkGray
   $dispName = "$($company.name)"
@@ -87,7 +93,7 @@ Write-Host "  [OK] APIs ON" -ForegroundColor Green
 
 # -- 3. Firestore database --
 Write-Host ">> 3/7 Firestore database (asia-south1)..." -ForegroundColor Yellow
-$null = gcloud firestore databases create --location=asia-south1 --project $projId --quiet 2>$null
+cmd /c "gcloud firestore databases create --location=asia-south1 --project $projId --quiet >nul 2>&1"
 # pehle se bana ho to bhi OK
 Write-Host "  [OK] Firestore ready (ya pehle se tha)" -ForegroundColor Green
 
@@ -98,7 +104,7 @@ try {
   $headers = @{ Authorization = "Bearer $token" }
   $body = @{ signIn = @{ email = @{ enabled = $true; passwordRequired = $true } } } | ConvertTo-Json -Depth 5
   $patchUrl = "https://identitytoolkit.googleapis.com/admin/v2/projects/$projId/config?updateMask=signIn.email.enabled,signIn.email.passwordRequired"
-  $null = Invoke-RestMethod -Method Patch -Uri $patchUrl -Headers $headers -Body $body -ContentType 'application/json'
+  $null = Invoke-RestMethod -Method Patch -Uri $patchUrl -Headers $headers -Body $body -ContentType 'application/json' -ErrorAction Stop
   Write-Host "  [OK] Email/Password ON" -ForegroundColor Green
 } catch {
   Fail "Auth API se Email/Password ON nahi hua. FALLBACK: https://console.firebase.google.com/project/$projId/authentication/providers -> Email/Password -> Enable -> Save. Phir script dobara chalao (sab idempotent hai)."
@@ -142,7 +148,7 @@ $company.authDomain = "$($sdk.authDomain)"
 $company.storageBucket = "$($sdk.storageBucket)"
 $company.messagingSenderId = "$($sdk.messagingSenderId)"
 $company.appId = "$($sdk.appId)"
-$registry | ConvertTo-Json -Depth 8 | Set-Content $registryPath -Encoding UTF8
+$registry | ConvertTo-Json -Depth 8 | Set-Content $registryPath -Encoding UTF8 -ErrorAction Stop
 Write-Host "  [OK] companies.json auto-update ho gaya (keys bhar gayi)" -ForegroundColor Green
 
 # -- 7. Build + Deploy --

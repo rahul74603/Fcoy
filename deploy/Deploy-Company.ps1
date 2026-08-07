@@ -18,15 +18,18 @@ param(
   [Parameter(Mandatory=$true)][string]$Code
 )
 
-$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Continue'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
+# NOTE: 'Continue' jaankaari se - PS5.1 me npm/firebase jaise native commands ka
+# stderr output 'Stop' ke saath NativeCommandError maar deta hai. Isliye har
+# npm/firebase call ke baad $LASTEXITCODE manually check kiya gaya hai.
 
 Write-Host ""
 Write-Host "================  COMPANY APP DEPLOY: $Code  ================" -ForegroundColor Cyan
 
 # -- 1. Registry padho --
-$registry = Get-Content "deploy\companies.json" -Raw | ConvertFrom-Json
+$registry = Get-Content "deploy\companies.json" -Raw -ErrorAction Stop | ConvertFrom-Json
 $company = $registry.$Code
 if (-not $company) {
   $names = $registry.PSObject.Properties.Name -join ', '
@@ -51,7 +54,7 @@ Write-Host ""
 $envPath = ".env"
 $backupPath = ".env.master.bak"
 if (Test-Path $envPath) {
-  Copy-Item $envPath $backupPath -Force
+  Copy-Item $envPath $backupPath -Force -ErrorAction Stop
   Write-Host "[OK] Master .env ka backup: $backupPath" -ForegroundColor DarkGray
 }
 
@@ -64,7 +67,7 @@ VITE_FIREBASE_STORAGE_BUCKET=$($company.storageBucket.Trim())
 VITE_FIREBASE_MESSAGING_SENDER_ID=$($company.messagingSenderId.Trim())
 VITE_FIREBASE_APP_ID=$($company.appId.Trim())
 "@
-Set-Content -Path $envPath -Value $envContent -Encoding ascii
+Set-Content -Path $envPath -Value $envContent -Encoding ascii -ErrorAction Stop
 Write-Host "[OK] .env ($Code ke Firebase keys se) likh diya" -ForegroundColor Green
 
 try {
@@ -95,7 +98,7 @@ try {
 finally {
   # -- 5. .env wapas master pe --
   if (Test-Path $backupPath) {
-    Move-Item $backupPath $envPath -Force
+    Move-Item $backupPath $envPath -Force -ErrorAction Stop
     Write-Host "[OK] .env wapas master pe restore ho gaya" -ForegroundColor DarkGray
   }
 }
