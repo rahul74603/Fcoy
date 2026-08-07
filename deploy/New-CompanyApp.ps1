@@ -109,27 +109,52 @@ Write-Host "  [OK] Firestore ready (ya pehle se tha)" -ForegroundColor Green
 
 # -- 4. Email/Password login ON --
 Write-Host ">> 4/7 Email/Password login ON..." -ForegroundColor Yellow
-$token = (gcloud auth print-access-token | Select-Object -First 1).Trim()
-$headers = @{ Authorization = "Bearer $token" }
 
-# 4a. GCP project ko FIREBASE project me badlo (identitytoolkit config tabhi kaam karti hai)
+# Google ka ASLI error message nikaaltta hai (PS5.1 ErrorDetails khaali hota hai)
+function Get-ErrBody([System.Exception]$e) {
+  try {
+    $r = $null
+    if ($e.Response) { $r = $e.Response }
+    elseif ($e.InnerException -and $e.InnerException.Response) { $r = $e.InnerException.Response }
+    if ($r) {
+      $sr = New-Object System.IO.StreamReader($r.GetResponseStream())
+      $txt = $sr.ReadToEnd()
+      return "$txt"
+    }
+  } catch {}
+  return ""
+}
+
+$token = (gcloud auth print-access-token | Select-Object -First 1).Trim()
+$headers = @{ Authorization = "Bearer $token"; 'x-goog-user-project' = $projId }
+
+# 4a. Diagnosis: kya token se Firebase API chalti hai?
+Write-Host "  (Diagnosis: Firebase API access test...)" -ForegroundColor DarkGray
+try {
+  $null = Invoke-RestMethod -Method Get -Uri "https://firebase.googleapis.com/v1beta1/projects/$projId" -Headers $headers -ErrorAction Stop
+  Write-Host "  [OK] Firebase API access chal raha hai" -ForegroundColor Green
+} catch {
+  $d = Get-ErrBody $_.Exception
+  Write-Host "  [!] Firebase API access fail. GOOGLE: $d" -ForegroundColor Red
+}
+
+# 4b. GCP project ko FIREBASE project me badlo (identitytoolkit config tabhi kaam karti hai)
 Write-Host "  Project ko Firebase se jod rahe hain..." -ForegroundColor DarkGray
 try {
   $null = Invoke-RestMethod -Method Post -Uri "https://firebase.googleapis.com/v1beta1/projects/${projId}:addFirebase" -Headers $headers -Body '{}' -ContentType 'application/json' -ErrorAction Stop
   Write-Host "  [OK] Project Firebase se jud gaya" -ForegroundColor Green
 } catch {
-  $linkDetail = "$($_.ErrorDetails.Message)"
-  if ($linkDetail -match 'already') {
+  $linkBody = Get-ErrBody $_.Exception
+  if ($linkBody -match 'already') {
     Write-Host "  [OK] Pehle se Firebase project hai" -ForegroundColor DarkGray
   } else {
-    Write-Host "  (Link response: $linkDetail - aage retry me solve ho sakta hai)" -ForegroundColor DarkGray
+    Write-Host "  (Link fail - aage retry karenge. GOOGLE KA JAWAB:)" -ForegroundColor DarkGray
+    if ($linkBody) { Write-Host "  $linkBody" -ForegroundColor DarkGray }
   }
 }
 Start-Sleep -Seconds 10
 
 $authOk = $false
-$lastErr = ""
-$lastDetail = ""
 for ($try = 1; $try -le 5; $try++) {
   try {
     $body = @{ signIn = @{ email = @{ enabled = $true; passwordRequired = $true } } } | ConvertTo-Json -Depth 5
@@ -138,17 +163,16 @@ for ($try = 1; $try -le 5; $try++) {
     $authOk = $true
     break
   } catch {
-    $lastErr = "$($_.Exception.Message)"
-    $lastDetail = "$($_.ErrorDetails.Message)"
-    Write-Host "  ...try $try/5 fail ($lastErr), 10 sec wait..." -ForegroundColor DarkGray
+    Write-Host "  ...try $try/5 fail, 10 sec wait..." -ForegroundColor DarkGray
+    $d = Get-ErrBody $_.Exception
+    if ($d) { Write-Host "  GOOGLE KA JAWAB: $d" -ForegroundColor DarkGray }
     Start-Sleep -Seconds 10
   }
 }
 if (-not $authOk) {
   Write-Host ""
-  Write-Host "  ASLI ERROR: $lastErr" -ForegroundColor Red
-  if ($lastDetail) { Write-Host "  SERVER DETAIL: $lastDetail" -ForegroundColor Red }
-  Fail "Auth API se Email/Password ON nahi hua. FALLBACK (2 min): console.firebase.google.com -> Add project -> existing '$projId' chuno -> phir Authentication -> Email/Password -> Enable -> Save. Uske baad script dobara chalao (idempotent hai)."
+  Write-Host "  Auth PATCH 5 baar fail. Upar 'GOOGLE KA JAWAB' me exact wajah hai." -ForegroundColor Red
+  Fail "Email/Password auto-ON nahi hua. FALLBACK (2 min): console.firebase.google.com -> Add project -> existing '$projId' chuno -> phir Authentication -> Email/Password -> Enable -> Save. Phir script dobara chalao (idempotent hai)."
 }
 Write-Host "  [OK] Email/Password ON" -ForegroundColor Green
 
