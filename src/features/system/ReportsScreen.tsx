@@ -266,7 +266,7 @@ const printReport = (title: string, headers: string[], rows: string[][], summary
 // ─────────────────────────────────────────────
 export const ReportsScreen: React.FC = () => {
   const { user } = useAuth();
-  const { activeBatch } = useBatch();
+  const { currentBatch: activeBatch } = useBatch(); // ⛓️ STRICT: selected batch follow
   const recordedBy = user?.email ?? 'System';
 
   // ── DATA STATES ──

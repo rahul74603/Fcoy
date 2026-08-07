@@ -1264,7 +1264,7 @@ export const CompanyCommanderDashboard: React.FC = () => {
   const navigate = useNavigate();
   const go = useCallback((route: string) => { navigate(route); }, [navigate]);
 
-  const { activeBatch } = useBatch();
+  const { currentBatch: activeBatch } = useBatch(); // ⛓️ STRICT: selected batch follow
   const hasBatch = !!activeBatch;
 
   // ── State ──

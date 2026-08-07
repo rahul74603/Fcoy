@@ -648,10 +648,10 @@ const KitStatusPanel: React.FC<KitStatusPanelProps> = ({
 export const InventoryIssueScreen: React.FC = () => {
   const { user } = useAuth();
   const location = useLocation();
-  const { activeBatch } = useBatch();
+  const { currentBatch: activeBatch } = useBatch(); // ⛓️ STRICT: selected batch follow
   const issuedBy = user?.email ?? 'Quarter Master';
   // Records created before batches existed are owned by the current active batch.
-  const belongsToActiveBatch = (data: any) => !data.batchId || data.batchId === activeBatch?.id;
+  const belongsToActiveBatch = (data: any) => data.batchId ? data.batchId === activeBatch?.id : activeBatch?.status === 'active';
 
   const [searchQuery,   setSearchQuery]   = useState('');
   const [trainee,       setTrainee]       = useState<Trainee | null>(null);

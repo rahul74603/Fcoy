@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from './Sidebar';
-import { User, Shield, LogOut, Loader2, MapPin } from 'lucide-react';
+import { User, Shield, LogOut, Loader2, MapPin, Layers } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useBatch } from '../../contexts/BatchContext';
 import { useUnitConfig } from '../../contexts/UnitConfigContext';
 
 // 🆕 Notification System Import
@@ -21,6 +22,41 @@ import PracticeBanner from '../../features/developer/components/PracticeBanner';
 interface EnterpriseLayoutProps {
   children: React.ReactNode;
 }
+
+// ⛓️ BATCH SWITCHER — STRICT BATCH RULE
+// Is dropdown se jo batch select hoga, POORA APP (funds, dashboards,
+// search, reports — sab) sirf USHI batch ka data dikhayega.
+// 🧪 Test batch (dev data) sirf dev account ki list me aata hai.
+const BatchSwitcher: React.FC = () => {
+  const { allBatches, currentBatch, setSelectedBatch } = useBatch();
+  if (allBatches.length === 0) return null;
+  const cur = currentBatch as unknown as Record<string, unknown> | null;
+  const isDevBatch = cur?.isDevData === true;
+  return (
+    <div
+      className={`hidden xl:flex items-center gap-1.5 border-2 rounded-lg px-2.5 py-1.5 ${
+        isDevBatch ? 'bg-purple-50 border-purple-400' : currentBatch?.status === 'active' ? 'bg-green-50 border-green-400' : 'bg-slate-50 border-slate-400'
+      }`}
+      title="Batch Rule: har screen sirf SELECTED batch ka data dikhayegi — 2 batches ka data kabhi mix nahi"
+    >
+      <Layers size={13} className={isDevBatch ? 'text-purple-700' : 'text-green-700'} />
+      <select
+        value={currentBatch?.id ?? ''}
+        onChange={e => setSelectedBatch(e.target.value)}
+        className="bg-transparent text-[11px] font-black uppercase text-slate-800 outline-none cursor-pointer max-w-[170px]"
+      >
+        {allBatches.map(b => {
+          const rec = b as unknown as Record<string, unknown>;
+          return (
+            <option key={b.id} value={b.id}>
+              {rec.isDevData === true ? '🧪 ' : ''}{b.batchNumber}{b.status === 'active' ? ' ●LIVE' : ' (completed)'}
+            </option>
+          );
+        })}
+      </select>
+    </div>
+  );
+};
 
 export const EnterpriseLayout: React.FC<EnterpriseLayoutProps> = ({ children }) => {
   const [time, setTime] = useState(new Date());
@@ -84,6 +120,7 @@ export const EnterpriseLayout: React.FC<EnterpriseLayoutProps> = ({ children }) 
 
           {/* 🔍 GLOBAL SEARCH — "Search everything you can access" */}
           <GlobalSearch />
+          <BatchSwitcher />
 
           <div className="flex items-center space-x-6">
             {/* Live Date & Time */}

@@ -309,8 +309,8 @@ const RecoveryPayModal: React.FC<{
 // ═════════════════════════════════════════════
 export const TrainingFundScreen: React.FC = () => {
   const { user } = useAuth();
-  const { activeBatch } = useBatch();
-  const belongsToBatch = (data: any) => !data.batchId || data.batchId === activeBatch?.id;
+  const { currentBatch: activeBatch } = useBatch(); // ⛓️ STRICT: selected batch follow
+  const belongsToBatch = (data: any) => data.batchId ? data.batchId === activeBatch?.id : activeBatch?.status === 'active';
   const recordedBy = user?.email ?? 'Quarter Master';
 
   // ── DATA STATE ──

@@ -1,7 +1,7 @@
 // src/contexts/SubscriptionContext.tsx
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import {
   UnitSubscription, SubscriptionState,
@@ -45,16 +45,43 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
 
     setLoading(true);
+    let cancelled = false;
 
-    // 🔥 Real-time listener — /subscription screen pe change hote hi
-    // banner/status poore app me INSTANT update
+    // 🔥 Real-time listener — unit (is app) ki subscription
     const unsubscribe = onSnapshot(
       doc(db, 'subscription', 'current'),
-      (snap) => {
-        const sub = snap.exists() ? (snap.data() as UnitSubscription) : null;
-        setSubscription(sub);
-        setState(computeSubscriptionState(sub));
-        setLoading(false);
+      async (snap) => {
+        if (snap.exists()) {
+          const sub = snap.data() as UnitSubscription;
+          if (!cancelled) {
+            setSubscription(sub);
+            setState(computeSubscriptionState(sub));
+            setLoading(false);
+          }
+          return;
+        }
+        // 👑 Unit sub nahi hai → logged-in user ka APNI company ka plan dekho
+        // (CC customer ke users doc me customerId hota hai)
+        if (user.customerId) {
+          try {
+            const cs = await getDoc(doc(db, 'customerSubscriptions', user.customerId));
+            const sub = cs.exists() ? (cs.data() as UnitSubscription) : null;
+            if (!cancelled) {
+              setSubscription(sub);
+              setState(computeSubscriptionState(sub));
+              setLoading(false);
+            }
+          } catch (e) {
+            console.error('Customer subscription fetch error:', e);
+            if (!cancelled) setLoading(false);
+          }
+          return;
+        }
+        if (!cancelled) {
+          setSubscription(null);
+          setState(INITIAL_STATE);
+          setLoading(false);
+        }
       },
       (error) => {
         console.error('Subscription listener error:', error);
@@ -64,7 +91,7 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
       },
     );
 
-    return () => unsubscribe();
+    return () => { cancelled = true; unsubscribe(); };
   }, [user]);
 
   // Din raat ko cross ho jayein to har ghante status re-check

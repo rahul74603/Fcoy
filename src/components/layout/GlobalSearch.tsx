@@ -4,6 +4,7 @@ import { Search, X, ArrowRight, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { db } from '../../config/firebase';
 import { showDoc } from '../../utils/devDataFilter';
+import { batchScopeRule } from '../../utils/batchScope';
 import { useAuth } from '../../contexts/AuthContext';
 
 interface Result { id: string; title: string; detail: string; collection: string; path: string; }
@@ -31,7 +32,7 @@ export const GlobalSearch: React.FC = () => {
         const found: Result[] = [];
         await Promise.all(allowed.map(async source => {
           const snap = await getDocs(collection(db, source.name));
-          snap.docs.forEach(d => { const data = d.data(); if (!showDoc(data)) return; /* 🧪 dev data non-dev ko na dikhe */ const text = Object.values(data).map(stringify).join(' ').toLowerCase(); if (text.includes(term)) { const title = stringify(data.name || data.itemName || data.traineeName || data.vendorName || data.subjectName || data.batchNumber || d.id); const detail = [data.chestNo, data.email, data.code, data.category, data.amount != null ? `₹${data.amount}` : '', data.quantity != null ? `Qty ${data.quantity}` : ''].filter(Boolean).join(' · '); found.push({ id: d.id, title: title || d.id, detail, collection: source.name, path: source.path }); } });
+          snap.docs.forEach(d => { const data = d.data(); if (!showDoc(data) || !batchScopeRule(data)) return; /* 🧪 dev data + ⛓️ batch rule */ const text = Object.values(data).map(stringify).join(' ').toLowerCase(); if (text.includes(term)) { const title = stringify(data.name || data.itemName || data.traineeName || data.vendorName || data.subjectName || data.batchNumber || d.id); const detail = [data.chestNo, data.email, data.code, data.category, data.amount != null ? `₹${data.amount}` : '', data.quantity != null ? `Qty ${data.quantity}` : ''].filter(Boolean).join(' · '); found.push({ id: d.id, title: title || d.id, detail, collection: source.name, path: source.path }); } });
         }));
         setResults(found.slice(0, 30));
       } catch (e) { console.error('Global search error', e); } finally { setLoading(false); }

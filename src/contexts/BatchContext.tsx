@@ -7,6 +7,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { isDevViewer, onDevViewerChange, DEV_TAG } from '../utils/devDataFilter';
+import { setBatchScope } from '../utils/batchScope';
 
 // ─── Types ───
 export interface Batch {
@@ -26,6 +27,9 @@ export interface Batch {
 
 interface BatchContextType {
   activeBatch: Batch | null;
+  currentBatch: Batch | null; // ⛓️ SELECTED batch (default = active) — screens isko follow karein
+  selectedBatchId: string | null;
+  setSelectedBatch: (batchId: string | null) => void;
   allBatches: Batch[];
   loading: boolean;
   error: string;
@@ -48,6 +52,9 @@ const BatchContext = createContext<BatchContextType>({
   allBatches: [],
   loading: true,
   error: '',
+  currentBatch: null,
+  selectedBatchId: null,
+  setSelectedBatch: () => {},
   createNewBatch: async () => {},
   completeBatch: async () => {},
   refreshBatches: () => {},
@@ -59,6 +66,15 @@ export const useBatch = () => useContext(BatchContext);
 export const BatchProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [activeBatch, setActiveBatch] = useState<Batch | null>(null);
   const [allBatches, setAllBatches] = useState<Batch[]>([]);
+  // ⛓️ STRICT BATCH RULE — user ka selected batch (persisted)
+  const [selectedBatchId, setSelectedBatchIdState] = useState<string | null>(
+    () => localStorage.getItem('fcoy_selected_batch_v1')
+  );
+  const setSelectedBatch = (batchId: string | null) => {
+    setSelectedBatchIdState(batchId);
+    if (batchId) localStorage.setItem('fcoy_selected_batch_v1', batchId);
+    else localStorage.removeItem('fcoy_selected_batch_v1');
+  };
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -98,6 +114,21 @@ export const BatchProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     return () => unsubscribe();
   }, [isDev]);
+
+  // ⛓️ currentBatch = selected (agar list me hai) warna active — STRICT RULE ka base
+  const currentBatch = (() => {
+    if (selectedBatchId) {
+      const chosen = allBatches.find(b => b.id === selectedBatchId);
+      if (chosen) return chosen;
+    }
+    return activeBatch;
+  })();
+
+  // Rule engine ko sync karo (screens/apis batchScopeRule use karti hain)
+  useEffect(() => {
+    const isRealActive = Boolean(currentBatch && currentBatch.status === 'active' && (currentBatch as unknown as Record<string, unknown>)[DEV_TAG] !== true);
+    setBatchScope(currentBatch?.id ?? null, isRealActive);
+  }, [currentBatch]);
 
   // ── Create New Batch ──
   const createNewBatch = useCallback(async (data: CreateBatchForm) => {
@@ -176,6 +207,9 @@ export const BatchProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   return (
     <BatchContext.Provider value={{
       activeBatch,
+      currentBatch,
+      selectedBatchId,
+      setSelectedBatch,
       allBatches,
       loading,
       error,

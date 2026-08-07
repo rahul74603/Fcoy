@@ -34,6 +34,7 @@ interface AppUser {
   isActive: boolean;
   createdBy: string;
   isDeveloper: boolean; // 🧪 Dev/Practice account flag
+  customerId?: string | null; // 👑 Customer (CC) account ki Customer ID
 }
 
 interface AuthContextType {
@@ -108,6 +109,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           isActive:    userData['isActive'] !== false,
           createdBy:   String(userData['createdBy']   ?? 'Unknown'),
           isDeveloper: Boolean(userData['isDeveloper'] ?? false),
+          customerId:  userData['customerId'] != null ? String(userData['customerId']) : null,
         });
         setDevViewer(Boolean(userData['isDeveloper'] ?? false));
       } else {
@@ -130,6 +132,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             isActive:    userData['isActive'] !== false,
             createdBy:   String(userData['createdBy']   ?? 'Unknown'),
             isDeveloper: isDev,
+            customerId:  userData['customerId'] != null ? String(userData['customerId']) : null,
           });
           setDevViewer(isDev);
         } else {
@@ -219,6 +222,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           isActive:    userData['isActive'] !== false,
           createdBy:   String(userData['createdBy']   ?? 'Unknown'),
           isDeveloper: Boolean(userData['isDeveloper'] ?? false),
+          customerId:  userData['customerId'] != null ? String(userData['customerId']) : null,
         });
         setDevViewer(Boolean(userData['isDeveloper'] ?? false));
 

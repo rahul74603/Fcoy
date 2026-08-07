@@ -148,8 +148,8 @@ const CardSkeleton = () => (
 export const QuarterMasterDashboard: React.FC = () => {
   const navigate = useNavigate();
   const go = (route: string) => navigate(route);
-  const { activeBatch } = useBatch();
-  const belongsToBatch = (data: any) => !data.batchId || data.batchId === activeBatch?.id;
+  const { currentBatch: activeBatch } = useBatch(); // ⛓️ STRICT: selected batch follow
+  const belongsToBatch = (data: any) => data.batchId ? data.batchId === activeBatch?.id : activeBatch?.status === 'active';
 
   // ── STATE ──
   const [loading, setLoading] = useState(true);
