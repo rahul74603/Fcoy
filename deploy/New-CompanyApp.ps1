@@ -109,15 +109,29 @@ Write-Host "  [OK] Firestore ready (ya pehle se tha)" -ForegroundColor Green
 
 # -- 4. Email/Password login ON --
 Write-Host ">> 4/7 Email/Password login ON..." -ForegroundColor Yellow
-# Pehle project ko FIREBASE se jodo (warna Identity Toolkit config reject karta hai)
-cmd /c "firebase projects:addfirebase $projId --non-interactive >nul 2>&1"
-Start-Sleep -Seconds 5
+$token = (gcloud auth print-access-token | Select-Object -First 1).Trim()
+$headers = @{ Authorization = "Bearer $token" }
+
+# 4a. GCP project ko FIREBASE project me badlo (identitytoolkit config tabhi kaam karti hai)
+Write-Host "  Project ko Firebase se jod rahe hain..." -ForegroundColor DarkGray
+try {
+  $null = Invoke-RestMethod -Method Post -Uri "https://firebase.googleapis.com/v1beta1/projects/${projId}:addFirebase" -Headers $headers -Body '{}' -ContentType 'application/json' -ErrorAction Stop
+  Write-Host "  [OK] Project Firebase se jud gaya" -ForegroundColor Green
+} catch {
+  $linkDetail = "$($_.ErrorDetails.Message)"
+  if ($linkDetail -match 'already') {
+    Write-Host "  [OK] Pehle se Firebase project hai" -ForegroundColor DarkGray
+  } else {
+    Write-Host "  (Link response: $linkDetail - aage retry me solve ho sakta hai)" -ForegroundColor DarkGray
+  }
+}
+Start-Sleep -Seconds 10
+
 $authOk = $false
 $lastErr = ""
-for ($try = 1; $try -le 3; $try++) {
+$lastDetail = ""
+for ($try = 1; $try -le 5; $try++) {
   try {
-    $token = (gcloud auth print-access-token | Select-Object -First 1).Trim()
-    $headers = @{ Authorization = "Bearer $token" }
     $body = @{ signIn = @{ email = @{ enabled = $true; passwordRequired = $true } } } | ConvertTo-Json -Depth 5
     $patchUrl = "https://identitytoolkit.googleapis.com/admin/v2/projects/$projId/config?updateMask=signIn.email.enabled,signIn.email.passwordRequired"
     $null = Invoke-RestMethod -Method Patch -Uri $patchUrl -Headers $headers -Body $body -ContentType 'application/json' -ErrorAction Stop
@@ -125,14 +139,16 @@ for ($try = 1; $try -le 3; $try++) {
     break
   } catch {
     $lastErr = "$($_.Exception.Message)"
-    Write-Host "  ...try $try/3 fail, 8 sec rukti hui APIs ka wait kar rahe..." -ForegroundColor DarkGray
-    Start-Sleep -Seconds 8
+    $lastDetail = "$($_.ErrorDetails.Message)"
+    Write-Host "  ...try $try/5 fail ($lastErr), 10 sec wait..." -ForegroundColor DarkGray
+    Start-Sleep -Seconds 10
   }
 }
 if (-not $authOk) {
   Write-Host ""
   Write-Host "  ASLI ERROR: $lastErr" -ForegroundColor Red
-  Fail "Auth API se Email/Password ON nahi hua. FALLBACK (30 sec): https://console.firebase.google.com/project/$projId/authentication/providers -> Email/Password -> Enable -> Save. Phir script dobara chalao (sab idempotent hai)."
+  if ($lastDetail) { Write-Host "  SERVER DETAIL: $lastDetail" -ForegroundColor Red }
+  Fail "Auth API se Email/Password ON nahi hua. FALLBACK (2 min): console.firebase.google.com -> Add project -> existing '$projId' chuno -> phir Authentication -> Email/Password -> Enable -> Save. Uske baad script dobara chalao (idempotent hai)."
 }
 Write-Host "  [OK] Email/Password ON" -ForegroundColor Green
 
