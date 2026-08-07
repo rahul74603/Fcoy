@@ -37,10 +37,10 @@ foreach ($k in $required) {
     throw "❌ companies.json → $Code → '$k' KHALI hai. Pehle Firebase Console me project banao, web app ki keys paste karo, phir dobara chalao."
   }
 }
-$pid = $company.projectId.Trim()
+$projId = $company.projectId.Trim()
 Write-Host "Company : $($company.name)"
-Write-Host "Project : $pid"
-Write-Host "URL     : https://$pid.web.app/first-run  (deploy ke baad WIZARD yahan chalega)"
+Write-Host "Project : $projId"
+Write-Host "URL     : https://$projId.web.app/first-run  (deploy ke baad WIZARD yahan chalega)"
 Write-Host ""
 
 # ── 2. Master .env ka backup + company ka .env likho ──
@@ -75,15 +75,15 @@ try {
   if ($LASTEXITCODE -ne 0) { throw "Build fail ho gaya — upar error dekho" }
 
   # ── 4. Deploy ──
-  Write-Host "▶ firebase deploy ($pid)..." -ForegroundColor Yellow
-  firebase deploy --only hosting,firestore:rules --project $pid
+  Write-Host "▶ firebase deploy ($projId)..." -ForegroundColor Yellow
+  firebase deploy --only hosting,firestore:rules --project $projId
   if ($LASTEXITCODE -ne 0) { throw "firebase deploy fail — 'firebase login' chala hai na? Project me Hosting/Firestore enabled hai?" }
 
   Write-Host ""
   Write-Host "════════════════ ✅ DEPLOY COMPLETE: $($company.name) ════════════════" -ForegroundColor Green
   Write-Host ""
   Write-Host "AGLE 3 STEPS (abhi karo):" -ForegroundColor Cyan
-  Write-Host "  1. Kholo:  https://$pid.web.app/first-run"
+  Write-Host "  1. Kholo:  https://$projId.web.app/first-run"
   Write-Host "  2. Wizard bharo → pehla CC account + letterhead + plan banega"
   Write-Host "  3. Master app ke Owner Panel me 🌐 REMOTE customer record + plan assign karo"
   Write-Host ""

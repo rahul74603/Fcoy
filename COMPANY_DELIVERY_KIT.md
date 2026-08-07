@@ -47,7 +47,37 @@ kuch mix hone ka scope hi nahi. ✅
 
 ---
 
-## 🚀 EK COMPANY KO APP DENA — 4 STEPS (total ~15 min)
+## 🚀 EK COMPANY KO APP DENA — VS CODE SE FULL AUTO (RECOMMENDED)
+
+Console kholne ki zaroorat hi nahi — ek command sab kuch karti hai:
+project create → APIs → Firestore → Email/Password ON → web app keys →
+companies.json auto-fill → build → deploy → LIVE URL.
+
+### ONE-TIME SETUP (zindagi me sirf ek baar)
+```powershell
+winget install -e --id Google.CloudSDK
+# terminal BAND karke NAYA terminal kholo, phir:
+gcloud auth login      # browser me apna Google login
+firebase login         # wahi Google login
+```
+
+### HAR COMPANY KE LIYE (≈5-8 min, ek command)
+```powershell
+cd C:\Users\Rahul\Fcoy
+powershell -ExecutionPolicy Bypass -File deploy\New-CompanyApp.ps1 -Code bcoy
+```
+- Project ID agar kisi aur ki ho error aaye to: `-ProjectId fcoy-erp-bcoy-74603`
+- Script khud `deploy/companies.json` me keys bhar degi haath se kuch nahi likhna.
+- **Sirf project bana ke rakhna ho (deploy baad me):** `-SkipDeploy` lagao.
+  Fir jab company maange: `deploy\Deploy-Company.ps1 -Code bcoy` (sirf build+deploy).
+
+Uske baad sirf **STEP 3 (First-Run Wizard)** aur **STEP 4 (billing record)**.
+Seedha wahan jao ↓
+
+---
+
+<details>
+<summary>🔽 PURANA MANUAL TAREEKA (console se, agar gcloud nahi install karna)</summary>
 
 ### STEP 1 — Firebase project banao (3 min, sirf pehli baar per company)
 1. https://console.firebase.google.com → **Add project** → naam: `fcoy-erp-bcoy`
@@ -66,6 +96,8 @@ powershell -ExecutionPolicy Bypass -File deploy\Deploy-Company.ps1 -Code bcoy
 ```
 Script karegi: keys se `.env` → build → `https://fcoy-erp-bcoy.web.app` live.
 (Master `.env` ka backup apne aap hota hai aur restore bhi — master app safe.)
+
+</details>
 
 ### STEP 3 — First-Run Wizard (2 min)
 1. Kholo: `https://fcoy-erp-bcoy.web.app/first-run`
