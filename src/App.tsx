@@ -2,7 +2,6 @@
 
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { EnterpriseLayout } from './components/layout/EnterpriseLayout';
-import SeedStaffData from './features/system/SeedStaffData';
 // --- AI Agent ---
 import AIAgentScreen from './features/aiAgent/components/AIAgentScreen';
 
@@ -28,6 +27,7 @@ import { UstadDashboard }            from './features/dashboard/UstadDashboard';
 
 // --- QM Modules ---
 import { InventoryIssueScreen }  from './features/quartermaster/InventoryIssueScreen';
+import InventoryHubScreen from './features/inventory/InventoryHubScreen';
 import { MessBoySalaryScreen }   from './features/quartermaster/MessBoySalaryScreen';
 
 // --- Finance (4 Funds) ---
@@ -114,14 +114,6 @@ function App() {
                   </ProtectedRoute>
                 }
               />
-                            <Route
-                path="/seed-staff"
-                element={
-                  <ProtectedRoute allowedRoles={['Company Commander']}>
-                    <EnterpriseLayout><SeedStaffData /></EnterpriseLayout>
-                  </ProtectedRoute>
-                }
-              />
               <Route
                 path="/quartermaster"
                 element={
@@ -160,6 +152,18 @@ function App() {
               />
 
               {/* ════════════════════════════════
+                  CENTRAL INVENTORY HUB
+              ════════════════════════════════ */}
+              <Route
+                path="/inventory"
+                element={
+                  <ProtectedRoute allowedRoles={QM_ROLES}>
+                    <EnterpriseLayout><InventoryHubScreen /></EnterpriseLayout>
+                  </ProtectedRoute>
+                }
+              />
+
+              {/* ════════════════════════════════
                   QM MODULE ROUTES
               ════════════════════════════════ */}
               <Route
@@ -181,7 +185,7 @@ function App() {
               <Route
                 path="/reports"
                 element={
-                  <ProtectedRoute allowedRoles={['Company Commander']}>
+                  <ProtectedRoute allowedRoles={ALL_ROLES}>
                     <EnterpriseLayout><ReportsScreen /></EnterpriseLayout>
                   </ProtectedRoute>
                 }

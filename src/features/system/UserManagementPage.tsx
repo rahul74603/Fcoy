@@ -13,11 +13,11 @@
 // ─────────────────────────────────────────────
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { UserPlus, Shield, Search, Trash2, AlertTriangle, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { UserPlus, Shield, Search, Trash2, AlertTriangle, Eye, EyeOff, Loader2, KeyRound } from 'lucide-react';
 import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
-import { auth, db } from '../../config/firebase';
+import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
+import { getApps, initializeApp } from 'firebase/app';
+import { db, firebaseConfig } from '../../config/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 
 interface UserModel {
@@ -36,9 +36,15 @@ interface UserModel {
 // Firebase UID 28-char alphanumeric hota hai — purane USR-xxx broken profiles 24+ nahi
 const isLoginCapable = (docId: string) => /^[A-Za-z0-9]{20,36}$/.test(docId);
 
+// 🔑 Staff auth accounts SECONDARY Firebase app se bante hain —
+// Commander ka session kabhi switch nahi hota (koi re-login nahi chahiye).
+const provisionAuth = () => {
+  const secondary = getApps().find(a => a.name === 'staff-provisioner') || initializeApp(firebaseConfig, 'staff-provisioner');
+  return getAuth(secondary);
+};
+
 export const UserManagementPage = () => {
   const { user } = useAuth();
-  const navigate = useNavigate();
 
   const [users, setUsers] = useState<UserModel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,9 +60,8 @@ export const UserManagementPage = () => {
     designation: '',
     role: 'Clerk',
   });
-  const [cmdPassword, setCmdPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
-  const [showCmdPw, setShowCmdPw] = useState(false);
+  const [resetting, setResetting] = useState('');
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -90,7 +95,7 @@ export const UserManagementPage = () => {
     );
   }, [users, search]);
 
-  // ── CREATE: REAL login-enabled staff account ──
+  // ── CREATE: REAL login-enabled staff account (session safe) ──
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setMessage('');
@@ -98,20 +103,18 @@ export const UserManagementPage = () => {
       setMessage('ERROR: Password min 6 characters ka hona chahiye.');
       return;
     }
-    if (!cmdPassword) {
-      setMessage('ERROR: Neeche apna (CC) password bhi enter karo — naya account bante hi session switch hota hai, wapas login ke liye chahiye.');
-      return;
-    }
     setCreating(true);
-    const ccEmail = user?.email ?? '';
+    const email = formData.email.trim().toLowerCase();
     try {
-      // 1) Firebase Auth account (is step ke baad session naye staff pe chala jata hai)
-      const cred = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
+      const staffAuth = provisionAuth();
+
+      // 1) Firebase Auth account — SECONDARY app pe (CC session untouched ✓)
+      const cred = await createUserWithEmailAndPassword(staffAuth, email, formData.password);
 
       // 2) Firestore profile — Document ID = AUTH UID (yehi rule hai, tabhi login chalega)
       await setDoc(doc(db, 'users', cred.user.uid), {
         name: formData.name,
-        email: formData.email,
+        email,
         phone: formData.phone,
         designation: formData.designation,
         role: formData.role,
@@ -121,25 +124,37 @@ export const UserManagementPage = () => {
         createdBy: user?.uid || 'System',
       });
 
-      // 3) Wapas CC login (session restore)
-      await signInWithEmailAndPassword(auth, ccEmail, cmdPassword);
+      await staffAuth.signOut();
 
-      setMessage(`SUCCESS: ${formData.email} ka LOGIN account ban gaya ✓ — password staff ko de do.`);
+      setMessage(`SUCCESS: ${email} ka LOGIN account ban gaya ✓ — password staff ko de do.`);
       setFormData({ name: '', email: '', password: '', phone: '', designation: '', role: 'Clerk' });
-      setCmdPassword('');
-      navigate('/users'); // role-switch ke dauran page se bahar ho gaye to wapas
       fetchUsers();
     } catch (err: any) {
       let msg = `ERROR: ${err.message}`;
       if (err.code === 'auth/email-already-in-use') msg = 'ERROR: Ye email pehle se registered hai.';
-      else if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') msg = 'ERROR: Tumhara (CC) password galat hai.';
       else if (err.code === 'auth/weak-password') msg = 'ERROR: Password kamzor hai (min 6 characters).';
       else if (err.code === 'auth/invalid-email') msg = 'ERROR: Email format galat hai.';
-      // Session restore attempt (agar switch ho gaya tha)
-      try { await signInWithEmailAndPassword(auth, ccEmail, cmdPassword); } catch { /* ok */ }
+      else if (err.code === 'auth/operation-not-allowed') msg = 'ERROR: Firebase Console → Authentication → Email/Password enable karo.';
       setMessage(msg);
     } finally {
       setCreating(false);
+    }
+  };
+
+  // ── PASSWORD RESET: staff ko reset email bhejo ──
+  const handleResetPassword = async (u: UserModel) => {
+    if (!window.confirm(`${u.email} pe password-reset email bheje? (Link wali mail jayegi)`)) return;
+    setResetting(u.id);
+    try {
+      const staffAuth = provisionAuth();
+      await sendPasswordResetEmail(staffAuth, u.email);
+      setMessage(`Reset email bhijwaya: ${u.email} ✓ (inbox/spam check karne bolo)`);
+    } catch (err: any) {
+      setMessage(err.code === 'auth/user-not-found'
+        ? `ERROR: ${u.email} ka Auth account nahi mila — naya account banao (ye purani/broken profile ho sakti hai).`
+        : `ERROR: ${err.message}`);
+    } finally {
+      setResetting('');
     }
   };
 
@@ -246,18 +261,9 @@ export const UserManagementPage = () => {
               </p>
             </div>
 
-            <div className="bg-amber-50 border border-amber-200 rounded p-2.5">
-              <label className="text-[10px] font-black text-amber-800 uppercase block mb-1">🔐 Tumhara (CC) Password *</label>
-              <div className="relative">
-                <input type={showCmdPw ? 'text' : 'password'} required value={cmdPassword}
-                  onChange={e => setCmdPassword(e.target.value)}
-                  className={inputClass} />
-                <button type="button" onClick={() => setShowCmdPw(!showCmdPw)} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400">
-                  {showCmdPw ? <EyeOff size={13} /> : <Eye size={13} />}
-                </button>
-              </div>
-              <p className="text-[9px] text-amber-700 mt-1 leading-snug">
-                Staff ka account bante hi system tumhe wapas CC login karega — naya account banate hi session switch hota hai.
+            <div className="bg-green-50 border border-green-200 rounded p-2.5">
+              <p className="text-[10px] font-bold text-green-800 leading-snug">
+                🔑 Account <strong>secondary session</strong> se banta hai — tumhara CC login hilta nahi, koi re-login nahi chahiye.
               </p>
             </div>
 
@@ -339,6 +345,15 @@ export const UserManagementPage = () => {
                           </button>
                         </td>
                         <td className="px-4 py-2 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => handleResetPassword(u)}
+                            disabled={resetting === u.id}
+                            title="Password reset email bhejo"
+                            className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-sm border border-transparent hover:border-amber-200 transition-colors disabled:opacity-40"
+                          >
+                            {resetting === u.id ? <Loader2 size={13} className="animate-spin" /> : <KeyRound size={13} />}
+                          </button>
                           <button
                             onClick={() => handleDeleteProfile(u)}
                             title="Profile delete karo"
@@ -346,6 +361,7 @@ export const UserManagementPage = () => {
                           >
                             <Trash2 size={13} />
                           </button>
+                          </div>
                         </td>
                       </tr>
                     );

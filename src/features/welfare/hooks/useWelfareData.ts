@@ -74,17 +74,24 @@ export const useWelfareData = () => {
     return () => unsub();
   }, []);
 
-  // ── Batch-scoped pool (search/dimension filters se pehle) ──
-  const batchPool = useMemo(() => (
-    filters.batchId === 'ALL'
-      ? rawTrainees
-      : rawTrainees.filter(t => t.batchId === filters.batchId)
-  ), [rawTrainees, filters.batchId]);
+  // ── Batch scope: active batch is the default; ALL is only allowed when the
+  // user deliberately selects All Batches from the batch selector screen.
+  const effectiveFilters = useMemo(() => (
+    activeBatch && filters.batchId === 'ALL'
+      ? { ...filters, batchId: activeBatch.id }
+      : filters
+  ), [activeBatch, filters]);
 
-  // ── Final filtered set ──
+  const batchPool = useMemo(() => (
+    effectiveFilters.batchId === 'ALL'
+      ? rawTrainees
+      : rawTrainees.filter(t => t.batchId === effectiveFilters.batchId)
+  ), [rawTrainees, effectiveFilters.batchId]);
+
+  // ── Final filtered set (always starts from the current batch pool) ──
   const filtered = useMemo(
-    () => applyFilters(rawTrainees, filters),
-    [rawTrainees, filters],
+    () => applyFilters(batchPool, effectiveFilters),
+    [batchPool, effectiveFilters],
   );
 
   // ── Facet stats (cross-filtered — apna filter khud pe nahi lagta) ──

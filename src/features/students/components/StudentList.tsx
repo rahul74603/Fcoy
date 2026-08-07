@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+import { useBatch } from '../../../contexts/BatchContext';
 import { Trash2 } from 'lucide-react';
 
 interface StudentListProps {
@@ -10,6 +11,7 @@ interface StudentListProps {
 }
 
 export const StudentList = ({ refreshKey, onDeleteSuccess }: StudentListProps) => {
+  const { activeBatch } = useBatch();
   const [trainees, setTrainees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -18,8 +20,10 @@ export const StudentList = ({ refreshKey, onDeleteSuccess }: StudentListProps) =
     try {
       const snap = await getDocs(collection(db, 'trainees'));
       const list: any[] = [];
-      snap.forEach((doc) => {
-        list.push({ id: doc.id, ...doc.data() });
+      snap.forEach((docSnap) => {
+        const data = docSnap.data();
+        if (!activeBatch || data.batchId !== activeBatch.id) return;
+        list.push({ id: docSnap.id, ...data });
       });
       setTrainees(list);
     } catch (err) {
@@ -31,7 +35,7 @@ export const StudentList = ({ refreshKey, onDeleteSuccess }: StudentListProps) =
 
   useEffect(() => {
     loadTrainees();
-  }, [refreshKey]);
+  }, [refreshKey, activeBatch?.id]);
 
   const handleDelete = async (id: string) => {
     if (window.confirm('Kya aap is jawan ka record delete karna chahte hain?')) {

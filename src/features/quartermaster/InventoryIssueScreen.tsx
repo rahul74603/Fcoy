@@ -1,6 +1,7 @@
 // D:\ALL PROJECTS\BSF COYs\frontend\src\features\quartermaster\InventoryIssueScreen.tsx
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Search, Save, User, Crosshair, Activity, FileText,
   CheckCircle2, XCircle, Plus, Trash2, ShoppingCart,
@@ -16,6 +17,7 @@ import {
 import { db } from '../../config/firebase';
 import { ModuleReportButton } from '../system/ModuleReportButton';
 import { useAuth } from '../../contexts/AuthContext';
+import { useBatch } from '../../contexts/BatchContext';
 
 const SHOE_SIZES  = ['5', '6', '7', '8', '9', '10', '11', '12', '13'];
 const SHIRT_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'];
@@ -645,7 +647,11 @@ const KitStatusPanel: React.FC<KitStatusPanelProps> = ({
 // ═══════════════════════════════════════════════════════════
 export const InventoryIssueScreen: React.FC = () => {
   const { user } = useAuth();
-    const issuedBy = user?.email ?? 'Quarter Master';
+  const location = useLocation();
+  const { activeBatch } = useBatch();
+  const issuedBy = user?.email ?? 'Quarter Master';
+  // Records created before batches existed are owned by the current active batch.
+  const belongsToActiveBatch = (data: any) => !data.batchId || data.batchId === activeBatch?.id;
 
   const [searchQuery,   setSearchQuery]   = useState('');
   const [trainee,       setTrainee]       = useState<Trainee | null>(null);
@@ -671,6 +677,11 @@ export const InventoryIssueScreen: React.FC = () => {
 
   const dropdownRef   = useRef<HTMLDivElement>(null);
   const itemSearchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const term = new URLSearchParams(location.search).get('search');
+    if (term) setItemSearchText(term);
+  }, [location.search]);
 
   // ── REAL-TIME TRAINEE SYNC ──
   useEffect(() => {
@@ -772,6 +783,7 @@ export const InventoryIssueScreen: React.FC = () => {
 
       expSnap.forEach(d => {
         const data     = d.data() as any;
+        if (!belongsToActiveBatch(data)) return;
         const itemName = String(data.itemName ?? '').trim();
         if (!itemName) return;
         const meta     = catalogMap.get(normalizeName(itemName));
@@ -810,6 +822,7 @@ export const InventoryIssueScreen: React.FC = () => {
 
       issueSnap.forEach(d => {
         const data = d.data() as any;
+        if (!belongsToActiveBatch(data)) return;
         const isTrainingIssue =
           data.issueSource === 'TRAINING_ESSENTIALS' ||
           data.issueType   === 'TRAINING_ESSENTIALS';
@@ -906,7 +919,7 @@ export const InventoryIssueScreen: React.FC = () => {
     } finally {
       setItemsLoading(false);
     }
-  }, []);
+  }, [activeBatch?.id]);
 
   useEffect(() => { fetchItems(); }, [fetchItems]);
 
@@ -945,6 +958,10 @@ export const InventoryIssueScreen: React.FC = () => {
       if (!snap.empty) {
         const docSnap = snap.docs[0];
         const data    = docSnap.data() as any;
+        if (!belongsToActiveBatch(data)) {
+          setErrorMsg('Trainee belongs to another batch. Select the correct active batch.');
+          return;
+        }
         const foundTrainee: Trainee = {
           id:               docSnap.id,
           name:             data.name             ?? 'Unknown',
@@ -1138,6 +1155,7 @@ export const InventoryIssueScreen: React.FC = () => {
         totalUnits,
         totalValue,
         issuedBy,
+        batchId:          activeBatch?.id ?? '',
         issuedAt:         serverTimestamp(),
         issueDateISO,
       });

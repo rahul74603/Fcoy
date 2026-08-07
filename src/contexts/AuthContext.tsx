@@ -7,13 +7,22 @@ import {
   signOut,
   User as FirebaseUser
 } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
 import { setDevViewer } from '../utils/devDataFilter';
 
 // ─────────────────────────────────────────────
 // TYPES
 // ─────────────────────────────────────────────
+const normalizeRole = (value: unknown): string => {
+  const key = String(value ?? '').trim().toLowerCase();
+  if (key === 'qm' || key === 'quartermaster') return 'Quarter Master';
+  if (key === 'cc' || key === 'commander' || key === 'company commander') return 'Company Commander';
+  if (key === 'clerk') return 'Clerk';
+  if (key === 'ustad' || key === 'instructor') return 'Ustad';
+  return String(value ?? 'Unassigned');
+};
+
 interface AppUser {
   uid: string;
   email: string | null;
@@ -93,29 +102,52 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           email:       firebaseUser.email,
           displayName: firebaseUser.displayName,
           name:        String(userData['name']        ?? 'Unknown User'),
-          role:        String(userData['role']        ?? 'Unassigned'),
+          role:        normalizeRole(userData['role']),
           phone:       String(userData['phone']       ?? 'N/A'),
           designation: String(userData['designation'] ?? 'Unassigned'),
-          isActive:    Boolean(userData['isActive']   ?? false),
+          isActive:    userData['isActive'] !== false,
           createdBy:   String(userData['createdBy']   ?? 'Unknown'),
           isDeveloper: Boolean(userData['isDeveloper'] ?? false),
         });
         setDevViewer(Boolean(userData['isDeveloper'] ?? false));
       } else {
-        console.warn(`User doc not found in Firestore for uid: ${firebaseUser.uid}`);
-        setUser({
-          uid:         firebaseUser.uid,
-          email:       firebaseUser.email,
-          displayName: firebaseUser.displayName,
-          name:        firebaseUser.displayName ?? 'Pending User',
-          role:        'Unassigned',
-          phone:       'N/A',
-          designation: 'Unassigned',
-          isActive:    false,
-          createdBy:   'Unknown',
-          isDeveloper: false,
-        });
-        setDevViewer(false);
+        // Older User Management records used a random document id. Fall back
+        // to email lookup so those authenticated staff profiles still work.
+        const legacySnap = firebaseUser.email
+          ? await getDocs(query(collection(db, 'users'), where('email', '==', firebaseUser.email)))
+          : { empty: true, docs: [] as never[] };
+        if (!legacySnap.empty) {
+          const userData = legacySnap.docs[0].data();
+          const isDev = Boolean(userData['isDeveloper'] ?? false);
+          setUser({
+            uid:         firebaseUser.uid,
+            email:       firebaseUser.email,
+            displayName: firebaseUser.displayName,
+            name:        String(userData['name']        ?? firebaseUser.displayName ?? 'User'),
+            role:        normalizeRole(userData['role']),
+            phone:       String(userData['phone']       ?? 'N/A'),
+            designation: String(userData['designation'] ?? 'Unassigned'),
+            isActive:    userData['isActive'] !== false,
+            createdBy:   String(userData['createdBy']   ?? 'Unknown'),
+            isDeveloper: isDev,
+          });
+          setDevViewer(isDev);
+        } else {
+          console.warn(`User doc not found for uid or email: ${firebaseUser.uid}`);
+          setUser({
+            uid:         firebaseUser.uid,
+            email:       firebaseUser.email,
+            displayName: firebaseUser.displayName,
+            name:        firebaseUser.displayName ?? 'Pending User',
+            role:        'Unassigned',
+            phone:       'N/A',
+            designation: 'Unassigned',
+            isActive:    false,
+            createdBy:   'Unknown',
+            isDeveloper: false,
+          });
+          setDevViewer(false);
+        }
       }
 
     } catch (error: unknown) {
@@ -181,10 +213,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           email:       currentFirebaseUser.email,
           displayName: currentFirebaseUser.displayName,
           name:        String(userData['name']        ?? 'Unknown User'),
-          role:        String(userData['role']        ?? 'Unassigned'),
+          role:        normalizeRole(userData['role']),
           phone:       String(userData['phone']       ?? 'N/A'),
           designation: String(userData['designation'] ?? 'Unassigned'),
-          isActive:    Boolean(userData['isActive']   ?? false),
+          isActive:    userData['isActive'] !== false,
           createdBy:   String(userData['createdBy']   ?? 'Unknown'),
           isDeveloper: Boolean(userData['isDeveloper'] ?? false),
         });

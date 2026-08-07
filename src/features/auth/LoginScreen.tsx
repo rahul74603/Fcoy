@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { auth, db } from '../../config/firebase';
-import { signInWithEmailAndPassword } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { sendPasswordResetEmail, signInWithEmailAndPassword } from 'firebase/auth';
+import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { ShieldCheck, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -11,6 +11,16 @@ export const LoginScreen = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+
+  const handleResetPassword = async () => {
+    if (!email.trim()) { setError('Pehle registered email enter karein.'); return; }
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+      setError('Password reset email bhej diya gaya hai. Inbox / spam check karein.');
+    } catch (err: any) {
+      setError(err?.code === 'auth/user-not-found' ? 'Ye email Firebase Authentication mein registered nahi hai.' : 'Password reset nahi bheja ja saka. Email check karein.');
+    }
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,18 +35,29 @@ export const LoginScreen = () => {
       // 2. Fetch Role from Firestore Database
       const userDocRef = doc(db, 'users', user.uid);
       const userDocSnap = await getDoc(userDocRef);
+      const legacySnap = !userDocSnap.exists() && user.email
+        ? await getDocs(query(collection(db, 'users'), where('email', '==', user.email)))
+        : null;
+      const userData = userDocSnap.exists()
+        ? userDocSnap.data()
+        : legacySnap && !legacySnap.empty ? legacySnap.docs[0].data() : null;
 
-      if (userDocSnap.exists()) {
-        const userData = userDocSnap.data();
+      if (userData) {
         
-        if (!userData.isActive) {
-          setError('Account disabled hai ya "isActive" field missing hai. Apne App Owner / Commander se contact karo.');
+        if (userData.isActive === false) {
+          setError('Account disabled hai. App Owner / Commander se contact karo.');
           auth.signOut();
           return;
         }
 
-        // 3. Role-Based Dashboard Redirection
-        switch (userData.role) {
+        // 3. Role-Based Dashboard Redirection. Accept legacy role spellings.
+        const roleKey = String(userData.role ?? '').trim().toLowerCase();
+        const normalizedRole = roleKey === 'qm' || roleKey === 'quartermaster' ? 'Quarter Master'
+          : roleKey === 'cc' || roleKey === 'commander' || roleKey === 'company commander' ? 'Company Commander'
+          : roleKey === 'clerk' ? 'Clerk'
+          : roleKey === 'ustad' || roleKey === 'instructor' ? 'Ustad'
+          : String(userData.role ?? '');
+        switch (normalizedRole) {
           case 'Company Commander':
             navigate('/commander');
             break;
@@ -59,14 +80,17 @@ export const LoginScreen = () => {
       }
     } catch (err: any) {
       console.error(err);
+      // Auth success ho sakta hai lekin profile read fail ho (rules) — galat error mat dikha
       if (err?.code === 'permission-denied') {
-        setError('Database permission error (Firestore rules). App Owner se contact karo.');
+        setError('Login hua, lekin Firestore permissions deployed nahi hain. firestore.rules deploy karke try karo.');
+      } else if (err?.code === 'auth/invalid-credential' || err?.code === 'auth/wrong-password' || err?.code === 'auth/user-not-found') {
+        setError('Invalid email or password. Access Denied.');
       } else if (err?.code === 'auth/too-many-requests') {
         setError('Bahut zyada attempts ho gaye. Thodi der baad try karo.');
       } else if (err?.code === 'auth/network-request-failed') {
         setError('Internet connection check karo.');
       } else {
-        setError('Invalid email or password. Access Denied.');
+        setError('Login service error. Firebase connection check karo.');
       }
       auth.signOut();
     } finally {
@@ -122,6 +146,7 @@ export const LoginScreen = () => {
           >
             {loading ? 'Authenticating...' : 'Secure Login'}
           </button>
+          <button type="button" onClick={handleResetPassword} className="w-full text-[10px] font-bold text-military-700 underline hover:text-military-900">Forgot password?</button>
         </form>
       </div>
     </div>

@@ -15,6 +15,8 @@ import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { showDoc } from '../../utils/devDataFilter';
 import { useAuth } from '../../contexts/AuthContext';
+import { useBatch } from '../../contexts/BatchContext';
+import { normalizePlatoon, PLATOON_OPTIONS } from '../../utils/platoon';
 
 // ─── Staff Module Types ───────────────────
 import type { Staff } from '../ustad/types/staff.types';
@@ -264,6 +266,7 @@ const printReport = (title: string, headers: string[], rows: string[][], summary
 // ─────────────────────────────────────────────
 export const ReportsScreen: React.FC = () => {
   const { user } = useAuth();
+  const { activeBatch } = useBatch();
   const recordedBy = user?.email ?? 'System';
 
   // ── DATA STATES ──
@@ -301,12 +304,17 @@ export const ReportsScreen: React.FC = () => {
   const [dateTo, setDateTo] = useState(todayISO());
   const [filterPlatoon, setFilterPlatoon] = useState('All');
   const [filterBatch, setFilterBatch] = useState('All');
+  useEffect(() => {
+    if (activeBatch && filterBatch === 'All') setFilterBatch(activeBatch.batchNumber);
+  }, [activeBatch?.batchNumber]);
   const [filterFund, setFilterFund] = useState<'All' | 'Mess' | 'Training' | 'Assets' | 'General'>('All');
   // ─── Staff Filters ────────────────────────
   const [filterStaffStatus, setFilterStaffStatus] = useState<string>('All');
   const [filterLeaveStatus, setFilterLeaveStatus] = useState<string>('All');
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const belongsToActiveBatch = (data: any) => Boolean(activeBatch && data.batchId === activeBatch.id);
+
   // ─── SAFE COLLECTION FETCHER ─────────────
   const safeFetch = async (collName: string) => {
     try {
@@ -325,7 +333,7 @@ export const ReportsScreen: React.FC = () => {
     setError('');
     try {
       // ── TRAINEES ──
-      const tDocs = await safeFetch('trainees');
+      const tDocs = (await safeFetch('trainees')).filter(d => belongsToActiveBatch(d.data()));
       const tList: TraineeData[] = tDocs.map(d => {
         const data = d.data();
         return {
@@ -333,7 +341,7 @@ export const ReportsScreen: React.FC = () => {
           chestNo: data.chestNo ?? '',
           name: data.name ?? '',
           rank: data.rank ?? 'RCT',
-          platoon: data.platoon ?? '-',
+          platoon: normalizePlatoon(data.platoon),
           section: data.section ?? '-',
           attn: data.attn ?? 'P',
           medStat: data.medStat ?? 'SHAPE-1',
@@ -371,6 +379,7 @@ export const ReportsScreen: React.FC = () => {
       const mcDocs = await safeFetch('mess_fund_collections');
       mcDocs.forEach(d => {
         const data = d.data();
+        if (!belongsToActiveBatch(data)) return;
         allCols.push({
           id: d.id, fundType: 'Mess',
           amount: Number(data.amount ?? 0),
@@ -387,6 +396,7 @@ export const ReportsScreen: React.FC = () => {
       const tcDocs = await safeFetch('training_fund_collections');
       tcDocs.forEach(d => {
         const data = d.data();
+        if (!belongsToActiveBatch(data)) return;
         allCols.push({
           id: d.id, fundType: 'Training',
           amount: Number(data.amount ?? 0),
@@ -402,6 +412,7 @@ export const ReportsScreen: React.FC = () => {
       const acDocs = await safeFetch('company_assets_collections');
       acDocs.forEach(d => {
         const data = d.data();
+        if (!belongsToActiveBatch(data)) return;
         allCols.push({
           id: d.id, fundType: 'Assets',
           amount: Number(data.amount ?? 0),
@@ -417,6 +428,7 @@ export const ReportsScreen: React.FC = () => {
       const gcDocs = await safeFetch('general_fund_collections');
       gcDocs.forEach(d => {
         const data = d.data();
+        if (!belongsToActiveBatch(data)) return;
         allCols.push({
           id: d.id, fundType: 'General',
           amount: Number(data.amount ?? 0),
@@ -459,6 +471,7 @@ export const ReportsScreen: React.FC = () => {
       const teDocs = await safeFetch('training_fund_expenses');
       teDocs.forEach(d => {
         const data = d.data();
+        if (!belongsToActiveBatch(data)) return;
         allExps.push({
           id: d.id, fundType: 'Training',
           amount: Number(data.amount ?? 0),
@@ -480,6 +493,7 @@ export const ReportsScreen: React.FC = () => {
       const aeDocs = await safeFetch('company_assets_expenses');
       aeDocs.forEach(d => {
         const data = d.data();
+        if (!belongsToActiveBatch(data)) return;
         allExps.push({
           id: d.id, fundType: 'Assets',
           amount: Number(data.amount ?? 0),
@@ -502,6 +516,7 @@ export const ReportsScreen: React.FC = () => {
       const geDocs = await safeFetch('general_fund_expenses');
       geDocs.forEach(d => {
         const data = d.data();
+        if (!belongsToActiveBatch(data)) return;
         allExps.push({
           id: d.id, fundType: 'General',
           amount: Number(data.amount ?? 0),
@@ -844,7 +859,7 @@ export const ReportsScreen: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeBatch?.id]);
 
   useEffect(() => { fetchAllData(); }, [fetchAllData]);
 
@@ -1653,7 +1668,8 @@ export const ReportsScreen: React.FC = () => {
     setGenerating(null);
   };
   // ─── COMPUTED ───────────────────────────
-  const platoons = [...new Set(trainees.map(t => t.platoon).filter(Boolean))];
+  // Always show the four permanent platoons; never expose legacy A/B/C labels.
+  const platoons = [...PLATOON_OPTIONS];
   const batchNumbers = [...new Set(trainees.map(t => t.batchNumber).filter(Boolean))];
 
   const totalCol = collections.reduce((s, c) => s + c.amount, 0);

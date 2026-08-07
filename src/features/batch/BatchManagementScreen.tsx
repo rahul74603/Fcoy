@@ -1,6 +1,6 @@
 // src/features/batch/BatchManagementScreen.tsx
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Layers, Plus, CheckCircle2, AlertTriangle, X, Loader2,
   Calendar, Users, Archive, Shield,
@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { useBatch, CreateBatchForm } from '../../contexts/BatchContext';
 import { useAuth } from '../../contexts/AuthContext';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 
 export const BatchManagementScreen: React.FC = () => {
@@ -106,6 +106,29 @@ export const BatchManagementScreen: React.FC = () => {
       setCreateLoading(false);
     }
   };
+
+  const isFakeBatch = (batch: any) => String(batch.batchNumber || '') === '900' || String(batch.batchName || '').toLowerCase().includes('dev test') || String(batch.batchName || '').toLowerCase().includes('hidden');
+  const safeDate = (value: any) => {
+    if (!value) return '—';
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? '—' : parsed.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  };
+  const deleteFakeBatch = async (batch: any) => {
+    if (!isCommander || !isFakeBatch(batch)) return;
+    if (!window.confirm(`Delete fake batch "${batch.batchName || batch.batchNumber}" permanently?`)) return;
+    try {
+      await deleteDoc(doc(db, 'batches', batch.id));
+      setSuccess(`Fake batch "${batch.batchName || batch.batchNumber}" deleted.`);
+    } catch (err: any) {
+      setError(`Batch delete failed: ${err.message}`);
+    }
+  };
+
+  useEffect(() => {
+    if (!isCommander || !allBatches.length) return;
+    const fake = allBatches.find(isFakeBatch);
+    if (fake) deleteDoc(doc(db, 'batches', fake.id)).catch(err => console.error('Fake batch cleanup failed:', err));
+  }, [isCommander, allBatches]);
 
   // ── Stats ──
   const activeBatches = allBatches.filter(b => b.status === 'active');
@@ -569,7 +592,7 @@ export const BatchManagementScreen: React.FC = () => {
             <table className="w-full text-xs">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
-                  {['#', 'Batch Number', 'Name', 'Start Date', 'End Date', 'Status', 'Trainees', 'Created'].map(h => (
+                  {['#', 'Batch Number', 'Name', 'Start Date', 'End Date', 'Status', 'Trainees', 'Created', 'Actions'].map(h => (
                     <th key={h} className="px-4 py-2.5 text-[9px] font-black text-slate-500 uppercase text-left">
                       {h}
                     </th>
@@ -598,30 +621,15 @@ export const BatchManagementScreen: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-4 py-3 font-bold text-slate-700">{batch.batchName}</td>
-                    <td className="px-4 py-3 text-slate-500">
-                      {batch.startDate
-                        ? new Date(batch.startDate).toLocaleDateString('en-IN', {
-                            day: '2-digit', month: 'short', year: 'numeric'
-                          })
-                        : '—'}
-                    </td>
-                    <td className="px-4 py-3 text-slate-500">
-                      {batch.endDate
-                        ? new Date(batch.endDate).toLocaleDateString('en-IN', {
-                            day: '2-digit', month: 'short', year: 'numeric'
-                          })
-                        : '—'}
-                    </td>
+                    <td className="px-4 py-3 text-slate-500">{safeDate(batch.startDate)}</td>
+                    <td className="px-4 py-3 text-slate-500">{safeDate(batch.endDate)}</td>
                     <td className="px-4 py-3">{getStatusBadge(batch.status)}</td>
                     <td className="px-4 py-3 font-bold text-slate-700">
                       {batchTraineeCount[batch.id] ?? batch.totalTrainees ?? 0}
                     </td>
-                    <td className="px-4 py-3 text-slate-400 text-[10px]">
-                      {batch.createdAt
-                        ? new Date(batch.createdAt).toLocaleDateString('en-IN', {
-                            day: '2-digit', month: 'short', year: 'numeric'
-                          })
-                        : '—'}
+                    <td className="px-4 py-3 text-slate-400 text-[10px]">{safeDate(batch.createdAt)}</td>
+                    <td className="px-4 py-3">
+                      {isFakeBatch(batch) && isCommander && <button onClick={(e) => { e.stopPropagation(); deleteFakeBatch(batch); }} className="rounded bg-red-600 px-2 py-1 text-[9px] font-black uppercase text-white hover:bg-red-700">Delete fake</button>}
                     </td>
                   </tr>
                 ))}

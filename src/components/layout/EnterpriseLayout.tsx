@@ -8,6 +8,7 @@ import { useUnitConfig } from '../../contexts/UnitConfigContext';
 
 // 🆕 Notification System Import
 import NotificationBell from '../../features/notifications/NotificationBell';
+import { GlobalSearch } from './GlobalSearch';
 
 // 🆕 Subscription Expiry Banner
 import SubscriptionBanner from '../../features/subscription/components/SubscriptionBanner';
@@ -16,7 +17,6 @@ import SubscriptionBanner from '../../features/subscription/components/Subscript
 import PracticeBanner from '../../features/developer/components/PracticeBanner';
 
 // 🔍 Global Search (har role apni permitted cheezein search kare)
-import { GlobalSearch } from './GlobalSearch';
 
 interface EnterpriseLayoutProps {
   children: React.ReactNode;
