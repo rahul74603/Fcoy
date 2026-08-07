@@ -545,7 +545,7 @@ export const Sidebar = () => {
 
           {/* FOOTER */}
           <div className="p-4 bg-military-950 border-t border-military-800 text-xs text-military-400 text-center">
-            v1.8.1 · Auto Company Kit
+            v1.8.2 · Script ASCII Fix
           </div>
 
         </div>
