@@ -37,7 +37,8 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   useEffect(() => {
     // Sirf logged-in user ke liye listener lagao
-    if (!user) {
+    // 🔒 Developer account = subscription-free sandbox — koi reads nahi
+    if (!user || user.isDeveloper) {
       setSubscription(null);
       setState(INITIAL_STATE);
       setLoading(false);

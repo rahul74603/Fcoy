@@ -18,6 +18,7 @@ export const SubscriptionBanner: React.FC = () => {
   const navigate = useNavigate();
 
   if (loading || !user) return null;
+  if (user.isDeveloper) return null; // 🔒 Dev sandbox — subscription sirf customers ki cheez hai
   if (state.status === 'active') return null; // sab theek — kuch mat dikhao
 
   const isCommander = user.role === 'Company Commander';

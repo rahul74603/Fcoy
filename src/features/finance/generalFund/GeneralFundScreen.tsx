@@ -31,6 +31,9 @@ import { BILL_STATUS_CONFIG } from '../shared/constants';
 import type { Vendor, VendorEntry, BillAttachment } from '../vendors/types';
 import BillPreviewModal from '../shared/BillPreviewModal';
 import { ModuleReportButton } from '../../system/ModuleReportButton';
+import { useBatch } from '../../../contexts/BatchContext';
+import { batchScopeRule } from '../../../utils/batchScope';
+import { showDoc } from '../../../utils/devDataFilter';
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -164,6 +167,9 @@ const calcActuallyPaid = (expList: any[]): number =>
 // ═════════════════════════════════════════════
 export const GeneralFundScreen: React.FC = () => {
   const { user } = useAuth();
+  // ⛓️ STRICT BATCH RULE — fund ledgers selected batch ke; naye entries ACTIVE batch pe stamp
+  // (Dev account me activeBatch = TEST-77 sandbox — real fund data dev ko kabhi nahi dikhta)
+  const { activeBatch } = useBatch();
   const recordedBy = user?.email ?? 'Quarter Master';
 
   // ── DATA ──
@@ -239,6 +245,7 @@ export const GeneralFundScreen: React.FC = () => {
       const colList: GeneralCollection[] = [];
       colSnap.forEach(d => {
         const data = d.data();
+        if (!batchScopeRule(data) || !showDoc(data)) return; // ⛓️ batch + dev isolation
         colList.push({
           id: d.id,
           amount: Number(data.amount ?? 0),
@@ -261,6 +268,7 @@ export const GeneralFundScreen: React.FC = () => {
       const expList: GeneralExpense[] = [];
       expSnap.forEach(d => {
         const data = d.data();
+        if (!batchScopeRule(data) || !showDoc(data)) return; // ⛓️ batch + dev isolation
         expList.push({
           id: d.id,
           amount: Number(data.amount ?? 0),
@@ -291,6 +299,7 @@ export const GeneralFundScreen: React.FC = () => {
       const transferList: FundTransfer[] = [];
       transferSnap.forEach(d => {
         const data = d.data();
+        if (!batchScopeRule(data) || !showDoc(data)) return; // ⛓️ batch + dev isolation
         transferList.push({
           id: d.id,
           fromFundKey: data.fromFundKey ?? '',
@@ -494,6 +503,7 @@ export const GeneralFundScreen: React.FC = () => {
       const colRef = await addDoc(collection(db, 'general_fund_collections'), {
         amount,
         collectionType: 'transfer_in',
+        batchId: activeBatch?.id ?? null, // ⛓️ ACTIVE batch stamp (dev = TEST-77)
         label: `Transfer from ${source.label}`,
         remarks: transferRemarks || `Surplus transferred from ${source.label}`,
         paymentMode: 'Transfer',
@@ -510,6 +520,7 @@ export const GeneralFundScreen: React.FC = () => {
       await addDoc(collection(db, 'fund_transfers'), {
         fromFundKey: source.key,
         fromFundLabel: source.label,
+        batchId: activeBatch?.id ?? null, // ⛓️ ACTIVE batch stamp
         toFundKey: 'general_fund',
         toFundLabel: 'General Fund',
         amount,
@@ -611,6 +622,7 @@ export const GeneralFundScreen: React.FC = () => {
            const expenseRef = await addDoc(collection(db, 'general_fund_expenses'), {
         amount,
         category: expCategory,
+        batchId: activeBatch?.id ?? null, // ⛓️ ACTIVE batch stamp
         categoryLabel: catInfo?.label ?? expCategory,
         vendor: vendorName,
         vendorId: expVendorId,

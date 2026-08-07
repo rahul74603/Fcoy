@@ -11,8 +11,8 @@ const n = (v: any) => Number(v ?? 0);
 /** Central read-only view over the two inventory ledgers. Mutations stay in the specialised screens. */
 export const InventoryHubScreen: React.FC = () => {
   const navigate = useNavigate();
-  const { activeBatch, allBatches } = useBatch();
-  const [batchId, setBatchId] = useState('active');
+  // ⛓️ STRICT BATCH RULE — global selected batch (header switcher / TEST-77 lock)
+  const { currentBatch } = useBatch();
   const [tab, setTab] = useState<'assets' | 'kit' | 'damage'>('assets');
   const [assets, setAssets] = useState<Row[]>([]);
   const [purchases, setPurchases] = useState<Row[]>([]);
@@ -21,11 +21,12 @@ export const InventoryHubScreen: React.FC = () => {
   const [error, setError] = useState('');
 
   const inBatch = useCallback((row: Row) => {
-    if (batchId === 'all') return true;
-    const selected = batchId === 'active' ? activeBatch?.id : batchId;
-    // Legacy documents are intentionally treated as belonging to the active batch.
-    return row.batchId ? row.batchId === selected : selected === activeBatch?.id;
-  }, [activeBatch?.id, batchId]);
+    // batchId wale docs: sirf selected batch ke. Legacy (bina batchId):
+    // sirf asli ACTIVE batch ke view me. 2 batches ka data kabhi mix nahi.
+    return row.batchId
+      ? row.batchId === currentBatch?.id
+      : currentBatch?.status === 'active';
+  }, [currentBatch?.id, currentBatch?.status]);
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -66,7 +67,7 @@ export const InventoryHubScreen: React.FC = () => {
       <div><div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-[.2em] text-emerald-700"><Boxes size={16} /> Central Operations</div><h1 className="text-3xl font-black tracking-tight text-slate-900">Inventory &amp; Stock Hub</h1><p className="mt-1 text-sm text-slate-500">One clear source of truth for permanent property and trainee essentials.</p></div>
       <button onClick={load} className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-black uppercase hover:bg-slate-50"><RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh</button>
     </header>
-    <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm"><span className="text-xs font-black uppercase text-slate-500">Batch view</span><select value={batchId} onChange={e => setBatchId(e.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold"><option value="active">Active batch (legacy records included)</option><option value="all">All batches</option>{allBatches.map(b => <option key={b.id} value={b.id}>{b.batchNumber} — {b.batchName}</option>)}</select>{activeBatch && <Badge tone="bg-emerald-100 text-emerald-700">ACTIVE: {activeBatch.batchNumber}</Badge>}</div>
+    <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm"><span className="text-xs font-black uppercase text-slate-500">Batch view</span>{currentBatch && <Badge tone="bg-emerald-100 text-emerald-700">{currentBatch.batchNumber} — {currentBatch.batchName}</Badge>}<span className="text-[11px] font-semibold text-slate-400">Header ke batch switcher se badlo — yahan do batches ka data kabhi mix nahi hota</span></div>
     {error && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</div>}
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4"><Stat label="Asset valuation" value={`₹${valuation.toLocaleString('en-IN')}`} tone="border-emerald-500" icon={CircleDollarSign} /><Stat label="Low stock alerts" value={lowStock} tone="border-amber-500" icon={AlertTriangle} /><Stat label="Total issued items" value={totalIssued} tone="border-blue-500" icon={Users} /><Stat label="Damaged units" value={totalDamaged} tone="border-red-500" icon={ShieldAlert} /></div>
     <div className="flex flex-wrap gap-2 rounded-xl bg-slate-900 p-2">{([['assets','🏛️ Company Assets Ledger'],['kit','👟 Training Kit Stock & Issue'],['damage','📉 Damage & Disposed Registry']] as const).map(([key, label]) => <button key={key} onClick={() => setTab(key)} className={`rounded-lg px-4 py-2.5 text-sm font-black ${tab === key ? 'bg-white text-slate-900' : 'text-slate-300 hover:bg-slate-800'}`}>{label}</button>)}</div>

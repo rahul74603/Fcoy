@@ -26,33 +26,46 @@ interface EnterpriseLayoutProps {
 // ⛓️ BATCH SWITCHER — STRICT BATCH RULE
 // Is dropdown se jo batch select hoga, POORA APP (funds, dashboards,
 // search, reports — sab) sirf USHI batch ka data dikhayega.
-// 🧪 Test batch (dev data) sirf dev account ki list me aata hai.
+// 🔒 DEVELOPER ACCOUNT: koi dropdown NAHI — wo TEST-77 sandbox se
+// permanently LOCKED hai (alag project jaisa). Sirf static badge dikhega.
 const BatchSwitcher: React.FC = () => {
+  const { user } = useAuth();
   const { allBatches, currentBatch, setSelectedBatch } = useBatch();
+
+  // 🔒 DEV LOCK — developer ke liye batch-change system hi nahi hai
+  if (user?.isDeveloper) {
+    return (
+      <div
+        className="hidden xl:flex items-center gap-1.5 border-2 rounded-lg px-2.5 py-1.5 bg-purple-50 border-purple-400"
+        title="Dev Sandbox: TEST-77 se permanently locked. Real batch ka data yahan kabhi nahi aata, TEST-77 ka data real me kabhi nahi jaata."
+      >
+        <Layers size={13} className="text-purple-700" />
+        <span className="text-[11px] font-black uppercase text-purple-800">
+          🧪 {currentBatch?.batchNumber ?? 'TEST-77'} · DEV SANDBOX · 🔒
+        </span>
+      </div>
+    );
+  }
+
   if (allBatches.length === 0) return null;
-  const cur = currentBatch as unknown as Record<string, unknown> | null;
-  const isDevBatch = cur?.isDevData === true;
   return (
     <div
       className={`hidden xl:flex items-center gap-1.5 border-2 rounded-lg px-2.5 py-1.5 ${
-        isDevBatch ? 'bg-purple-50 border-purple-400' : currentBatch?.status === 'active' ? 'bg-green-50 border-green-400' : 'bg-slate-50 border-slate-400'
+        currentBatch?.status === 'active' ? 'bg-green-50 border-green-400' : 'bg-slate-50 border-slate-400'
       }`}
       title="Batch Rule: har screen sirf SELECTED batch ka data dikhayegi — 2 batches ka data kabhi mix nahi"
     >
-      <Layers size={13} className={isDevBatch ? 'text-purple-700' : 'text-green-700'} />
+      <Layers size={13} className="text-green-700" />
       <select
         value={currentBatch?.id ?? ''}
         onChange={e => setSelectedBatch(e.target.value)}
         className="bg-transparent text-[11px] font-black uppercase text-slate-800 outline-none cursor-pointer max-w-[170px]"
       >
-        {allBatches.map(b => {
-          const rec = b as unknown as Record<string, unknown>;
-          return (
-            <option key={b.id} value={b.id}>
-              {rec.isDevData === true ? '🧪 ' : ''}{b.batchNumber}{b.status === 'active' ? ' ●LIVE' : ' (completed)'}
-            </option>
-          );
-        })}
+        {allBatches.map(b => (
+          <option key={b.id} value={b.id}>
+            {b.batchNumber}{b.status === 'active' ? ' ●LIVE' : ' (completed)'}
+          </option>
+        ))}
       </select>
     </div>
   );
