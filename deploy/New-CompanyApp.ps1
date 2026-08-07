@@ -109,16 +109,32 @@ Write-Host "  [OK] Firestore ready (ya pehle se tha)" -ForegroundColor Green
 
 # -- 4. Email/Password login ON --
 Write-Host ">> 4/7 Email/Password login ON..." -ForegroundColor Yellow
-try {
-  $token = (gcloud auth print-access-token | Select-Object -First 1).Trim()
-  $headers = @{ Authorization = "Bearer $token" }
-  $body = @{ signIn = @{ email = @{ enabled = $true; passwordRequired = $true } } } | ConvertTo-Json -Depth 5
-  $patchUrl = "https://identitytoolkit.googleapis.com/admin/v2/projects/$projId/config?updateMask=signIn.email.enabled,signIn.email.passwordRequired"
-  $null = Invoke-RestMethod -Method Patch -Uri $patchUrl -Headers $headers -Body $body -ContentType 'application/json' -ErrorAction Stop
-  Write-Host "  [OK] Email/Password ON" -ForegroundColor Green
-} catch {
-  Fail "Auth API se Email/Password ON nahi hua. FALLBACK: https://console.firebase.google.com/project/$projId/authentication/providers -> Email/Password -> Enable -> Save. Phir script dobara chalao (sab idempotent hai)."
+# Pehle project ko FIREBASE se jodo (warna Identity Toolkit config reject karta hai)
+cmd /c "firebase projects:addfirebase $projId --non-interactive >nul 2>&1"
+Start-Sleep -Seconds 5
+$authOk = $false
+$lastErr = ""
+for ($try = 1; $try -le 3; $try++) {
+  try {
+    $token = (gcloud auth print-access-token | Select-Object -First 1).Trim()
+    $headers = @{ Authorization = "Bearer $token" }
+    $body = @{ signIn = @{ email = @{ enabled = $true; passwordRequired = $true } } } | ConvertTo-Json -Depth 5
+    $patchUrl = "https://identitytoolkit.googleapis.com/admin/v2/projects/$projId/config?updateMask=signIn.email.enabled,signIn.email.passwordRequired"
+    $null = Invoke-RestMethod -Method Patch -Uri $patchUrl -Headers $headers -Body $body -ContentType 'application/json' -ErrorAction Stop
+    $authOk = $true
+    break
+  } catch {
+    $lastErr = "$($_.Exception.Message)"
+    Write-Host "  ...try $try/3 fail, 8 sec rukti hui APIs ka wait kar rahe..." -ForegroundColor DarkGray
+    Start-Sleep -Seconds 8
+  }
 }
+if (-not $authOk) {
+  Write-Host ""
+  Write-Host "  ASLI ERROR: $lastErr" -ForegroundColor Red
+  Fail "Auth API se Email/Password ON nahi hua. FALLBACK (30 sec): https://console.firebase.google.com/project/$projId/authentication/providers -> Email/Password -> Enable -> Save. Phir script dobara chalao (sab idempotent hai)."
+}
+Write-Host "  [OK] Email/Password ON" -ForegroundColor Green
 
 # -- 5. Web app register --
 Write-Host ">> 5/7 Web app register..." -ForegroundColor Yellow
