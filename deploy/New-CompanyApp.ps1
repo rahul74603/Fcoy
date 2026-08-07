@@ -75,10 +75,20 @@ Write-Host ">> 1/7 Firebase project check/create..." -ForegroundColor Yellow
 cmd /c "gcloud projects describe $projId --quiet >nul 2>&1"
 if ($LASTEXITCODE -ne 0) {
   Write-Host "  Project nahi mila - bana rahe hain..." -ForegroundColor DarkGray
-  $dispName = "$($company.name)"
+  # GCP rule: display name me sirf letters/numbers/space/hyphen/!/quote allowed, max 30 chars.
+  # "B Coy (Bravo Company)" -> "B Coy Bravo Company"  (parentheses hatao)
+  $dispName = ("$($company.name)" -replace "[^a-zA-Z0-9 \-!']", "").Trim()
+  if ($dispName.Length -gt 30) { $dispName = $dispName.Substring(0, 30).Trim() }
+  if ([string]::IsNullOrWhiteSpace($dispName)) { $dispName = $projId }
   gcloud projects create $projId --name $dispName --quiet
   if ($LASTEXITCODE -ne 0) {
-    Fail "Project create fail - '$projId' shayad duniya me kisi aur ka hai (IDs globally unique hoti hain). Dobara try: -ProjectId fcoy-erp-$Code-74603"
+    Write-Host ""
+    Write-Host "  [!] Project '$projId' nahi ban saka. Upar ka ERROR padho:" -ForegroundColor Red
+    Write-Host "      - Agar 'already in use'/'already exists' likha hai -> ye ID kisi aur ka hai:"
+    Write-Host "        powershell -ExecutionPolicy Bypass -File deploy\New-CompanyApp.ps1 -Code $Code -ProjectId fcoy-erp-$Code-74603"
+    Write-Host "      - Agar 'quota'/'permission' aaya hai -> Google account me kam se kam 1 naya project banane ki
+        permission chahiye (naye Google accounts pe limit 5-30 projects hoti hai)"
+    Fail "Project create fail - upar ka red ERROR screen copy karke paste karo"
   }
   Write-Host "  [OK] Project ban gaya" -ForegroundColor Green
 } else {
