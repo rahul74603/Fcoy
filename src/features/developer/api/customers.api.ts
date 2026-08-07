@@ -91,6 +91,56 @@ export const listCustomersWithSub = async (): Promise<CustomerWithSub[]> => {
 };
 
 // ─────────────────────────────────────────────
+// CREATE REMOTE CUSTOMER (billing-only) — 🌐
+// Nayi company (B Coy, C Coy...) jiski APNI alag app hogi.
+// ⚠️ Is app me uska LOGIN/auth user NAHI banta — warna wo
+// is app ke database (local unit ka data) dekh leta.
+// Yahan sirf: customers record + subscription-ready + history.
+// CC login unki APP me banta hai (Delivery Playbook step 3).
+// ─────────────────────────────────────────────
+export interface RemoteCustomerForm {
+  unitName: string;
+  commanderName: string;
+  email: string;
+  phone: string;
+  location: string;
+  notes: string;
+}
+
+export const createRemoteCustomer = async (
+  form: RemoteCustomerForm,
+  byName: string,
+): Promise<{ customerId: string }> => {
+  const customerId = await nextCustomerId();
+  const now = new Date().toISOString();
+
+  await addDoc(collection(db, CUSTOMERS_COL), {
+    customerId,
+    unitName: form.unitName,
+    commanderName: form.commanderName,
+    email: form.email,
+    phone: form.phone,
+    location: form.location,
+    notes: form.notes,
+    status: 'active',
+    isLocalUnit: false, // 🌐 REMOTE — is app ka ghar NAHI
+    authUid: '',        // koi login nahi (billing record only)
+    createdAt: now,
+    createdBy: byName,
+  } satisfies Omit<Customer, 'id'>);
+
+  await addDoc(collection(db, HISTORY_COL), {
+    action: 'ACCOUNT_CREATED',
+    customerId,
+    planId: '', planName: `${form.unitName} — remote customer record (billing-only)`, amount: 0,
+    startDate: '', endDate: '',
+    remarks: `Customer ID ${customerId} assigned · 🌐 apni alag app (login yahan NAHI banaya gaya — safety)`, by: byName, at: now,
+  });
+
+  return { customerId };
+};
+
+// ─────────────────────────────────────────────
 // CREATE CC ACCOUNT (customer)
 // Auth user banta hai + users doc + customers doc
 // + subscription record (NO PLAN) + history entry

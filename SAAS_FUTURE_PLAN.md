@@ -41,12 +41,12 @@ Jab koi nayi company (B Coy, C Coy...) app kharide — ye 6 steps:
 | 2 | **Code deploy** | Repo ka copy → `.env` me us company ke Firebase keys → `npm install` → `npm run build` → `firebase deploy --only hosting,firestore:rules,firestore:indexes` |
 | 3 | **Pehla CC account** | Customer app ke User Management/Owner provisioning se us company ka 1 Company Commander banao |
 | 4 | **Unit set karo** | CC login → Unit Config me us company ki letterhead (unit, coy, location, addresses) |
-| 5 | **Apni master app me record** | Owner Panel → Customers (CC) tab → naya customer (isLocalUnit = **OFF**) → plan assign (applyToUnit OFF — kyunki plan unki app me jayega, is app me nahi) |
+| 5 | **Apni master app me record** | Owner Panel → Customers (CC) tab → naya customer → **"🌐 Remote company" select karo (default)** — ye billing-only record hai, is app me unka LOGIN nahi banta 🔒. Phir Subscriptions tab se plan assign karo. |
 | 6 | **Handover** | CC ko login details + OWNER_GUIDE. Backup habit: Firestore export weekly. |
 
-> ⚠️ **Is deployment pe** customer banate waqt applyToUnit ON **sirf tab**
-> jab company ISI app ki ho. Baaki sab ke liye OFF — warna tumhari apni
-> company ka subscription overwrite ho jayega.
+> ⚠️ **Remote company ka login is master app me KABHI mat banao** — ye app
+> A Coy ka ghar hai, shared database me doosri company ka login = data leak.
+> Form me "Remote company" default isi liye hai.
 
 ---
 

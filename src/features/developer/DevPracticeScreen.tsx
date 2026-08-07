@@ -35,7 +35,7 @@ import {
 import {
   listCustomersWithSub, createCcAccount, fetchCustomerHistory,
   assignPlanToCustomer, extendCustomerSub, cancelCustomerSub,
-  listCcUsers, setupFirstCompany, CcUserLite,
+  listCcUsers, setupFirstCompany, CcUserLite, createRemoteCustomer,
   CustomerWithSub, CreateCcForm, CustHistoryEntry,
 } from './api/customers.api';
 import { fetchPlans } from '../subscription/api/subscription.api';
@@ -153,6 +153,10 @@ const CustomersTab = ({ onManage, refreshKey }: { onManage: (c: CustomerWithSub)
     unitName: '', commanderName: '', email: '', password: '',
     phone: '', location: '', notes: '', isLocalUnit: false,
   });
+  // 🌐 Remote = default (SAFETY): nayi company ki APNI alag app hogi —
+  // is app me uska LOGIN nahi banta (warna wo local unit ka data dekh leta).
+  // Local login sirf tab jab company ISI deployment ki ho (jaise A Coy).
+  const [isRemote, setIsRemote] = useState(true);
   const [devPassword, setDevPassword] = useState('');
   const [showDevPw, setShowDevPw] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -224,6 +228,29 @@ const CustomersTab = ({ onManage, refreshKey }: { onManage: (c: CustomerWithSub)
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isRemote) {
+      // 🌐 BILLING-ONLY — koi auth/login NAHI banega (safety)
+      setCreating(true); setError(''); setSuccess(''); setCreatedId('');
+      try {
+        const { customerId } = await createRemoteCustomer({
+          unitName: form.unitName, commanderName: form.commanderName,
+          email: form.email, phone: form.phone, location: form.location, notes: form.notes,
+        }, user?.name ?? user?.email ?? 'Owner');
+        setCreatedId(customerId);
+        setSuccess(
+          `✓ "${form.unitName}" ka REMOTE customer record ban gaya! Customer ID: ${customerId}. ` +
+          `Is app me uska LOGIN nahi bana (🔒 isliye wo A Coy ka data KABHI nahi dekh sakta). ` +
+          `Ab "Subscriptions" tab se plan assign karo. ` +
+          `Uski WORKING app alag deploy hogi (SAAS_FUTURE_PLAN.md ke 6 steps) — wahan uska CC banega.`
+        );
+        setForm({ unitName: '', commanderName: '', email: '', password: '', phone: '', location: '', notes: '', isLocalUnit: false });
+        setShowForm(false);
+        await load();
+      } catch (err: any) {
+        setError(`Create failed: ${err.message}`);
+      } finally { setCreating(false); }
+      return;
+    }
     if (form.password.length < 6) { setError('CC password min 6 characters'); return; }
     if (!devPassword) { setError('Apna (Owner) password enter karo — account switch ke baad wapas login ke liye'); return; }
     setCreating(true); setError(''); setSuccess(''); setCreatedId('');
@@ -331,6 +358,27 @@ const CustomersTab = ({ onManage, refreshKey }: { onManage: (c: CustomerWithSub)
             <button onClick={() => setShowForm(false)} className="text-white/70 hover:text-white"><X size={16} /></button>
           </div>
           <form onSubmit={handleCreate} className="p-5 space-y-4">
+            {/* 🌐 REMOTE vs 🏠 LOCAL — SAFETY TOGGLE */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <label className={`flex items-start gap-2 border rounded px-3 py-2.5 cursor-pointer ${isRemote ? 'bg-sky-950/60 border-sky-500' : 'bg-military-900/40 border-slate-700'}`}>
+                <input type="radio" name="custMode" checked={isRemote} onChange={() => setIsRemote(true)}
+                  className="accent-sky-500 w-3.5 h-3.5 mt-0.5" />
+                <span className="text-[11px] font-bold text-sky-200 leading-snug">
+                  🌐 <strong>Remote company (RECOMMENDED)</strong> — B Coy/C Coy jaisi nayi company.
+                  Sirf billing record banega; <span className="text-sky-400">is app me LOGIN nahi banega</span>
+                  (isliye wo hamari company ka data kabhi nahi dekh sakti). Uski working app ALAG deploy hogi.
+                </span>
+              </label>
+              <label className={`flex items-start gap-2 border rounded px-3 py-2.5 cursor-pointer ${!isRemote ? 'bg-orange-950/60 border-orange-500' : 'bg-military-900/40 border-slate-700'}`}>
+                <input type="radio" name="custMode" checked={!isRemote} onChange={() => setIsRemote(false)}
+                  className="accent-orange-500 w-3.5 h-3.5 mt-0.5" />
+                <span className="text-[11px] font-bold text-orange-200 leading-snug">
+                  🏠 <strong>Is app ka CC login banao</strong> — ⚠️ sirf tab jab company ISI app me kaam karegi
+                  (jaise A Coy). Iska login A Coy ka data dekh sakta hai — dusri company ke liye KABHI mat chuno.
+                </span>
+              </label>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className={labelCls}>Unit / Company Name *</label>
@@ -343,15 +391,17 @@ const CustomersTab = ({ onManage, refreshKey }: { onManage: (c: CustomerWithSub)
                   className={inputCls} placeholder="e.g. Insp. R.K. Sharma" />
               </div>
               <div>
-                <label className={labelCls}>Login Email *</label>
-                <input type="email" required value={form.email} onChange={e => setForm({ ...form, email: e.target.value })}
+                <label className={labelCls}>{isRemote ? 'Contact Email' : 'Login Email *'}</label>
+                <input type="email" required={!isRemote} value={form.email} onChange={e => setForm({ ...form, email: e.target.value })}
                   className={inputCls} placeholder="cc.fcoy@gmail.com" />
               </div>
-              <div>
-                <label className={labelCls}>Login Password *</label>
-                <input type="text" required minLength={6} value={form.password} onChange={e => setForm({ ...form, password: e.target.value })}
-                  className={inputCls} placeholder="Min 6 characters (customer ko dena)" />
-              </div>
+              {!isRemote && (
+                <div>
+                  <label className={labelCls}>Login Password *</label>
+                  <input type="text" required minLength={6} value={form.password} onChange={e => setForm({ ...form, password: e.target.value })}
+                    className={inputCls} placeholder="Min 6 characters (customer ko dena)" />
+                </div>
+              )}
               <div>
                 <label className={labelCls}>Phone</label>
                 <input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })}
@@ -369,32 +419,40 @@ const CustomersTab = ({ onManage, refreshKey }: { onManage: (c: CustomerWithSub)
               </div>
             </div>
 
-            <label className="flex items-center gap-2 bg-orange-950/40 border border-orange-700/50 rounded px-3 py-2.5 cursor-pointer">
-              <input type="checkbox" checked={form.isLocalUnit}
-                onChange={e => setForm({ ...form, isLocalUnit: e.target.checked })}
-                className="accent-orange-500 w-3.5 h-3.5" />
-              <span className="text-[11px] font-bold text-orange-200">
-                🏠 Ye IS app (is unit) ka CC hai — iska plan assign karte hi is app pe apply ho jayega
-              </span>
-            </label>
-
-            <div className="bg-amber-950/50 border border-amber-700/50 rounded p-3">
-              <label className="text-[10px] font-black text-amber-400 uppercase block mb-1.5">
-                🔐 Tumhara (Owner) Password * — CC ke account banne ke baad system tumhe wapas login karega
+            {!isRemote && (
+              <label className="flex items-center gap-2 bg-orange-950/40 border border-orange-700/50 rounded px-3 py-2.5 cursor-pointer">
+                <input type="checkbox" checked={form.isLocalUnit}
+                  onChange={e => setForm({ ...form, isLocalUnit: e.target.checked })}
+                  className="accent-orange-500 w-3.5 h-3.5" />
+                <span className="text-[11px] font-bold text-orange-200">
+                  🏠 Ye IS app (is unit) ka CC hai — iska plan assign karte hi is app pe apply ho jayega
+                </span>
               </label>
-              <div className="relative max-w-sm">
-                <input type={showDevPw ? 'text' : 'password'} required value={devPassword}
-                  onChange={e => setDevPassword(e.target.value)} className={inputCls} />
-                <button type="button" onClick={() => setShowDevPw(!showDevPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
-                  {showDevPw ? <EyeOff size={13} /> : <Eye size={13} />}
-                </button>
+            )}
+
+            {!isRemote && (
+              <div className="bg-amber-950/50 border border-amber-700/50 rounded p-3">
+                <label className="text-[10px] font-black text-amber-400 uppercase block mb-1.5">
+                  🔐 Tumhara (Owner) Password * — CC ke account banne ke baad system tumhe wapas login karega
+                </label>
+                <div className="relative max-w-sm">
+                  <input type={showDevPw ? 'text' : 'password'} required value={devPassword}
+                    onChange={e => setDevPassword(e.target.value)} className={inputCls} />
+                  <button type="button" onClick={() => setShowDevPw(!showDevPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+                    {showDevPw ? <EyeOff size={13} /> : <Eye size={13} />}
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="flex gap-2">
               <button type="submit" disabled={creating}
                 className="bg-orange-600 text-white px-6 py-2.5 text-xs font-black uppercase hover:bg-orange-700 disabled:opacity-50 rounded-lg flex items-center gap-2">
-                {creating ? <><Loader2 size={13} className="animate-spin" /> Creating...</> : <><UserPlus size={13} /> Create CC + Customer ID</>}
+                {creating
+                  ? <><Loader2 size={13} className="animate-spin" /> Creating...</>
+                  : isRemote
+                    ? <><Building2 size={13} /> Create Remote Customer (billing-only)</>
+                    : <><UserPlus size={13} /> Create CC + Customer ID</>}
               </button>
               <button type="button" onClick={() => setShowForm(false)}
                 className="px-4 py-2.5 text-xs font-black text-slate-300 border border-slate-600 rounded-lg hover:bg-military-800">
@@ -477,6 +535,7 @@ const CustomerRow = ({ customer: c, onManage }: { customer: CustomerWithSub; onM
           {c.customerId}
         </span>
         {c.isLocalUnit && <div className="text-[8px] font-black text-green-600 mt-0.5">🏠 THIS UNIT</div>}
+        {!c.isLocalUnit && !c.authUid && <div className="text-[8px] font-black text-sky-600 mt-0.5">🌐 REMOTE · billing-only (login unki app me)</div>}
       </td>
       <td className="px-3 py-2.5">
         <p className="font-bold text-slate-800">{c.unitName}</p>
@@ -795,6 +854,11 @@ const SubscriptionsTab = ({
                     className="accent-green-600 w-3.5 h-3.5" />
                   <span className="text-[11px] font-bold text-green-800">🏠 Is app (unit) pe turant apply karo</span>
                 </label>
+              )}
+              {!customer.isLocalUnit && (
+                <div className="bg-sky-50 border border-sky-200 rounded px-3 py-2 text-[10px] font-bold text-sky-800">
+                  🌐 Remote customer — plan sirf billing record me likha jayega. Uski app pe subscription alag se activate hoga (Delivery Playbook).
+                </div>
               )}
               <div className="flex gap-2">
                 <button type="submit" disabled={payLoading}
