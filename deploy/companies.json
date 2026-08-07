@@ -1,0 +1,74 @@
+{
+  "_README": "8 companies ki app deploy karne ka registry. Har company ka Firebase project banao (console me 3 min), web app ki config keys yahan paste karo, phir chalao:  powershell -File deploy/Deploy-Company.ps1 -Code bcoy",
+
+  "acoy": {
+    "name": "A Coy (Alpha Company) — 🏠 MASTER APP (training-command-erp)",
+    "alreadyDeployed": true,
+    "projectId": "training-command-erp",
+    "note": "Ye TUMHARI master app hai — isse dobara deploy mat karo is script se. isLocalUnit company."
+  },
+
+  "bcoy": {
+    "name": "B Coy (Bravo Company)",
+    "projectId": "",
+    "apiKey": "",
+    "authDomain": "",
+    "storageBucket": "",
+    "messagingSenderId": "",
+    "appId": ""
+  },
+  "ccoy": {
+    "name": "C Coy (Charlie Company)",
+    "projectId": "",
+    "apiKey": "",
+    "authDomain": "",
+    "storageBucket": "",
+    "messagingSenderId": "",
+    "appId": ""
+  },
+  "dcoy": {
+    "name": "D Coy (Delta Company)",
+    "projectId": "",
+    "apiKey": "",
+    "authDomain": "",
+    "storageBucket": "",
+    "messagingSenderId": "",
+    "appId": ""
+  },
+  "ecoy": {
+    "name": "E Coy (Echo Company)",
+    "projectId": "",
+    "apiKey": "",
+    "authDomain": "",
+    "storageBucket": "",
+    "messagingSenderId": "",
+    "appId": ""
+  },
+  "fcoy": {
+    "name": "F Coy (Fighter Company)",
+    "projectId": "",
+    "apiKey": "",
+    "authDomain": "",
+    "storageBucket": "",
+    "messagingSenderId": "",
+    "appId": ""
+  },
+  "gcoy": {
+    "name": "G Coy",
+    "projectId": "",
+    "apiKey": "",
+    "authDomain": "",
+    "storageBucket": "",
+    "messagingSenderId": "",
+    "appId": ""
+  },
+  "hq": {
+    "name": "Headquarters (HQ)",
+    "projectId": "",
+    "apiKey": "",
+    "authDomain": "",
+    "storageBucket": "",
+    "messagingSenderId": "",
+    "appId": ""
+  }
+}

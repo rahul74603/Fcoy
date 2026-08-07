@@ -147,6 +147,10 @@ export const LoginScreen = () => {
             {loading ? 'Authenticating...' : 'Secure Login'}
           </button>
           <button type="button" onClick={handleResetPassword} className="w-full text-[10px] font-bold text-military-700 underline hover:text-military-900">Forgot password?</button>
+          <button type="button" onClick={() => navigate('/first-run')}
+            className="w-full text-[10px] font-bold text-slate-400 hover:text-green-600 mt-1 transition-colors">
+            🚀 Nayi company app? First-Run Setup Wizard
+          </button>
         </form>
       </div>
     </div>

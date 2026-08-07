@@ -11,6 +11,7 @@ import { UnitConfigProvider }   from './contexts/UnitConfigContext';
 import { BatchProvider }        from './contexts/BatchContext';
 import { SubscriptionProvider } from './contexts/SubscriptionContext';
 import { LoginScreen }          from './features/auth/LoginScreen';
+import { FirstRunSetupScreen }  from './features/auth/FirstRunSetupScreen';
 import { ProtectedRoute }       from './components/ProtectedRoute';
 
 // --- Subscription ---
@@ -100,8 +101,9 @@ function App() {
             <Routes>
 
               {/* ── Public ── */}
-              <Route path="/login" element={<LoginScreen />} />
-              <Route path="/"      element={<Navigate to="/login" replace />} />
+              <Route path="/login"     element={<LoginScreen />} />
+              <Route path="/first-run" element={<FirstRunSetupScreen />} />
+              <Route path="/"          element={<Navigate to="/login" replace />} />
 
               {/* ════════════════════════════════
                   DASHBOARDS

@@ -33,6 +33,11 @@ uska plan `subscription/current` pe live apply hota hai.
 
 ## 2. 📦 COMPANY DELIVERY PLAYBOOK (har nayi company ke liye)
 
+> 🚀 **UPDATE: Ye poora process ab automated hai — `COMPANY_DELIVERY_KIT.md`
+> dekho (runbook) + `deploy/Deploy-Company.ps1` (1-command deploy) +
+> `/first-run` wizard (naya app apna pehla CC khud banati hai).**
+> Neeche wala flow usi ka base hai:
+
 Jab koi nayi company (B Coy, C Coy...) app kharide — ye 6 steps:
 
 | # | Step | Detail |
