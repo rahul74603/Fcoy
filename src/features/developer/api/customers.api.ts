@@ -305,3 +305,136 @@ export const setCustomerStatus = async (
 ): Promise<void> => {
   await setDoc(doc(db, CUSTOMERS_COL, customer.id), { status }, { merge: true });
 };
+
+// ═════════════════════════════════════════════════════════════
+// ⚡ FIRST COMPANY QUICK SETUP (Owner ne order kiya)
+// Ek click me 4 kaam:
+//   1. CC user ko company se LINK (users doc → customerId + unitName)
+//   2. customers record create/update — isLocalUnit = TRUE
+//      (⚠️ RULE: is app me sirf EK local unit hoti hai —
+//       baaki customers ka isLocalUnit auto FALSE ho jata hai)
+//   3. users doc — role/designation sync
+//   4. Monthly plan assign + is app pe APPLY (subscription/current)
+// ═════════════════════════════════════════════════════════════
+export interface CcUserLite {
+  uid: string;
+  name: string;
+  email: string;
+  customerId: string | null;
+  unitName: string | null;
+}
+
+/** users collection se saare CC logins (developer chhoda ke) — quick setup dropdown ke liye */
+export const listCcUsers = async (): Promise<CcUserLite[]> => {
+  const snap = await getDocs(collection(db, 'users'));
+  const out: CcUserLite[] = [];
+  snap.forEach(d => {
+    const u = d.data() as Record<string, unknown>;
+    if (u['isDeveloper'] === true) return;
+    if (String(u['role'] ?? '') !== 'Company Commander') return;
+    out.push({
+      uid: d.id,
+      name: String(u['name'] ?? ''),
+      email: String(u['email'] ?? ''),
+      customerId: u['customerId'] != null ? String(u['customerId']) : null,
+      unitName: u['unitName'] != null ? String(u['unitName']) : null,
+    });
+  });
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+};
+
+export interface QuickSetupInput {
+  ccUid: string;
+  ccName: string;
+  ccEmail: string;
+  unitName: string; // e.g. 'A Coy (Alpha Company)'
+  phone?: string;
+}
+
+export const setupFirstCompany = async (
+  input: QuickSetupInput,
+  plan: SubscriptionPlan,
+  by: string,
+): Promise<{ customerId: string; sub: UnitSubscription }> => {
+  const now = new Date().toISOString();
+
+  // 1. Is CC ka customer record pehle se hai?
+  const custSnap = await getDocs(collection(db, CUSTOMERS_COL));
+  let customerId: string | null = null;
+  let customerDocId: string | null = null;
+  const demoteOthers: Promise<unknown>[] = [];
+  custSnap.forEach(d => {
+    const c = d.data() as Customer;
+    if (c.authUid === input.ccUid) {
+      customerId = c.customerId;
+      customerDocId = d.id;
+    } else if (c.isLocalUnit === true) {
+      // ⚠️ GOLDEN RULE: is app me sirf EK company ka ghar hai
+      demoteOthers.push(
+        setDoc(doc(db, CUSTOMERS_COL, d.id), { isLocalUnit: false }, { merge: true }),
+      );
+    }
+  });
+  if (!customerId) customerId = await nextCustomerId();
+  await Promise.all(demoteOthers);
+
+  // 2. customers record
+  if (customerDocId) {
+    await setDoc(doc(db, CUSTOMERS_COL, customerDocId), {
+      unitName: input.unitName,
+      commanderName: input.ccName,
+      email: input.ccEmail,
+      status: 'active',
+      isLocalUnit: true, // 🏠 THIS UNIT
+    }, { merge: true });
+  } else {
+    await setDoc(doc(db, CUSTOMERS_COL, input.ccUid), {
+      customerId,
+      unitName: input.unitName,
+      commanderName: input.ccName,
+      email: input.ccEmail,
+      phone: input.phone ?? '',
+      location: '',
+      notes: '1st company — Owner quick setup',
+      status: 'active',
+      isLocalUnit: true, // 🏠 THIS UNIT
+      authUid: input.ccUid,
+      createdAt: now,
+      createdBy: by,
+    } satisfies Omit<Customer, 'id'>);
+  }
+
+  // 3. CC users doc LINK — SubscriptionContext isi customerId se uska plan dhundhta hai
+  await setDoc(doc(db, 'users', input.ccUid), {
+    customerId,
+    unitName: input.unitName,
+    designation: `Company Commander — ${input.unitName}`,
+    role: 'Company Commander',
+    isActive: true,
+  }, { merge: true });
+
+  // 4. Plan assign + IS APP PE APPLY (subscription/current turant set)
+  const custWithSub: CustomerWithSub = {
+    id: customerDocId ?? input.ccUid,
+    customerId,
+    unitName: input.unitName,
+    commanderName: input.ccName,
+    email: input.ccEmail,
+    phone: input.phone ?? '',
+    location: '',
+    notes: '1st company — Owner quick setup',
+    status: 'active',
+    isLocalUnit: true,
+    authUid: input.ccUid,
+    createdAt: now,
+    createdBy: by,
+  };
+  const sub = await assignPlanToCustomer(custWithSub, plan, by, {
+    paymentMode: 'Owner Setup',
+    paymentRef: 'FIRST-COMPANY-QUICK-SETUP',
+    remarks: `Quick setup — ${input.unitName} is ${by} ki 1st company`,
+    applyToUnit: true,
+  });
+
+  return { customerId, sub };
+};
