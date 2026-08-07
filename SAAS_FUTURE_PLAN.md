@@ -100,17 +100,38 @@ pata chale ki naya code aa gaya ya nahi (Ctrl+Shift+R ke baad).
 
 ---
 
-## 6. 🏢 OPTIONAL PHASE-X: True Multi-Tenant (ek hi app me saari companies)
+## 6. 🏢 PHASE-X: MULTI-TENANT — 8 COMPANIES, EK HI FIREBASE
 
-Abhi **recommend NAHI** (42+ collections pe tenantId stamp + har query +
-rules rewrite — bada risk). Lekin planning ready rakhi hai:
+**Sawaal:** kya ek hi Firebase pe 8 company alag-alag data ke saath chal sakti hai?
+**Jawaab:** Haan — Firebase handle kar lega, lekin app ko pehle *tenant system*
+dena padega. Aaj ka code ek hi "ghar" banata hai; sab companies ka data ek
+me todne ke liye ye 5 phases chahiye:
 
-- Launch tabhi jab: 20+ companies ho AUR BSF-style data isolation ki
-  zaroorat kam ho (military/military-adjacent customers alag instance
-  prefer karte hain — security audits easy hote hain).
-- Migration path: `tenantId` field + context (`TenantContext` — waisa hi
-  jaise BatchContext ka kanun hai) + rules: `exists(/databases/$(db)/documents/tenants/$(tenantId)/members/$(uid))`.
-- Effort estimate: 4-6 focused sessions + full re-test.
+### Kis level pe kaam hoga (Batch-kanun jaisa hi pattern, ek floor upar)
+
+| # | Kaam | Detail |
+|---|------|--------|
+| T1 | **Tenant schema + lock** | `tenants` collection · har record pe `tenantId` stamp · `TenantContext` (jaise BatchContext hai — login pe company LOCK, switch nahi) · central `tenantScopeRule()` util |
+| T2 | **Firestore rules + tests** | RULES ko tenant-enforcer banana (client filter chhoote to bhi leak na ho) · emulator tests har tenant-permission pe. **Yehi asli safety net hai — iske bina tenant mode mat chalana** |
+| T3 | **Writes stamp + migration** | Har write pe tenantId auto-stamp · purana A Coy data migrate: script se sab docs pe `tenantId='A-COY'` |
+| T4 | **Reads filter + login** | Har screen/collection read pe tenant filter · login → tenant detect → poori app us company ka |
+| T5 | **Owner cross-company view** | Owner Panel: saari companies ka on/off (suspend), plan status, usage counts — ek nazar me |
+
+### Hosting: ek project me 8 URLs? — Haan, Firebase *multi-site*
+Ek Firebase project me **multiple Hosting sites** (limit ~36) chal sakti hain:
+`acoy-erp.web.app`, `bcoy-erp.web.app`... sab EK hi build serve karegi;
+app URL dekh ke apna tenant lock kar legi (hostname → tenant map).
+Matlab: 1 project, 1 deploy command, 8 alag-dikhti apps.
+
+### Sach bhi batao — limits & cost
+- **Auth:** ek project = ek Auth (sab companies ke users yahin — koi dikkat nahi, user doc pe tenantId)
+- **Firestore:** usage-based. 8 chhoti companies easily chale; free tier (50k reads/din) shuru me kaafi, baad me **Blaze (pay-as-you-go)** lagana padega — chhota kharcha (usage ke hisaab se, sikke nahi tootte)
+- **Risk:** ek bhi read-spot pe filter choota = doosri company ka data dikha. SIRF rules + emulator tests ke baad launch.
+- **Effort:** 5 focused phases + poora app re-test. Batch-kanun jitna pattern ready hai, isliye possible hai — lekin jaldi nahi, sahi.
+
+### Kab lena?
+- **≤3-4 companies + military-grade isolation chahiye** → alag deployments (§2) hi better rahega.
+- **5+ companies, ops overhead kam karna hai** → multi-tenant worth it. Tabhi T1-T5 shuru karo.
 
 ---
 
