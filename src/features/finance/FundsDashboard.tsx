@@ -11,6 +11,7 @@ import {
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { formatCurrency, formatDate, FIXED_MESS_CATEGORIES } from './shared/utils';
+import { scopeVisible } from '../../utils/batchScope';
 import { ReportButton } from '../../components/common/ReportButton';
 
 // ─────────────────────────────────────────────
@@ -388,6 +389,7 @@ export const FundsDashboard: React.FC = () => {
       const transferList: any[] = [];
       transferSnap.forEach((d) => {
         const data = d.data();
+        if (!scopeVisible(data)) return; // batch+dev isolation guard
         transferList.push({
           id: d.id,
           fromFundKey:   data.fromFundKey   ?? '',
@@ -413,6 +415,7 @@ export const FundsDashboard: React.FC = () => {
 
       mcSnap.forEach((d) => {
         const data = d.data();
+        if (!scopeVisible(data)) return; // batch+dev isolation guard
         mc += Number(data.amount ?? 0);
         mcList.push({
           id: d.id,
@@ -424,6 +427,7 @@ export const FundsDashboard: React.FC = () => {
       });
       meSnap.forEach((d) => {
         const data = d.data();
+        if (!scopeVisible(data)) return; // batch+dev isolation guard
         meList.push({
           id: d.id,
           amount:        Number(data.amount      ?? 0),
@@ -454,6 +458,7 @@ export const FundsDashboard: React.FC = () => {
 
       tcSnap.forEach((d) => {
         const data = d.data();
+        if (!scopeVisible(data)) return; // batch+dev isolation guard
         tc += Number(data.amount ?? 0);
         tcList.push({
           id:      d.id,
@@ -464,6 +469,7 @@ export const FundsDashboard: React.FC = () => {
       });
       teSnap.forEach((d) => {
         const data = d.data();
+        if (!scopeVisible(data)) return; // batch+dev isolation guard
         teList.push({
           id:            d.id,
           amount:        Number(data.amount     ?? 0),
@@ -493,6 +499,7 @@ export const FundsDashboard: React.FC = () => {
 
       acSnap.forEach((d) => {
         const data = d.data();
+        if (!scopeVisible(data)) return; // batch+dev isolation guard
         ac += Number(data.amount ?? 0);
         acList.push({
           id:      d.id,
@@ -503,6 +510,7 @@ export const FundsDashboard: React.FC = () => {
       });
       aeSnap.forEach((d) => {
         const data = d.data();
+        if (!scopeVisible(data)) return; // batch+dev isolation guard
         aeList.push({
           id:            d.id,
           amount:        Number(data.amount     ?? 0),
@@ -532,6 +540,7 @@ export const FundsDashboard: React.FC = () => {
 
       gcSnap.forEach((d) => {
         const data = d.data();
+        if (!scopeVisible(data)) return; // batch+dev isolation guard
         gc += Number(data.amount ?? 0);
         gcList.push({
           id:      d.id,
@@ -542,6 +551,7 @@ export const FundsDashboard: React.FC = () => {
       });
       geSnap.forEach((d) => {
         const data = d.data();
+        if (!scopeVisible(data)) return; // batch+dev isolation guard
         geList.push({
           id:            d.id,
           amount:        Number(data.amount     ?? 0),
@@ -625,6 +635,7 @@ export const FundsDashboard: React.FC = () => {
       const vendorMap: Record<string, { name: string; categoryLabel: string }> = {};
       vSnap.forEach((d) => {
         const data = d.data();
+        if (!scopeVisible(data)) return; // batch+dev isolation guard
         if (data.isActive !== false) {
           vendorMap[d.id] = {
             name:          data.name          ?? '',
@@ -636,6 +647,7 @@ export const FundsDashboard: React.FC = () => {
       const vDueMap: Record<string, VendorDueSummary> = {};
       veSnap.forEach((d) => {
         const data = d.data();
+        if (!scopeVisible(data)) return; // batch+dev isolation guard
         const due  = Number(data.dueAmount ?? 0);
         if (due <= 0) return;
         const vId = data.vendorId ?? '';

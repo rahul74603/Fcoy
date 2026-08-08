@@ -12,6 +12,7 @@ import {
   serverTimestamp
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+import { scopeVisible } from '../../../utils/batchScope';
 import { useAuth } from '../../../contexts/AuthContext';
 import {
   PaymentModeSelector,
@@ -221,7 +222,7 @@ export const VendorPaymentScreen: React.FC = () => {
     let transferList: any[] = [];
     try {
       const transferSnap = await getDocs(collection(db, 'fund_transfers'));
-      transferList = transferSnap.docs.map(d => d.data());
+      transferList = transferSnap.docs.map(d => d.data()).filter(scopeVisible); // scope guard
     } catch {
       transferList = [];
     }
@@ -238,9 +239,10 @@ export const VendorPaymentScreen: React.FC = () => {
       let mCol = 0;
       const mExpList: any[] = [];
 
-      mColSnap.forEach(d => { mCol += Number(d.data().amount ?? 0); });
+      mColSnap.forEach(d => { const _dd = d.data(); if (!scopeVisible(_dd)) return; mCol += Number(_dd.amount ?? 0); });
       mExpSnap.forEach(d => {
         const data = d.data();
+        if (!scopeVisible(data)) return; // batch+dev isolation guard
         mExpList.push({
           amount:    Number(data.amount    ?? 0),
           vendorId:  data.vendorId ?? data.linkedVendorId ?? '',
@@ -273,9 +275,10 @@ export const VendorPaymentScreen: React.FC = () => {
       let aCol = 0;
       const aExpList: any[] = [];
 
-      aColSnap.forEach(d => { aCol += Number(d.data().amount ?? 0); });
+      aColSnap.forEach(d => { const _dd = d.data(); if (!scopeVisible(_dd)) return; aCol += Number(_dd.amount ?? 0); });
       aExpSnap.forEach(d => {
         const data = d.data();
+        if (!scopeVisible(data)) return; // batch+dev isolation guard
         aExpList.push({
           amount:     Number(data.amount     ?? 0),
           vendorId:   data.vendorId ?? data.linkedVendorId ?? '',
@@ -307,9 +310,10 @@ export const VendorPaymentScreen: React.FC = () => {
       let tCol = 0;
       const tExpList: any[] = [];
 
-      tColSnap.forEach(d => { tCol += Number(d.data().amount ?? 0); });
+      tColSnap.forEach(d => { const _dd = d.data(); if (!scopeVisible(_dd)) return; tCol += Number(_dd.amount ?? 0); });
       tExpSnap.forEach(d => {
         const data = d.data();
+        if (!scopeVisible(data)) return; // batch+dev isolation guard
         tExpList.push({
           amount:     Number(data.amount     ?? 0),
           vendorId:   data.vendorId ?? '',
@@ -342,9 +346,10 @@ export const VendorPaymentScreen: React.FC = () => {
       let gCol = 0;
       const gExpList: any[] = [];
 
-      gColSnap.forEach(d => { gCol += Number(d.data().amount ?? 0); });
+      gColSnap.forEach(d => { const _dd = d.data(); if (!scopeVisible(_dd)) return; gCol += Number(_dd.amount ?? 0); });
       gExpSnap.forEach(d => {
         const data = d.data();
+        if (!scopeVisible(data)) return; // batch+dev isolation guard
         gExpList.push({
           amount:     Number(data.amount     ?? 0),
           vendorId:   data.vendorId ?? '',

@@ -545,7 +545,7 @@ export const Sidebar = () => {
 
           {/* FOOTER */}
           <div className="p-4 bg-military-950 border-t border-military-800 text-xs text-military-400 text-center">
-            v1.8.7 · 403 Detective
+            v1.9.0 · Full Audit Fix
           </div>
 
         </div>

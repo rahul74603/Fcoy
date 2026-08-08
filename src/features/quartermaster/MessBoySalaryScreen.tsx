@@ -13,6 +13,8 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { useAuth } from '../../contexts/AuthContext';
+import { useBatch } from '../../contexts/BatchContext';
+import { scopeVisible } from '../../utils/batchScope';
 import {
   PaymentModeSelector,
   PaymentModeBadge,
@@ -89,6 +91,7 @@ const calcVendorDue = (expList: any[]): number =>
 // ═════════════════════════════════════════════
 export const MessBoySalaryScreen: React.FC = () => {
   const { user } = useAuth();
+  const { activeBatch } = useBatch();
   const recordedBy = user?.email ?? 'Quarter Master';
 
   // ── DATA ──
@@ -136,7 +139,7 @@ export const MessBoySalaryScreen: React.FC = () => {
     let transferList: any[] = [];
     try {
       const transferSnap = await getDocs(collection(db, 'fund_transfers'));
-      transferList = transferSnap.docs.map(d => d.data());
+      transferList = transferSnap.docs.map(d => d.data()).filter(scopeVisible); // scope guard
     } catch {
       transferList = [];
     }
@@ -153,9 +156,10 @@ export const MessBoySalaryScreen: React.FC = () => {
       let mc = 0;
       const meList: any[] = [];
 
-      mcSnap.forEach(d => { mc += Number(d.data().amount ?? 0); });
+      mcSnap.forEach(d => { const _dd = d.data(); if (!scopeVisible(_dd)) return; mc += Number(_dd.amount ?? 0); });
       meSnap.forEach(d => {
         const data = d.data();
+        if (!scopeVisible(data)) return; // batch+dev isolation guard
         meList.push({
           amount:     Number(data.amount     ?? 0),
           vendorId:   data.vendorId ?? data.linkedVendorId ?? '',
@@ -187,9 +191,10 @@ export const MessBoySalaryScreen: React.FC = () => {
       let tc = 0;
       const teList: any[] = [];
 
-      tcSnap.forEach(d => { tc += Number(d.data().amount ?? 0); });
+      tcSnap.forEach(d => { const _dd = d.data(); if (!scopeVisible(_dd)) return; tc += Number(_dd.amount ?? 0); });
       teSnap.forEach(d => {
         const data = d.data();
+        if (!scopeVisible(data)) return; // batch+dev isolation guard
         teList.push({
           amount:     Number(data.amount     ?? 0),
           vendorId:   data.vendorId ?? data.linkedVendorId ?? '',
@@ -221,9 +226,10 @@ export const MessBoySalaryScreen: React.FC = () => {
       let ac = 0;
       const aeList: any[] = [];
 
-      acSnap.forEach(d => { ac += Number(d.data().amount ?? 0); });
+      acSnap.forEach(d => { const _dd = d.data(); if (!scopeVisible(_dd)) return; ac += Number(_dd.amount ?? 0); });
       aeSnap.forEach(d => {
         const data = d.data();
+        if (!scopeVisible(data)) return; // batch+dev isolation guard
         aeList.push({
           amount:     Number(data.amount     ?? 0),
           vendorId:   data.vendorId ?? data.linkedVendorId ?? '',
@@ -255,9 +261,10 @@ export const MessBoySalaryScreen: React.FC = () => {
       let gc = 0;
       const geList: any[] = [];
 
-      gcSnap.forEach(d => { gc += Number(d.data().amount ?? 0); });
+      gcSnap.forEach(d => { const _dd = d.data(); if (!scopeVisible(_dd)) return; gc += Number(_dd.amount ?? 0); });
       geSnap.forEach(d => {
         const data = d.data();
+        if (!scopeVisible(data)) return; // batch+dev isolation guard
         geList.push({
           amount:     Number(data.amount     ?? 0),
           vendorId:   data.vendorId ?? '',
@@ -314,6 +321,7 @@ export const MessBoySalaryScreen: React.FC = () => {
       const recList: SalaryRecord[] = [];
       recSnap.forEach(d => {
         const data = d.data();
+        if (!scopeVisible(data)) return; // batch+dev isolation guard
         recList.push({
           id:            d.id,
           month:         data.month         ?? '',
@@ -499,6 +507,7 @@ export const MessBoySalaryScreen: React.FC = () => {
         paidDate:      nowISO,
         fundKey:       selectedFundKey,
         fundLabel:     fund.label,
+        batchId:        activeBatch?.id ?? '',
         paymentMode:   payMode,
         checkNumber:   payMode === 'Check' ? checkNumber : '',
         transactionId: payRef,
@@ -529,6 +538,7 @@ export const MessBoySalaryScreen: React.FC = () => {
         billStatus:     'Received',
         assetStatus:    'Active',
         linkedSalaryId: salaryRef.id,
+        batchId:         activeBatch?.id ?? '',
         recordedBy,
         date:           nowISO,
         createdAt:      serverTimestamp(),

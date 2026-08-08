@@ -1,3 +1,4 @@
+import { showDoc } from './devDataFilter';
 // src/utils/batchScope.ts
 // ═════════════════════════════════════════════════════════════
 // ⛓️ STRICT BATCH RULE (POORE APP KA KANUN — yeh hamesha yaad rakhna)
@@ -49,3 +50,7 @@ export const batchScopeRule = (data: Record<string, unknown> | null | undefined)
   if (bid) return bid === _batchId;
   return _isRealActiveView;
 };
+
+/** batch-scope + dev-hide dono ek saath — fund/total loops ka shorthand guard */
+export const scopeVisible = (data: Record<string, unknown> | null | undefined): boolean =>
+  batchScopeRule(data) && showDoc(data);
