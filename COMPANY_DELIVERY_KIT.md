@@ -14,13 +14,17 @@
 ```
 TUM (App Developer / Owner)
  │
- ├── 🏠 MASTER APP (training-command-erp) = A Coy ka ghar + sabka BILLING
- │      Isi me tumhara dev account + TEST-77 sandbox + Owner Panel.
+ ├── 🧪 MASTER APP (training-command-erp) = TESTING COMPANY + Owner Panel
+ │      Isi me SIRF: tumhara dev account, TEST-77 sandbox, Owner Panel (billing).
+ │      ⚠️ Isme KOI real company NAHI rehti — na A Coy, na B Coy, koi nahi.
+ │      Yeh tumhara playground hai: naye features yahan test karo.
  │
- └── 🌐 7 COMPANY APPS (alag Firebase projects, alag URLs)
-        bcoy.web.app · ccoy.web.app · dcoy.web.app · ecoy.web.app
-        fcoy.web.app · gcoy.web.app · hq.web.app
+ └── 🌐 8 COMPANY APPS (alag Firebase projects, alag URLs) — SAB NORMAL COMPANIES
+        acoy.web.app · bcoy.web.app · ccoy.web.app · dcoy.web.app
+        ecoy.web.app · fcoy.web.app · gcoy.web.app · hq.web.app
+        (URLs: fcoy-erp-<code>.web.app)
         Har app = 1 company ka PRIVATE ghar. Data 100% alag (alag DB).
+        A Coy (Alpha) bhi ab SIRF ek normal company hai — apni alag app pe.
 ```
 
 **Isliye har company ka data alag hai** kyunki alag DATABASE hai — code me
@@ -32,7 +36,7 @@ kuch mix hone ka scope hi nahi. ✅
 
 | Code | Company | Firebase Project (suggest) | App URL | Deployed? | Wizard Done? | Plan | Customer Record? |
 |------|---------|---------------------------|---------|-----------|--------------|------|------------------|
-| acoy | A Coy (Alpha) | `training-command-erp` | training-command-erp.web.app | ✅ MASTER | ✅ | Monthly (wizard/panel se) | 🏠 THIS UNIT |
+| acoy | A Coy (Alpha) | `fcoy-erp-acoy` | fcoy-erp-acoy.web.app | ☐ | ☐ | ☐ | ☐ |
 | bcoy | B Coy (Bravo) | `fcoy-erp-bcoy` | fcoy-erp-bcoy.web.app | ☐ | ☐ | ☐ | ☐ |
 | ccoy | C Coy (Charlie) | `fcoy-erp-ccoy` | fcoy-erp-ccoy.web.app | ☐ | ☐ | ☐ | ☐ |
 | dcoy | D Coy (Delta) | `fcoy-erp-dcoy` | fcoy-erp-dcoy.web.app | ☐ | ☐ | ☐ | ☐ |
@@ -117,8 +121,8 @@ Script karegi: keys se `.env` → build → `https://fcoy-erp-bcoy.web.app` live
 - Ab unka plan/renewal/due TUMHARE master app me track hoga.
 
 > 🔒 **Kabhi mat karna:** remote company ka login master app me banana —
-> wo A Coy ka data dekh legi. Remote record me LOGIN nahi banta taaki
-> galti se bhi na ho.
+> master app tumhara owner console + billing ledger hai, companies ki nahi.
+> Remote record me LOGIN nahi banta taaki galti se bhi na ho.
 
 ---
 

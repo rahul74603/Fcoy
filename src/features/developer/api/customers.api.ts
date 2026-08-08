@@ -488,3 +488,35 @@ export const setupFirstCompany = async (
 
   return { customerId, sub };
 };
+
+// ─────────────────────────────────────────────
+// 🧪 MASTER = TESTING COMPANY (naya model)
+// Master app (training-command-erp) me ab KOI real company nahi —
+// yeh sirf Owner Panel + TEST-77 sandbox hai.
+// Ye function: unitConfig rename + saare "THIS UNIT" flags hatata hai.
+// Idempotent: jitni baar chalao, safe.
+// ─────────────────────────────────────────────
+export const makeMasterTestingCompany = async (): Promise<string> => {
+  // 1. Letterhead -> TESTING COMPANY
+  await setDoc(doc(db, 'unitConfig', 'main'), {
+    parentUnit: 'INTERNAL (Owner Use Only)',
+    companyName: 'TESTING COMPANY',
+    companyShort: 'TEST',
+    location: 'Sandbox',
+    commanderName: 'Developer (Owner)',
+    updatedAt: new Date().toISOString(),
+  }, { merge: true });
+
+  // 2. Koi bhi customer "THIS UNIT" mark nahi rahega
+  const custSnap = await getDocs(query(collection(db, CUSTOMERS_COL), where('isLocalUnit', '==', true)));
+  const ops: Promise<unknown>[] = [];
+  custSnap.forEach(d => ops.push(
+    setDoc(doc(db, CUSTOMERS_COL, d.id), { isLocalUnit: false }, { merge: true }),
+  ));
+  await Promise.all(ops);
+
+  return `MASTER ab TESTING COMPANY ban gayi! Letterhead rename ho gaya + ${custSnap.size} "THIS UNIT" flag(s) remove. ` +
+    `A Coy ab bilkul NORMAL company hai - jab uska sale aaye to apni alag app banegi (deploy kit se). ` +
+    `Ek baar LOGOUT/LOGIN + hard refresh (Ctrl+Shift+R) kar lo - har jagah TESTING dikhega.`;
+};
+

@@ -1,4 +1,4 @@
-﻿# ===============================================================
+# ===============================================================
 # BULK PREP - Saari companies ka "khaala ghar" ek saath ready karo
 #
 # KYA karta hai:
@@ -29,7 +29,8 @@ $registry = Get-Content "deploy\companies.json" -Raw -ErrorAction Stop | Convert
 
 $codes = @()
 foreach ($p in $registry.PSObject.Properties) {
-  if ($p.Value.alreadyDeployed -eq $true) { continue }   # master app skip
+  if ($p.Name -like '_*') { continue }                  # _README jaise note-keys skip
+  if ($p.Value.alreadyDeployed -eq $true) { continue }   # pehle se deployed skip
   if ($Only -ne '' -and $p.Name -ne $Only) { continue }
   $codes += $p.Name
 }

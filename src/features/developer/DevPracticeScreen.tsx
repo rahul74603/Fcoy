@@ -35,7 +35,7 @@ import {
 import {
   listCustomersWithSub, createCcAccount, fetchCustomerHistory,
   assignPlanToCustomer, extendCustomerSub, cancelCustomerSub,
-  listCcUsers, setupFirstCompany, CcUserLite, createRemoteCustomer,
+  makeMasterTestingCompany, createRemoteCustomer,
   CustomerWithSub, CreateCcForm, CustHistoryEntry,
 } from './api/customers.api';
 import { fetchPlans } from '../subscription/api/subscription.api';
@@ -164,22 +164,14 @@ const CustomersTab = ({ onManage, refreshKey }: { onManage: (c: CustomerWithSub)
   const [search, setSearch] = useState('');
 
   // ⚡ 1st Company Quick Setup state
-  const [ccUsers, setCcUsers] = useState<CcUserLite[]>([]);
-  const [setupUid, setSetupUid] = useState('');
-  const [setupUnit, setSetupUnit] = useState('A Coy (Alpha Company)');
   const [setupBusy, setSetupBusy] = useState(false);
   const [setupMsg, setSetupMsg] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [cl, cc] = await Promise.all([listCustomersWithSub(), listCcUsers()]);
+      const cl = await listCustomersWithSub();
       setList(cl);
-      setCcUsers(cc);
-      // Shivam Sengar jaisa CC mil jaye to pre-select (owner ki 1st company)
-      if (cc.length > 0) {
-        setSetupUid(prev => prev || cc[0].uid);
-      }
     }
     catch (e: any) { setError(`Load failed: ${e.message}`); }
     finally { setLoading(false); }
@@ -187,30 +179,14 @@ const CustomersTab = ({ onManage, refreshKey }: { onManage: (c: CustomerWithSub)
 
   useEffect(() => { load(); }, [load, refreshKey]);
 
-  // ⚡ ONE-CLICK: CC ko "is app ki 1st company" banao + Monthly plan lago
-  const handleQuickSetup = async () => {
-    const cc = ccUsers.find(u => u.uid === setupUid);
-    if (!cc) { setError('Pehle CC select karo (Shivam Sengar wala)'); return; }
-    if (!setupUnit.trim()) { setError('Unit/Company name likhna zaroori hai'); return; }
+  // 🧪 ONE-CLICK: MASTER ko TESTING COMPANY banao (naya model — master me koi real company nahi)
+  const handleMakeTesting = async () => {
     setSetupBusy(true); setSetupMsg(''); setError('');
     try {
-      const plans = await fetchPlans();
-      const monthly = plans.find(p => p.durationMonths === 1) ?? plans[0];
-      if (!monthly) throw new Error('Koi plan nahi mila — Subscription Plans pehle banao');
-      const res = await setupFirstCompany(
-        { ccUid: cc.uid, ccName: cc.name, ccEmail: cc.email, unitName: setupUnit.trim() },
-        monthly,
-        user?.name || user?.email || 'App Owner',
-      );
-      setSetupMsg(
-        `✓ HO GAYA! ${cc.name} ab "${setupUnit.trim()}" ka CC hai — Customer ID: ${res.customerId} · ` +
-        `Plan: ${monthly.name} (${formatDate(res.sub.startDate)} → ${formatDate(res.sub.endDate)}) · ` +
-        `🏠 isLocalUnit=TRUE (baaki companies auto hata di gayi). ` +
-        `Ab ${cc.name} LOGOUT karke dobara login kare — usko uska plan aur uska apna system milega.`
-      );
-      await load();
+      const res = await makeMasterTestingCompany();
+      setSetupMsg(`✓ ${res}`);
     } catch (err: any) {
-      setError(`Quick setup failed: ${err.message}`);
+      setError(`Testing conversion failed: ${err.message}`);
     } finally { setSetupBusy(false); }
   };
 
@@ -239,7 +215,7 @@ const CustomersTab = ({ onManage, refreshKey }: { onManage: (c: CustomerWithSub)
         setCreatedId(customerId);
         setSuccess(
           `✓ "${form.unitName}" ka REMOTE customer record ban gaya! Customer ID: ${customerId}. ` +
-          `Is app me uska LOGIN nahi bana (🔒 isliye wo A Coy ka data KABHI nahi dekh sakta). ` +
+          `Is app me uska LOGIN nahi bana (🔒 isliye wo owner console/billing ledger ko KABHI touch nahi kar sakta). ` +
           `Ab "Subscriptions" tab se plan assign karo. ` +
           `Uski WORKING app alag deploy hogi (SAAS_FUTURE_PLAN.md ke 6 steps) — wahan uska CC banega.`
         );
@@ -287,12 +263,12 @@ const CustomersTab = ({ onManage, refreshKey }: { onManage: (c: CustomerWithSub)
         </div>
       )}
 
-      {/* ⚡ 1st COMPANY QUICK SETUP — Owner order: CC select + company name + 1 month plan, ek click me */}
-      <div className="bg-gradient-to-r from-amber-50 to-green-50 border-2 border-amber-500 rounded-xl p-4 space-y-3">
+      {/* 🧪 MASTER = TESTING COMPANY — naya model: is app me KOI real company nahi rehti */}
+      <div className="bg-gradient-to-r from-slate-50 to-slate-100 border-2 border-slate-400 rounded-xl p-4 space-y-3">
         <div className="flex items-center gap-2">
-          <Zap size={16} className="text-amber-600" />
-          <h3 className="text-xs font-black uppercase text-slate-800">1st Company Quick Setup — A Coy (Alpha)</h3>
-          <span className="text-[9px] font-bold text-slate-500 uppercase">CC select → company name → 1 click → 1 month plan applied</span>
+          <FlaskConical size={16} className="text-slate-600" />
+          <h3 className="text-xs font-black uppercase text-slate-800">Master App = TESTING Company</h3>
+          <span className="text-[9px] font-bold text-slate-500 uppercase">is app me koi real company nahi — sirf tumhara sandbox + owner panel (billing)</span>
         </div>
 
         {setupMsg && (
@@ -303,43 +279,17 @@ const CustomersTab = ({ onManage, refreshKey }: { onManage: (c: CustomerWithSub)
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-          <div>
-            <label className="text-[10px] font-bold text-slate-600 uppercase block mb-1">CC Account (Shivam Sengar)</label>
-            <select
-              value={setupUid}
-              onChange={e => setSetupUid(e.target.value)}
-              className="w-full border border-slate-400 bg-white text-slate-800 px-2.5 py-2 text-xs font-semibold rounded focus:outline-none focus:border-amber-600"
-            >
-              {ccUsers.length === 0 && <option value="">— koi CC user nahi mila —</option>}
-              {ccUsers.map(u => (
-                <option key={u.uid} value={u.uid}>
-                  {u.name || '(no name)'} · {u.email}{u.customerId ? ` · ${u.customerId}` : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-[10px] font-bold text-slate-600 uppercase block mb-1">Company / Unit Name</label>
-            <input
-              value={setupUnit}
-              onChange={e => setSetupUnit(e.target.value)}
-              className="w-full border border-slate-400 bg-white text-slate-800 px-2.5 py-2 text-xs font-semibold rounded focus:outline-none focus:border-amber-600"
-              placeholder="A Coy (Alpha Company)"
-            />
-          </div>
-          <button
-            onClick={handleQuickSetup}
-            disabled={setupBusy || !setupUid}
-            className="bg-amber-600 hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-[11px] font-black uppercase px-4 py-2.5 rounded transition-colors flex items-center justify-center gap-2"
-          >
-            {setupBusy ? <Loader2 size={13} className="animate-spin" /> : <Zap size={13} />}
-            {setupBusy ? 'Setting up...' : '⚡ Setup 1st Company'}
-          </button>
-        </div>
+        <button
+          onClick={handleMakeTesting}
+          disabled={setupBusy}
+          className="bg-slate-700 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-white text-[11px] font-black uppercase px-4 py-2.5 rounded transition-colors flex items-center justify-center gap-2"
+        >
+          {setupBusy ? <Loader2 size={13} className="animate-spin" /> : <FlaskConical size={13} />}
+          {setupBusy ? 'Converting...' : '🧪 Master ko TESTING Company banao'}
+        </button>
 
         <p className="text-[9px] text-slate-500 font-semibold leading-relaxed">
-          Ye ek click me: ① CC ko company se link (customerId + unitName) ② customers record me 🏠 THIS UNIT set (baaki auto-untick) ③ Monthly plan assign + is app pe apply — sab kuch turant. Baad me CC ko LOGOUT/LOGIN karwana hai bas.
+          1 click me: ① letterhead → &quot;TESTING COMPANY&quot; ② saare 🏠 THIS UNIT flags remove — is app me ab KOI real company nahi (na A Coy, na koi). A Coy/D...HQ sab apni ALAG apps banengi (company delivery kit). Idempotent — kitni baar bhi daba sakte ho, safe. Baad me ek baar LOGOUT/LOGIN + Ctrl+Shift+R karo.
         </p>
       </div>
 
