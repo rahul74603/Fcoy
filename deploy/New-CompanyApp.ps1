@@ -154,25 +154,44 @@ try {
 }
 Start-Sleep -Seconds 10
 
+# Auth config INITIALIZE karna pehli baar sirf console se hota hai
+# (Google iska public API nahi deta - 404 CONFIGURATION_NOT_FOUND isliye aata hai)
+$body = @{ signIn = @{ email = @{ enabled = $true; passwordRequired = $true } } } | ConvertTo-Json -Depth 5
+$patchUrl = "https://identitytoolkit.googleapis.com/admin/v2/projects/$projId/config?updateMask=signIn.email.enabled,signIn.email.passwordRequired"
+
 $authOk = $false
-for ($try = 1; $try -le 5; $try++) {
+$errBody = ""
+for ($round = 1; $round -le 3 -and -not $authOk; $round++) {
   try {
-    $body = @{ signIn = @{ email = @{ enabled = $true; passwordRequired = $true } } } | ConvertTo-Json -Depth 5
-    $patchUrl = "https://identitytoolkit.googleapis.com/admin/v2/projects/$projId/config?updateMask=signIn.email.enabled,signIn.email.passwordRequired"
     $null = Invoke-RestMethod -Method Patch -Uri $patchUrl -Headers $headers -Body $body -ContentType 'application/json' -ErrorAction Stop
     $authOk = $true
     break
   } catch {
-    Write-Host "  ...try $try/5 fail, 10 sec wait..." -ForegroundColor DarkGray
-    $d = Get-ErrBody $_.Exception
-    if ($d) { Write-Host "  GOOGLE KA JAWAB: $d" -ForegroundColor DarkGray }
-    Start-Sleep -Seconds 10
+    $errBody = Get-ErrBody $_.Exception
+  }
+  if ($errBody -match 'CONFIGURATION_NOT_FOUND') {
+    if ($round -eq 1) {
+      Write-Host ""
+      Write-Host "  [MANUAL 30-SEC STEP] Auth-config initialize karna sirf console se hota hai" -ForegroundColor Yellow
+      Write-Host "  (har company ke liye SIRF 1 baar - Google ka rule hai, hamari limitation nahi):" -ForegroundColor Yellow
+      Write-Host ""
+      Write-Host "    1. Kholo: https://console.firebase.google.com/project/$projId/authentication/providers" -ForegroundColor Cyan
+      Write-Host "    2. Agar bada 'Get Started' button dikhe -> pehle USE dabao" -ForegroundColor Cyan
+      Write-Host "    3. 'Sign-in method' list me 'Email/Password' -> pehla toggle ENABLE -> Save" -ForegroundColor Cyan
+      Write-Host ""
+    } else {
+      Write-Host "  Abhi bhi CONFIGURATION_NOT_FOUND hai - shayad Save dabana rah gaya?" -ForegroundColor Yellow
+    }
+    $null = Read-Host "  => Console me kar liya? ENTER dabao (script khud verify karegi)"
+  } else {
+    Write-Host "  ...try $round/3 fail. GOOGLE KA JAWAB: $errBody" -ForegroundColor DarkGray
+    if ($round -lt 3) { Start-Sleep -Seconds 10 }
   }
 }
 if (-not $authOk) {
   Write-Host ""
-  Write-Host "  Auth PATCH 5 baar fail. Upar 'GOOGLE KA JAWAB' me exact wajah hai." -ForegroundColor Red
-  Fail "Email/Password auto-ON nahi hua. FALLBACK (2 min): console.firebase.google.com -> Add project -> existing '$projId' chuno -> phir Authentication -> Email/Password -> Enable -> Save. Phir script dobara chalao (idempotent hai)."
+  Write-Host "  GOOGLE KA JAWAB (last): $errBody" -ForegroundColor Red
+  Fail "Email/Password ON nahi hua. Console step karo: https://console.firebase.google.com/project/$projId/authentication/providers -> phir script dobara chalao (idempotent hai)."
 }
 Write-Host "  [OK] Email/Password ON" -ForegroundColor Green
 
