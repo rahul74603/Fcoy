@@ -11,7 +11,7 @@
 TUM (App Developer / Owner)
  │
  ├── 🧪 MASTER APP (training-command-erp)
- │      = TESTING COMPANY (sandbox) + Owner Panel + billing ledger
+ │      = MASTER COY (testing sandbox) + Owner Panel + billing ledger
  │      ⚠️ Isme KOI real company nahi rehti — na A Coy, na koi.
  │
  └── 🌐 8 COMPANY APPS — alag Firebase projects, alag DBs, alag URLs
@@ -121,8 +121,8 @@ powershell -ExecutionPolicy Bypass -File deploy\New-CompanyApp.ps1 -Code <code>
 
 | Code | Company | Project | Status | Wizard | Billing |
 |------|---------|---------|--------|--------|---------|
-| acoy | A Coy (Alpha) | fcoy-erp-acoy | ☐ pending | ☐ | ☐ |
-| bcoy | B Coy (Bravo) | fcoy-erp-bcoy | ✅ **LIVE 8-Aug-2026** | ☐/✅ | ☐ |
+| acoy | A Coy (Alpha) | **fcoy-erp-bcoy** (bcoy code) | ✅ **LIVE 8-Aug-2026** (wizard se A Coy) | ✅ | ☐ |
+| bcoy2 | B Coy (Bravo) | fcoy-erp-bcoy-74603 | ☐ pending (bcoy ID A Coy le chuki) | ☐ | ☐ |
 | ccoy | C Coy (Charlie) | fcoy-erp-ccoy | ☐ | ☐ | ☐ |
 | dcoy | D Coy (Delta) | fcoy-erp-dcoy | ☐ | ☐ | ☐ |
 | ecoy | E Coy (Echo) | fcoy-erp-ecoy | ☐ | ☐ | ☐ |
@@ -156,7 +156,7 @@ Repo: rahul74603/Fcoy, working branch: arena/019fd7d4-fcoy.
 Local PC path: C:\Users\Rahul\Fcoy.
 
 MODEL (permanent kanun):
-1. Master app (training-command-erp) = sirf TESTING COMPANY + Owner Panel + billing.
+1. Master app (training-command-erp) = sirf MASTER COY (testing) + Owner Panel + billing.
    Usme KOI real company nahi rehti (na A Coy, na koi).
 2. 8 real companies: acoy/bcoy/ccoy/dcoy/ecoy/fcoy/gcoy/hq — har ek ka ALAG
    Firebase project (fcoy-erp-<code>) + alag hosting + alag DB. 1 app = 1 company.
@@ -184,7 +184,7 @@ Rules: catch-all signedIn (customer handover se PEHLE rules hardening pending �
 
 ## 📌 PENDING / NEXT (priority order)
 
-1. **Subscription HARD LOCK** — company app expire/missing plan pe lock ho (abhi sirf banner hai). Wizard ka plan = owner-assigned (ye sahi rahega); renewal flow banana hai (payment ke baad dates extend — owner-side).
+1. ✅ **Subscription HARD LOCK (DONE v2.0.0)** — expire/missing plan = app FULL LOCK. Renewal: lock screen pe embedded OWNER-KEY panel (wizard key banata hai — master customer notes me save karo).
 2. Baaki 7 companies bulk deploy (upar wala recipe).
 3. Customer handover se pehle **Firestore rules hardening** (emulator tests ke saath).
 4. Master deployed app ko latest version pe deploy karna (`npm run build` + `firebase deploy --only hosting`).

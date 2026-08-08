@@ -12,6 +12,7 @@ import {
   Loader2, CheckCircle2, AlertTriangle, X, Save, Edit3,
   Zap, ShieldCheck, TrendingDown, PlusCircle, Ban, IndianRupee,
 } from 'lucide-react';
+import OwnerRenewPanel from './components/OwnerRenewPanel';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   SubscriptionPlan, UnitSubscription, SubscriptionHistoryEntry,
@@ -852,6 +853,11 @@ export const SubscriptionScreen = () => {
           </div>
         </div>
       )}
+
+      {/* 🔑 OWNER RENEWAL — payment ke baad plan extend (sirf owner key se chalta hai; lock hone pe gate screen pe bhi yehi panel aata hai) */}
+      <div className="max-w-lg mx-auto">
+        <OwnerRenewPanel defaultMonths={1} />
+      </div>
 
     </div>
   );

@@ -1,19 +1,32 @@
 {
   "acoy": {
-    "name": "A Coy (Alpha Company)",
-    "alreadyDeployed": false,
-    "projectId": "",
-    "note": "Normal company #1. Jab A Coy ka sale aaye tab New-CompanyApp.ps1 -Code acoy se deploy (fcoy-erp-acoy). MASTER app (training-command-erp) ab sirf TESTING COMPANY + owner panel hai - usme koi real company nahi rehti."
+    "name": "A Coy — ALIAS (bcoy project use ho raha)",
+    "alreadyDeployed": true,
+    "projectId": "fcoy-erp-bcoy",
+    "note": "A Coy ka ghar bcoy entry (fcoy-erp-bcoy) hai. Is alias code ko deploy MAT karo."
   },
   "_README": "8 companies ki app deploy karne ka registry. Har company ka Firebase project banao (console me 3 min), web app ki config keys yahan paste karo, phir chalao:  powershell -File deploy/Deploy-Company.ps1 -Code bcoy",
   "bcoy": {
-    "name": "B Coy (Bravo Company)",
-    "projectId": "",
+    "name": "A Coy (Alpha Company)",
+    "projectId": "fcoy-erp-bcoy",
     "apiKey": "",
     "authDomain": "",
     "storageBucket": "",
     "messagingSenderId": "",
-    "appId": ""
+    "appId": "",
+    "alreadyDeployed": false,
+    "note": "8-Aug-2026: is project pe WIZARD se A Coy banaya gaya — ye A Coy ka ghar hai. Update push: Deploy-Company.ps1 -Code bcoy. Real B Coy ke liye bcoy2 use karo."
+  },
+  "bcoy2": {
+    "name": "B Coy (Bravo Company) — FUTURE",
+    "alreadyDeployed": false,
+    "projectId": "fcoy-erp-bcoy-74603",
+    "apiKey": "",
+    "authDomain": "",
+    "storageBucket": "",
+    "messagingSenderId": "",
+    "appId": "",
+    "note": "Real B Coy ka sale aaye to: New-CompanyApp.ps1 -Code bcoy2 (bcoy ID A Coy le chuki hai isliye -74603 suffix)."
   },
   "ccoy": {
     "name": "C Coy (Charlie Company)",

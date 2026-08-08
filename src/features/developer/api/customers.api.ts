@@ -500,8 +500,8 @@ export const makeMasterTestingCompany = async (): Promise<string> => {
   // 1. Letterhead -> TESTING COMPANY
   await setDoc(doc(db, 'unitConfig', 'main'), {
     parentUnit: 'INTERNAL (Owner Use Only)',
-    companyName: 'TESTING COMPANY',
-    companyShort: 'TEST',
+    companyName: 'MASTER COY',
+    companyShort: 'MASTER',
     location: 'Sandbox',
     commanderName: 'Developer (Owner)',
     updatedAt: new Date().toISOString(),
@@ -515,7 +515,7 @@ export const makeMasterTestingCompany = async (): Promise<string> => {
   ));
   await Promise.all(ops);
 
-  return `MASTER ab TESTING COMPANY ban gayi! Letterhead rename ho gaya + ${custSnap.size} "THIS UNIT" flag(s) remove. ` +
+  return `MASTER app ab MASTER COY ban gayi! Letterhead rename ho gaya + ${custSnap.size} "THIS UNIT" flag(s) remove. ` +
     `A Coy ab bilkul NORMAL company hai - jab uska sale aaye to apni alag app banegi (deploy kit se). ` +
     `Ek baar LOGOUT/LOGIN + hard refresh (Ctrl+Shift+R) kar lo - har jagah TESTING dikhega.`;
 };

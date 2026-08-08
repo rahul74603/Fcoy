@@ -59,7 +59,7 @@ export const FirstRunSetupScreen: React.FC = () => {
   const [busy, setBusy] = useState(false);
   const [step, setStep] = useState('');
   const [error, setError] = useState('');
-  const [done, setDone] = useState<{ email: string; unit: string } | null>(null);
+  const [done, setDone] = useState<{ email: string; unit: string; ownerKey: string } | null>(null);
   const [blockedLoggedIn, setBlockedLoggedIn] = useState(false);
 
   // 🔒 Guard 1: koi logged-in hai to wizard nahi chalega
@@ -145,6 +145,8 @@ export const FirstRunSetupScreen: React.FC = () => {
       const allPlans = await fetchPlans(); // pehli baar me defaults seed ho jaate hain
       setPlans(allPlans);
       const plan = allPlans.find(p => p.id === planId) ?? allPlans[0];
+      // Owner ka secret renew key — company ko kabhi mat dena (master notes me save karo)
+      const ownerKey = 'OWN-' + Math.random().toString(36).slice(2, 8).toUpperCase();
       if (plan) {
         const start = new Date();
         const end = addMonths(start, plan.durationMonths);
@@ -160,6 +162,7 @@ export const FirstRunSetupScreen: React.FC = () => {
           remarks: `First-run activation — ${unitName}`,
           updatedAt: now,
           updatedBy: email,
+          ownerKey,
         });
         await addDoc(collection(db, 'subscriptionHistory'), {
           action: 'ACTIVATED',
@@ -179,7 +182,7 @@ export const FirstRunSetupScreen: React.FC = () => {
       });
 
       await signOut(auth);
-      setDone({ email, unit: unitName });
+      setDone({ email, unit: unitName, ownerKey });
     } catch (err: unknown) {
       const fe = err as { code?: string; message?: string };
       if (fe.code === 'auth/email-already-in-use') {
@@ -210,6 +213,14 @@ export const FirstRunSetupScreen: React.FC = () => {
             Company Commander account, letterhead aur subscription plan — sab set ho gaya.
             Ab company ko ye login de do:
           </p>
+          <div className="bg-amber-50 border-2 border-amber-400 rounded p-3 text-left space-y-1">
+            <div className="text-[10px] font-black text-amber-700 uppercase">🔑 Owner Key (renewal ke liye) — SAVE KAR LO ABHI</div>
+            <div className="text-base font-black text-amber-800 tracking-widest">{done.ownerKey}</div>
+            <div className="text-[9px] font-bold text-amber-700 leading-snug">
+              Ye key MASTER app ke customer record ke Notes me save karo. Expire hone pe app LOCK ho jayegi —
+              renewal sirf ISI key se hoga. Company ko ye key KABHI mat dena.
+            </div>
+          </div>
           <div className="bg-slate-50 border border-slate-200 rounded p-3 text-left space-y-1">
             <div className="text-[10px] font-bold text-slate-500 uppercase">CC Login Email</div>
             <div className="text-sm font-black text-military-900">{done.email}</div>

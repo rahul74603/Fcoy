@@ -31,6 +31,7 @@ export interface UnitSubscription {
   remarks: string;
   updatedAt: string;
   updatedBy: string;
+  ownerKey?: string;     // 🔑 sirf owner jaanta hai — renew/unlock isi se hota hai
 }
 
 export type HistoryAction =

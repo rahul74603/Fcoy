@@ -267,8 +267,8 @@ const CustomersTab = ({ onManage, refreshKey }: { onManage: (c: CustomerWithSub)
       <div className="bg-gradient-to-r from-slate-50 to-slate-100 border-2 border-slate-400 rounded-xl p-4 space-y-3">
         <div className="flex items-center gap-2">
           <FlaskConical size={16} className="text-slate-600" />
-          <h3 className="text-xs font-black uppercase text-slate-800">Master App = TESTING Company</h3>
-          <span className="text-[9px] font-bold text-slate-500 uppercase">is app me koi real company nahi — sirf tumhara sandbox + owner panel (billing)</span>
+          <h3 className="text-xs font-black uppercase text-slate-800">Master App = MASTER COY</h3>
+          <span className="text-[9px] font-bold text-slate-500 uppercase">yeh tumhari testing company hai — sandbox + owner panel (billing). Koi real company yahan nahi rehti</span>
         </div>
 
         {setupMsg && (
@@ -285,11 +285,11 @@ const CustomersTab = ({ onManage, refreshKey }: { onManage: (c: CustomerWithSub)
           className="bg-slate-700 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-white text-[11px] font-black uppercase px-4 py-2.5 rounded transition-colors flex items-center justify-center gap-2"
         >
           {setupBusy ? <Loader2 size={13} className="animate-spin" /> : <FlaskConical size={13} />}
-          {setupBusy ? 'Converting...' : '🧪 Master ko TESTING Company banao'}
+          {setupBusy ? 'Converting...' : '🧪 Master ko MASTER COY banao'}
         </button>
 
         <p className="text-[9px] text-slate-500 font-semibold leading-relaxed">
-          1 click me: ① letterhead → &quot;TESTING COMPANY&quot; ② saare 🏠 THIS UNIT flags remove — is app me ab KOI real company nahi (na A Coy, na koi). A Coy/D...HQ sab apni ALAG apps banengi (company delivery kit). Idempotent — kitni baar bhi daba sakte ho, safe. Baad me ek baar LOGOUT/LOGIN + Ctrl+Shift+R karo.
+          1 click me: ① letterhead → &quot;MASTER COY&quot; ② saare 🏠 THIS UNIT flags remove — is app me ab KOI real company nahi (na A Coy, na koi). A Coy/D...HQ sab apni ALAG apps banengi (company delivery kit). Idempotent — kitni baar bhi daba sakte ho, safe. Baad me ek baar LOGOUT/LOGIN + Ctrl+Shift+R karo.
         </p>
       </div>
 

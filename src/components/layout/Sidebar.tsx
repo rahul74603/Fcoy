@@ -545,7 +545,7 @@ export const Sidebar = () => {
 
           {/* FOOTER */}
           <div className="p-4 bg-military-950 border-t border-military-800 text-xs text-military-400 text-center">
-            v1.9.4 · Factory Recipe
+            v2.0.0 · Sub Hard Lock
           </div>
 
         </div>

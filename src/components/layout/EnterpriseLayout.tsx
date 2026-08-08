@@ -13,6 +13,7 @@ import { GlobalSearch } from './GlobalSearch';
 
 // 🆕 Subscription Expiry Banner
 import SubscriptionBanner from '../../features/subscription/components/SubscriptionBanner';
+import SubscriptionGate from '../../features/subscription/components/SubscriptionGate';
 
 // 🧪 Dev Practice Mode Banner
 import PracticeBanner from '../../features/developer/components/PracticeBanner';
@@ -189,7 +190,7 @@ export const EnterpriseLayout: React.FC<EnterpriseLayoutProps> = ({ children }) 
 
         {/* Scrollable Page Content */}
         <main className="flex-1 overflow-x-hidden overflow-y-auto p-4 custom-scrollbar bg-slate-50">
-          {children}
+          <SubscriptionGate>{children}</SubscriptionGate>
         </main>
 
       </div>

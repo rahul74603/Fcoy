@@ -196,3 +196,50 @@ export const fetchHistory = async (max = 50): Promise<SubscriptionHistoryEntry[]
 export const clearField = deleteField;
 
 export { CURRENT_DOC, PLANS_COL, HISTORY_COL };
+
+// ─────────────────────────────────────────────
+// 🔑 OWNER RENEWAL (payment ke baad, owner key se)
+// Expired ho chuki ho to AAJ se fresh period start hota hai;
+// warna existing endDate ke aage extend hota hai.
+// ─────────────────────────────────────────────
+export const renewWithOwnerKey = async (
+  ownerKey: string,
+  months: number,
+  paymentMode: string,
+  paymentRef: string,
+): Promise<{ endDate: string }> => {
+  const snap = await getDoc(doc(db, CURRENT_DOC));
+  if (!snap.exists()) throw new Error('Is app pe koi subscription nahi mili (wizard nahi chala?).');
+  const sub = snap.data() as UnitSubscription;
+  if (!sub.ownerKey) {
+    throw new Error('Is app pe owner key set nahi hai (purane setup ki app) — Owner se key mangwa lo.');
+  }
+  if (sub.ownerKey !== ownerKey.trim().toUpperCase()) throw new Error('Owner key GALAT hai.');
+
+  const now = new Date();
+  const expired = new Date(sub.endDate) < now;
+  const base = expired ? now : new Date(sub.endDate);
+  const end = addMonths(base, months);
+  const nowISO = now.toISOString();
+
+  const updated: UnitSubscription = {
+    ...sub,
+    startDate: expired ? nowISO : sub.startDate,
+    endDate: end.toISOString(),
+    paymentMode,
+    paymentRef,
+    remarks: `Owner renewal (+${months}m): ${paymentRef}`,
+    updatedAt: nowISO,
+    updatedBy: 'OWNER-RENEW',
+  };
+  await setDoc(doc(db, CURRENT_DOC), updated);
+  await logHistory({
+    action: 'RENEWED',
+    planId: sub.planId, planName: sub.planName, amount: sub.amount,
+    startDate: updated.startDate, endDate: updated.endDate,
+    remarks: `Owner renewal via key (+${months}m) — ${paymentMode} · ${paymentRef}`,
+    by: 'OWNER-RENEW',
+  });
+  return { endDate: updated.endDate };
+};
+
