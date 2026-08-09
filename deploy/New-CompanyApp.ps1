@@ -5,14 +5,15 @@
 #   cd C:\Users\Rahul\Fcoy
 #   powershell -ExecutionPolicy Bypass -File deploy\New-CompanyApp.ps1 -Code bcoy
 #
-# Ye script 7 kaam karti hai:
+# Ye script 8 kaam karti hai:
 #   1. Firebase project create      (gcloud)
 #   2. Jaroori APIs enable          (firebase/hosting/firestore/auth)
 #   3. Firestore database create    (asia-south1)
 #   4. Email/Password login ON      (Identity Toolkit REST API)
 #   5. Web app register + config keys read
 #   6. deploy\companies.json me keys AUTO-update
-#   7. Build + Deploy (hosting + rules) -> company app LIVE
+#   7. SYNC BRIDGE  - master ledger + is app ka LIVE link (sync user + creds)
+#   8. Build + Deploy (hosting + rules) -> company app LIVE
 #
 # ONE-TIME taiyaari (sirf pehli baar):
 #   winget install -e --id Google.CloudSDK
@@ -28,6 +29,7 @@
 param(
   [Parameter(Mandatory=$true)][ValidatePattern('^[a-z0-9]+$')][string]$Code,
   [string]$ProjectId = '',
+  [string]$MasterProjectId = 'training-command-erp',
   [switch]$SkipDeploy
 )
 
@@ -70,7 +72,7 @@ foreach ($cmd in 'gcloud','firebase') {
 }
 
 # -- 1. Project check (UPDATE mode) ya create --
-Write-Host ">> 1/7 Firebase project check/create..." -ForegroundColor Yellow
+Write-Host ">> 1/8 Firebase project check/create..." -ForegroundColor Yellow
 $acct = (gcloud config get account 2>$null | Out-String).Trim()
 Write-Host ("  Google account : " + $acct) -ForegroundColor DarkGray
 # cmd /c wrapper: native stderr se script NAHI maregi
@@ -121,19 +123,19 @@ if ($projExists) {
 }
 
 # -- 2. APIs enable --
-Write-Host ">> 2/7 APIs enable (firebase/hosting/firestore/auth)..." -ForegroundColor Yellow
+Write-Host ">> 2/8 APIs enable (firebase/hosting/firestore/auth)..." -ForegroundColor Yellow
 gcloud services enable firebase.googleapis.com firebasehosting.googleapis.com firestore.googleapis.com identitytoolkit.googleapis.com --project $projId --quiet
 if ($LASTEXITCODE -ne 0) { Fail "APIs enable fail - Google account me project banane ki permission check karo" }
 Write-Host "  [OK] APIs ON" -ForegroundColor Green
 
 # -- 3. Firestore database --
-Write-Host ">> 3/7 Firestore database (asia-south1)..." -ForegroundColor Yellow
+Write-Host ">> 3/8 Firestore database (asia-south1)..." -ForegroundColor Yellow
 cmd /c "gcloud firestore databases create --location=asia-south1 --project $projId --quiet >nul 2>&1"
 # pehle se bana ho to bhi OK
 Write-Host "  [OK] Firestore ready (ya pehle se tha)" -ForegroundColor Green
 
 # -- 4. Email/Password login ON --
-Write-Host ">> 4/7 Email/Password login ON..." -ForegroundColor Yellow
+Write-Host ">> 4/8 Email/Password login ON..." -ForegroundColor Yellow
 
 # Google ka ASLI error message nikaaltta hai (PS5.1 ErrorDetails khaali hota hai)
 function Get-ErrBody([System.Exception]$e) {
@@ -221,7 +223,7 @@ if (-not $authOk) {
 Write-Host "  [OK] Email/Password ON" -ForegroundColor Green
 
 # -- 5. Web app register --
-Write-Host ">> 5/7 Web app register..." -ForegroundColor Yellow
+Write-Host ">> 5/8 Web app register..." -ForegroundColor Yellow
 $appName = "$Code-web"
 $raw = firebase apps:create WEB $appName --project $projId --json 2>$null | Out-String
 $appId = $null
@@ -244,7 +246,7 @@ if (-not $appId) { Fail "Web app create/find fail - 'firebase login --reauth' ch
 Write-Host "  [OK] Web app: $appId" -ForegroundColor Green
 
 # -- 6. Config keys read + companies.json auto-update --
-Write-Host ">> 6/7 Config keys read + companies.json update..." -ForegroundColor Yellow
+Write-Host ">> 6/8 Config keys read + companies.json update..." -ForegroundColor Yellow
 $raw = firebase apps:sdkconfig WEB $appId --project $projId --json 2>$null | Out-String
 $sdk = $null
 if ($raw -and $raw.IndexOf('{') -ge 0) {
@@ -261,9 +263,118 @@ $company.appId = "$($sdk.appId)"
 $registry | ConvertTo-Json -Depth 8 | Set-Content $registryPath -Encoding UTF8 -ErrorAction Stop
 Write-Host "  [OK] companies.json auto-update ho gaya (keys bhar gayi)" -ForegroundColor Green
 
-# -- 7. Build + Deploy --
+# -- 7. SYNC BRIDGE (master ledger <-> company app LIVE link) --
+Write-Host ">> 7/8 SYNC BRIDGE jod raha (master app <-> company app)..." -ForegroundColor Yellow
+$bridgeOk = $false
+try {
+  $bridgeDir = Join-Path $PSScriptRoot 'bridges'
+  if (-not (Test-Path $bridgeDir)) { New-Item -ItemType Directory -Path $bridgeDir | Out-Null }
+  $saltPath = Join-Path $bridgeDir 'secret.key'
+  if (-not (Test-Path $saltPath)) {
+    $rnd = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    $sbytes = New-Object byte[] 24
+    $rnd.GetBytes($sbytes)
+    ([BitConverter]::ToString($sbytes) -replace '-','') | Set-Content $saltPath -Encoding ASCII
+    Write-Host "  [OK] Bridge master-key bani: deploy\bridges\secret.key (delete MAT karna - git me nahi jata)" -ForegroundColor DarkGray
+  }
+  $salt = (Get-Content $saltPath -Raw).Trim()
+  $sha = [System.Security.Cryptography.SHA256]::Create()
+  $syncSecret = ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes("$salt|$projId"))) -replace '-','').Substring(0, 28)
+  $syncEmail = "owner-sync.$Code@fcoy-erp.internal"
+  $apiKeyB = "$($company.apiKey)".Trim()
+  $authDomB = "$($company.authDomain)".Trim()
+
+  # 7a. Company app ke andar sync user banao/verify karo (pure REST - sirf apiKey chahiye)
+  $bodyUp = @{ email = $syncEmail; password = $syncSecret; returnSecureToken = $false } | ConvertTo-Json
+  try {
+    $null = Invoke-RestMethod -Method Post -Uri "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=$apiKeyB" -Body $bodyUp -ContentType 'application/json' -ErrorAction Stop
+    Write-Host "  [OK] Sync user ban gaya: $syncEmail" -ForegroundColor Green
+  } catch {
+    $eb7 = Get-ErrBody $_.Exception
+    if ($eb7 -match 'EMAIL_EXISTS') {
+      $bodyIn = @{ email = $syncEmail; password = $syncSecret; returnSecureToken = $true } | ConvertTo-Json
+      try {
+        $null = Invoke-RestMethod -Method Post -Uri "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=$apiKeyB" -Body $bodyIn -ContentType 'application/json' -ErrorAction Stop
+        Write-Host "  [OK] Sync user pehle se hai - verify OK" -ForegroundColor DarkGray
+      } catch {
+        throw "Sync user hai par password match nahi (secret.key purani?) - deploy\bridges\secret.key delete karke script dobara chalao"
+      }
+    } else { throw "Sync user nahi ban saka. GOOGLE: $eb7" }
+  }
+
+  # 7b. Master ledger ka customer record dhoondho + bridge creds likho (gcloud token -> master Firestore)
+  $mtok = (gcloud auth print-access-token 2>$null | Select-Object -First 1).Trim()
+  if (-not $mtok) { throw "gcloud token nahi mila - 'gcloud auth login' karke dobara chalao" }
+  $mh = @{ Authorization = "Bearer $mtok" }
+  $mBase = "https://firestore.googleapis.com/v1/projects/$MasterProjectId/databases/(default)/documents"
+  $bridgeFields = @{
+    projectId = @{ stringValue = $projId }
+    apiKey = @{ stringValue = $apiKeyB }
+    authDomain = @{ stringValue = $authDomB }
+    appId = @{ stringValue = "$appId" }
+    syncEmail = @{ stringValue = $syncEmail }
+    syncSecret = @{ stringValue = $syncSecret }
+  }
+  $bridgeVal = @{ mapValue = @{ fields = $bridgeFields } }
+  $list = Invoke-RestMethod -Method Get -Uri "$mBase/customers?pageSize=200" -Headers $mh -ErrorAction Stop
+  $matchName = $null
+  $maxNum = 0
+  $nameHead = ("$($company.name)" -replace '\s*\(.*','').Trim().ToLower()
+  foreach ($d in @($list.documents | Where-Object { $_ })) {
+    $cid = ''
+    if ($d.fields.customerId) { $cid = "$($d.fields.customerId.stringValue)" }
+    $mn = [regex]::Match($cid, '-(\d+)$')
+    if ($mn.Success) { $nv = [int]$mn.Groups[1].Value; if ($nv -gt $maxNum) { $maxNum = $nv } }
+    $bpid = ''
+    try { $bpid = "$($d.fields.bridge.mapValue.fields.projectId.stringValue)" } catch {}
+    $ccode = ''
+    try { $ccode = "$($d.fields.companyCode.stringValue)" } catch {}
+    $uname = ''
+    try { $uname = "$($d.fields.unitName.stringValue)".ToLower() } catch {}
+    if ($bpid -eq $projId -or $ccode -eq $Code -or ($nameHead -and $uname.Contains($nameHead))) { $matchName = "$($d.name)" }
+  }
+  $nowIso = (Get-Date).ToUniversalTime().ToString('o')
+  if ($matchName) {
+    $pbody = @{ fields = @{ bridge = $bridgeVal; companyCode = @{ stringValue = $Code }; projectId = @{ stringValue = $projId } } } | ConvertTo-Json -Depth 12
+    $null = Invoke-RestMethod -Method Patch -Uri ("https://firestore.googleapis.com/v1/" + $matchName + "?updateMask.fieldPaths=bridge&updateMask.fieldPaths=companyCode&updateMask.fieldPaths=projectId") -Headers $mh -Body $pbody -ContentType 'application/json' -ErrorAction Stop
+    Write-Host "  [OK] Master ledger ka PURANA customer jod gaya (duplicate nahi bana)" -ForegroundColor Green
+    $bridgeOk = $true
+  } else {
+    $year = (Get-Date).Year
+    $newCid = ('FCOY-{0}-{1}' -f $year, ([string]($maxNum + 1)).PadLeft(3, '0'))
+    $cbody = @{ fields = @{
+      customerId = @{ stringValue = $newCid }
+      unitName = @{ stringValue = "$($company.name)" }
+      commanderName = @{ stringValue = '' }
+      email = @{ stringValue = '' }
+      phone = @{ stringValue = '' }
+      location = @{ stringValue = '' }
+      notes = @{ stringValue = 'Auto-registered by deploy script (sync bridge)' }
+      status = @{ stringValue = 'active' }
+      isLocalUnit = @{ booleanValue = $false }
+      authUid = @{ stringValue = '' }
+      createdAt = @{ stringValue = $nowIso }
+      createdBy = @{ stringValue = 'deploy-script' }
+      companyCode = @{ stringValue = $Code }
+      projectId = @{ stringValue = $projId }
+      bridge = $bridgeVal
+    } } | ConvertTo-Json -Depth 12
+    $null = Invoke-RestMethod -Method Post -Uri "$mBase/customers?documentId=cust_$Code" -Headers $mh -Body $cbody -ContentType 'application/json' -ErrorAction Stop
+    Write-Host "  [OK] Master ledger me NAYA customer ban gaya: $newCid" -ForegroundColor Green
+    $bridgeOk = $true
+  }
+} catch {
+  Write-Host ""
+  Write-Host "  [!] BRIDGE abhi nahi jud paaya: $($_.Exception.Message)" -ForegroundColor Yellow
+  Write-Host "      Deploy normal chalega. Bridge baad me judta hai - SAME command dobara chala do." -ForegroundColor Yellow
+}
+if ($bridgeOk) {
+  Write-Host "  [OK] BRIDGE LIVE! Ab master app se renew karoge to YE APP 2 second me khud update hogi." -ForegroundColor Green
+}
+
+# -- 8. Build + Deploy --
 if (-not $SkipDeploy) {
-  Write-Host ">> 7/7 Build + Deploy..." -ForegroundColor Yellow
+  Write-Host ">> 8/8 Build + Deploy..." -ForegroundColor Yellow
   powershell -ExecutionPolicy Bypass -File "$PSScriptRoot\Deploy-Company.ps1" -Code $Code
   if ($LASTEXITCODE -ne 0) { Fail "Deploy step fail - upar error dekho" }
 } else {

@@ -47,3 +47,7 @@ bower_components
 # Build output — ab GitHub Actions khud build karta hai (.github/workflows/deploy.yml)
 # Isliye git me rakhne ki zaroorat nahi. Har push par CI fresh build karke deploy karega.
 dist/
+
+# Company deploy ke local secrets + logs (kabhi git me nahi)
+deploy/bridges/
+deploy/logs/

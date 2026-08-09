@@ -22,6 +22,7 @@ import {
   UnitSubscription, addMonths,
 } from '../../subscription/types/subscription.types';
 import { SubscriptionPlan } from '../../subscription/types/subscription.types';
+import { CompanyBridge } from '../../subscription/api/companyBridge.api';
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -38,6 +39,9 @@ export interface Customer {
   status: 'active' | 'suspended';
   isLocalUnit: boolean;     // kya ye isi app/deployment ka CC hai
   authUid: string;
+  companyCode?: string;     // deploy code (bcoy/ccoy...) — sync bridge se joda hua
+  projectId?: string;       // us company app ka firebase project
+  bridge?: CompanyBridge | null; // ⚡ SYNC BRIDGE creds (master-only, deploy script likhti hai)
   createdAt: string;
   createdBy: string;
 }
@@ -326,8 +330,8 @@ export const cancelCustomerSub = async (
   customer: CustomerWithSub,
   by: string,
   applyToUnit: boolean,
-): Promise<void> => {
-  if (!customer.sub) return;
+): Promise<UnitSubscription> => {
+  if (!customer.sub) throw new Error('Pehle koi plan assign karo');
   const updated: UnitSubscription = {
     ...customer.sub,
     endDate: new Date().toISOString(),
@@ -344,6 +348,7 @@ export const cancelCustomerSub = async (
     remarks: `Cancelled by owner${applyToUnit ? ' · applied to unit app' : ''}`,
     by, at: new Date().toISOString(),
   });
+  return updated;
 };
 
 // ─────────────────────────────────────────────

@@ -39,8 +39,9 @@ import {
   CustomerWithSub, CreateCcForm, CustHistoryEntry,
 } from './api/customers.api';
 import { fetchPlans } from '../subscription/api/subscription.api';
+import { pushSubToCompany } from '../subscription/api/companyBridge.api';
 import {
-  SubscriptionPlan, PAYMENT_MODES, STATUS_META,
+  SubscriptionPlan, PAYMENT_MODES, STATUS_META, UnitSubscription,
   computeSubscriptionState, formatDate, formatINR,
   perMonthRate, savingsPct,
 } from '../subscription/types/subscription.types';
@@ -541,6 +542,18 @@ const SubscriptionsTab = ({
   const [payForm, setPayForm] = useState({ paymentMode: 'UPI', paymentRef: '', remarks: '', applyToUnit: true });
   const [payLoading, setPayLoading] = useState(false);
   const [extendLoading, setExtendLoading] = useState(false);
+  const [syncLoading, setSyncLoading] = useState(false);
+
+  // ⚡ SYNC BRIDGE helper — bridge jude ho to company app pe turant push (2 second me LIVE)
+  const syncToCompany = async (sub: UnitSubscription, note: string): Promise<string> => {
+    if (!customer?.bridge) return '';
+    try {
+      await pushSubToCompany(customer.bridge, sub, { note, plans });
+      return ' · ⚡ Company app pe bhi LIVE ✓';
+    } catch (e: any) {
+      return ` · ⚠️ Company sync FAIL: ${e?.message ?? e}`;
+    }
+  };
 
   const loadBase = useCallback(async () => {
     setLoading(true);
@@ -577,7 +590,8 @@ const SubscriptionsTab = ({
         ...payForm,
         applyToUnit: payForm.applyToUnit && customer.isLocalUnit,
       });
-      setSuccess(`✓ ${customer.customerId} ko ${payModal.name} ${customer.sub ? 'renew' : 'assign'} ho gaya! Valid till ${formatDate(sub.endDate)}${payForm.applyToUnit && customer.isLocalUnit ? ' — is app pe bhi apply ✓' : ''}`);
+      const bridgeNote = await syncToCompany(sub, `Master ledger — ${payModal.name} ${customer.sub ? 'renew' : 'assign'}`);
+      setSuccess(`✓ ${customer.customerId} ko ${payModal.name} ${customer.sub ? 'renew' : 'assign'} ho gaya! Valid till ${formatDate(sub.endDate)}${payForm.applyToUnit && customer.isLocalUnit ? ' — is app pe bhi apply ✓' : ''}${bridgeNote}`);
       setPayModal(null);
       await reload();
     } catch (err: any) { setError(`Assign failed: ${err.message}`); }
@@ -589,7 +603,8 @@ const SubscriptionsTab = ({
     setExtendLoading(true); setError('');
     try {
       const sub = await extendCustomerSub(customer, months, by(user ?? {}), customer.isLocalUnit);
-      setSuccess(`✓ ${customer.customerId} subscription +${months}M extend → ${formatDate(sub.endDate)}`);
+      const note = await syncToCompany(sub, `+${months}M extend (master ledger)`);
+      setSuccess(`✓ ${customer.customerId} subscription +${months}M extend → ${formatDate(sub.endDate)}${note}`);
       await reload();
     } catch (err: any) { setError(err.message); }
     finally { setExtendLoading(false); }
@@ -600,10 +615,22 @@ const SubscriptionsTab = ({
     if (!window.confirm(`${customer.customerId} ki subscription cancel karein?`)) return;
     setError('');
     try {
-      await cancelCustomerSub(customer, by(user ?? {}), customer.isLocalUnit);
-      setSuccess(`Subscription cancel ho gayi (${customer.customerId})`);
+      const sub = await cancelCustomerSub(customer, by(user ?? {}), customer.isLocalUnit);
+      const note = await syncToCompany(sub, 'Subscription CANCELLED (master ledger)');
+      setSuccess(`Subscription cancel ho gayi (${customer.customerId})${note}`);
       await reload();
     } catch (err: any) { setError(err.message); }
+  };
+
+  // ⚡ MANUAL SYNC — ledger ka current plan company app pe abhi bhejo (dono same karo)
+  const handleSyncNow = async () => {
+    if (!customer?.bridge || !customer.sub) return;
+    setSyncLoading(true); setError(''); setSuccess('');
+    try {
+      await pushSubToCompany(customer.bridge, customer.sub, { note: 'Manual sync (master -> company app)', plans });
+      setSuccess(`⚡ ${customer.customerId} — COMPANY APP SYNC HO GAYI! Ab wahan bhi ${customer.sub.planName}, ${formatDate(customer.sub.endDate)} tak dikhega ✓`);
+    } catch (e: any) { setError(`Sync FAIL: ${e?.message ?? e}`); }
+    finally { setSyncLoading(false); }
   };
 
   const subState = computeSubscriptionState(customer?.sub ?? null);
@@ -630,6 +657,12 @@ const SubscriptionsTab = ({
         {customer && (
           <span className={`text-[10px] font-black px-2.5 py-1 rounded-full border ${subMeta.bg} ${subMeta.color}`}>
             {customer.sub ? `${subMeta.label} · ${customer.sub.planName}` : 'NO PLAN'}
+          </span>
+        )}
+        {customer?.bridge && (
+          <span className="text-[9px] font-black px-2 py-1 rounded-full border bg-violet-50 text-violet-700 border-violet-300"
+            title="SYNC BRIDGE LIVE — yahan se renew karte hi company app pe 2 second me apply">
+            ⚡ LINKED
           </span>
         )}
         <button onClick={reload} disabled={loading} className="p-2 border border-slate-300 rounded text-slate-500 hover:bg-slate-50">
@@ -672,6 +705,13 @@ const SubscriptionsTab = ({
                       {extendLoading ? '...' : `+${m}M`}
                     </button>
                   ))}
+                  {customer.bridge && (
+                    <button onClick={handleSyncNow} disabled={syncLoading}
+                      title="Ledger wala plan company app pe abhi bhejo (dono apps same karne ke liye)"
+                      className="bg-violet-50 border border-violet-300 text-violet-700 px-3 py-1.5 text-[10px] font-black rounded hover:bg-violet-100 disabled:opacity-50">
+                      {syncLoading ? '...' : '⚡ SYNC'}
+                    </button>
+                  )}
                   <button onClick={handleCancel}
                     className="bg-red-50 border border-red-300 text-red-600 px-3 py-1.5 text-[10px] font-black rounded hover:bg-red-100">
                     Cancel
@@ -805,9 +845,14 @@ const SubscriptionsTab = ({
                   <span className="text-[11px] font-bold text-green-800">🏠 Is app (unit) pe turant apply karo</span>
                 </label>
               )}
-              {!customer.isLocalUnit && (
+              {!customer.isLocalUnit && customer.bridge && (
+                <div className="bg-violet-50 border border-violet-300 rounded px-3 py-2 text-[10px] font-bold text-violet-800">
+                  ⚡ SYNC BRIDGE LIVE — Confirm karte hi us company ki APP pe turant apply hoga (2 second me).
+                </div>
+              )}
+              {!customer.isLocalUnit && !customer.bridge && (
                 <div className="bg-sky-50 border border-sky-200 rounded px-3 py-2 text-[10px] font-bold text-sky-800">
-                  🌐 Remote customer — plan sirf billing record me likha jayega. Uski app pe subscription alag se activate hoga (Delivery Playbook).
+                  🌐 Remote customer — plan sirf billing record me likha jayega. Company app pe LIVE karne ke liye Bridge jodo: deploy\New-CompanyApp.ps1 -Code {customer.companyCode ?? '<code>'} dobara chalao (auto jod dega).
                 </div>
               )}
               <div className="flex gap-2">
