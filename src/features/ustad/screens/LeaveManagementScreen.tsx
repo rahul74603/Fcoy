@@ -522,14 +522,14 @@ const LeaveManagementScreen: React.FC = () => {
                 Old Orphan Leaves Detected
               </p>
               <p className="text-xs text-amber-700 mt-1">
-                Some leaves reference staff that no longer exist. Use the "Clean Orphan Leaves" button
-                in System → Seed Staff Data page to fix this.
+                Kuch leaves aise staff se judi hain jo ab maujood nahi (purana orphan data).
+                Safai ke liye Owner account → Practice Console kholo.
               </p>
               <button
-                onClick={() => window.location.href = '/seed-staff'}
+                onClick={() => window.location.href = '/dev-practice'}
                 className="mt-2 text-xs font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 px-3 py-1 rounded-lg"
               >
-                Go to Cleanup Page →
+                Practice Console Kholo →
               </button>
             </div>
             <button onClick={clearError} className="text-amber-400">✕</button>

@@ -9,7 +9,7 @@ import {
   Layers, CalendarDays, BarChart3,
   PieChart, Menu,
   Bot, Sparkles,
-  UserCog, ClipboardList, Boxes, FlaskConical, Crown, Database,
+  UserCog, ClipboardList, Boxes, FlaskConical, Crown,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBatch } from '../../contexts/BatchContext';
@@ -537,7 +537,6 @@ export const Sidebar = () => {
                 />
                 <NavItem title="🧪 Practice Console" icon={FlaskConical} path="/dev-practice" />
                 <NavItem title="👑 Subscription & License" icon={Crown} path="/subscription" />
-                <NavItem title="🌱 Seed Tools" icon={Database} path="/seed-staff" />
               </>
             )}
 
@@ -545,7 +544,7 @@ export const Sidebar = () => {
 
           {/* FOOTER */}
           <div className="p-4 bg-military-950 border-t border-military-800 text-xs text-military-400 text-center">
-            v2.5.1 · Seed Fix
+            v2.5.2 · Nav Clean
           </div>
 
         </div>
