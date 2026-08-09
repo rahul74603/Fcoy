@@ -35,28 +35,28 @@ export const SEEDED_COLLECTIONS = [
 // ─────────────────────────────────────────────
 // RANDOM HELPERS
 // ─────────────────────────────────────────────
-const rand = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
-const pick = <T,>(arr: readonly T[]): T => arr[rand(0, arr.length - 1)];
-const chance = (pct: number) => Math.random() * 100 < pct;
+export const rand = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
+export const pick = <T,>(arr: readonly T[]): T => arr[rand(0, arr.length - 1)];
+export const chance = (pct: number) => Math.random() * 100 < pct;
 
-const weighted = <T,>(pairs: readonly (readonly [T, number])[]): T => {
+export const weighted = <T,>(pairs: readonly (readonly [T, number])[]): T => {
   const total = pairs.reduce((s, [, w]) => s + w, 0);
   let r = Math.random() * total;
   for (const [val, w] of pairs) { r -= w; if (r <= 0) return val; }
   return pairs[0][0];
 };
 
-const digits = (n: number) => Array.from({ length: n }, () => rand(0, 9)).join('');
-const mobile = () => pick(['98', '97', '96', '86', '87', '70', '63', '81'] as const) + digits(8);
-const pad2 = (n: number) => String(n).padStart(2, '0');
+export const digits = (n: number) => Array.from({ length: n }, () => rand(0, 9)).join('');
+export const mobile = () => pick(['98', '97', '96', '86', '87', '70', '63', '81'] as const) + digits(8);
+export const pad2 = (n: number) => String(n).padStart(2, '0');
 
-const randomDateStr = (fromISO: string, toISO: string): string => {
+export const randomDateStr = (fromISO: string, toISO: string): string => {
   const a = new Date(fromISO).getTime();
   const b = new Date(toISO).getTime();
   return new Date(a + Math.random() * (b - a)).toISOString().slice(0, 10);
 };
 
-const dayAfter = (iso: string, days: number): string => {
+export const dayAfter = (iso: string, days: number): string => {
   const d = new Date(iso);
   d.setDate(d.getDate() + days);
   return d.toISOString().slice(0, 10);
@@ -65,7 +65,7 @@ const dayAfter = (iso: string, days: number): string => {
 // ─────────────────────────────────────────────
 // DATA POOLS (realistic Indian profiles)
 // ─────────────────────────────────────────────
-const NAME_POOLS: Record<string, { male: string[]; female: string[]; surnames: string[]; mothers: string[] }> = {
+export const NAME_POOLS: Record<string, { male: string[]; female: string[]; surnames: string[]; mothers: string[] }> = {
   Hindu: {
     male: ['Arjun', 'Rohit', 'Amit', 'Vikram', 'Suresh', 'Ramesh', 'Deepak', 'Ankit', 'Manoj', 'Sunil', 'Pradeep', 'Sanjay', 'Nitin', 'Gaurav', 'Sachin', 'Dinesh', 'Kunal', 'Ashok', 'Vijay', 'Santosh', 'Pankaj', 'Yash', 'Himanshu', 'Tushar'],
     female: ['Priya', 'Anjali', 'Pooja', 'Kajal', 'Neha', 'Ritu', 'Sapna'],
@@ -104,11 +104,11 @@ const NAME_POOLS: Record<string, { male: string[]; female: string[]; surnames: s
   },
 };
 
-const RELIGION_PICK = [
+export const RELIGION_PICK = [
   ['Hindu', 58], ['Muslim', 14], ['Sikh', 11], ['Christian', 8], ['Buddhist', 4], ['Jain', 5],
 ] as const;
 
-const STATES: Record<string, string[]> = {
+export const STATES: Record<string, string[]> = {
   Rajasthan: ['Jaipur', 'Sikar', 'Jhunjhunu', 'Alwar', 'Bikaner'],
   'Uttar Pradesh': ['Agra', 'Mathura', 'Kanpur Nagar', 'Lucknow', 'Etawah'],
   Bihar: ['Patna', 'Gaya', 'Muzaffarpur', 'Darbhanga'],
@@ -123,12 +123,12 @@ const STATES: Record<string, string[]> = {
   Kerala: ['Ernakulam', 'Thrissur'],
 };
 
-const VILLAGES = ['Rampur', 'Shyampur', 'Kishangarh', 'Shivpuri', 'Hanuman Nagar', 'Gopalpura', 'Bhojpur', 'Devnagar', 'Madhoganj', 'Surajgarh', 'Laxmipur', 'Chandpur'];
-const EDUCATION = ['10th Pass', '12th Pass', '12th Pass', 'BA', 'BA', 'BSc', 'BCom', 'ITI'] as const;
-const BLOOD = ['O+', 'O+', 'B+', 'B+', 'A+', 'AB+', 'O-', 'A-'] as const;
-const CATEGORY = [['General', 38], ['OBC', 32], ['SC', 15], ['ST', 8], ['EWS', 7]] as const;
-const REC_CENTERS = ['STC Tekanpur', 'RTC Delhi', 'BTC Bhanu', 'STT Kashmir'] as const;
-const KIT_ITEMS = ['OG Uniform', 'BPT Dress', 'PT Shoes', 'Beret Cap', 'Belt', 'Kit Bag', 'Water Bottle', 'Bedding Set'];
+export const VILLAGES = ['Rampur', 'Shyampur', 'Kishangarh', 'Shivpuri', 'Hanuman Nagar', 'Gopalpura', 'Bhojpur', 'Devnagar', 'Madhoganj', 'Surajgarh', 'Laxmipur', 'Chandpur'];
+export const EDUCATION = ['10th Pass', '12th Pass', '12th Pass', 'BA', 'BA', 'BSc', 'BCom', 'ITI'] as const;
+export const BLOOD = ['O+', 'O+', 'B+', 'B+', 'A+', 'AB+', 'O-', 'A-'] as const;
+export const CATEGORY = [['General', 38], ['OBC', 32], ['SC', 15], ['ST', 8], ['EWS', 7]] as const;
+export const REC_CENTERS = ['STC Tekanpur', 'RTC Delhi', 'BTC Bhanu', 'STT Kashmir'] as const;
+export const KIT_ITEMS = ['OG Uniform', 'BPT Dress', 'PT Shoes', 'Beret Cap', 'Belt', 'Kit Bag', 'Water Bottle', 'Bedding Set'];
 
 const STAFF_SEED = [
   { name: 'Rajendra Prasad', rank: 'Insp', spec: 'DEV Law & Order', status: 'active' },
@@ -164,14 +164,14 @@ const SUBJECTS_SEED = [
   { name: 'DEV BSF Ethics', code: 'DEV-ETH', category: 'Indoor', description: 'Force history, ethics & values' },
 ] as const;
 
-const ABSENT_REASONS: Record<string, string[]> = {
+export const ABSENT_REASONS: Record<string, string[]> = {
   L: ['Ghar par urgent kaam', 'Shaadi attend karni thi', 'Matlab ka kaam ghar par'],
   S: ['Fever & weakness', 'Viral infection', 'Stomach infection', 'Body ache & cold'],
   A: ['Bina information ke absent', 'Roll call me gayab'],
   H: ['MH Gwalior refer', 'Knee injury — rest advised', 'Sprain — physio advised'],
 };
 
-const COMPLAINTS = [
+export const COMPLAINTS = [
   ['Fever & weakness', 'Viral fever', 'Paracetamol + rest 48 hrs'],
   ['Ankle sprain (PT)', 'Grade-I sprain', 'Crepe bandage, ice pack, no PT 3 days'],
   ['Cold & cough', 'URTI', 'Syrup + steam, light duty'],

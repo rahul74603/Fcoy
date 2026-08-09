@@ -33,6 +33,10 @@ import {
   DEV_BATCH_NUMBER, SEEDED_COLLECTIONS, SeedProgress,
 } from './api/testBatchSeed.api';
 import {
+  wipeAllMasterData, seedMasterPermanentBatch, countMasterData, estimateWipe,
+  MASTER_BATCH_NUMBER,
+} from './api/masterSeed.api';
+import {
   listCustomersWithSub, createCcAccount, fetchCustomerHistory,
   assignPlanToCustomer, extendCustomerSub, cancelCustomerSub,
   makeMasterTestingCompany, createRemoteCustomer,
@@ -132,7 +136,7 @@ const OwnerPanel = () => {
           refreshKey={refreshKey}
         />
       )}
-      {tab === 'testbatch' && <TestBatchCard />}
+      {tab === 'testbatch' && (<><MasterDataCard /><TestBatchCard /></>)}
       {tab === 'xray' && <XRayTab />}
       {tab === 'practice' && <PracticeTab />}
     </div>
@@ -1134,6 +1138,119 @@ const PracticeTab = () => {
 };
 
 // ─────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// 🏗️ MASTER COY DATA CARD — PERMANENT ready-made data (Owner order)
+//    STEP 1: sara purana business data DELETE (ledger/users/billing SAFE)
+//    STEP 2: 150 trainees (Platoon 1-4 har jagah) + 20 staff + 10 subjects
+// ─────────────────────────────────────────────
+const MasterDataCard = () => {
+  const [trainees, setTrainees] = useState(0);
+  const [checked, setChecked] = useState(false);
+  const [busy, setBusy] = useState<'none' | 'wipe' | 'seed'>('none');
+  const [progress, setProgress] = useState<SeedProgress | null>(null);
+  const [msg, setMsg] = useState('');
+  const [err, setErr] = useState('');
+
+  const refresh = useCallback(async () => {
+    const c = await countMasterData();
+    setTrainees(c.trainees);
+    setChecked(true);
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const handleWipe = async () => {
+    setErr(''); setMsg('');
+    setBusy('wipe');
+    try {
+      const est = await estimateWipe();
+      setBusy('none');
+      if (est === 0) { setMsg('Master pe delete layak koi purana data nahi mila — ab STEP 2 chalao.'); return; }
+      if (!window.confirm(`⚠️ DANGER — MASTER app ka SARA purana business data PERMANENT DELETE hoga!
+
+Kareeb ${est} documents: purane batches, trainees, staff, funds, stock, records — sab.
+✓ SAFE rahega: billing ledger, customers, users/login, subscriptions, settings.
+
+Pakka delete karna hai?`)) return;
+      if (!window.confirm('Last warning — ye UNDO nahi hoga. Delete karein?')) return;
+      setBusy('wipe');
+      const n = await wipeAllMasterData(setProgress);
+      setMsg(`✓ ${n} purane documents PERMANENT delete ho gaye — MASTER bilkul clean slate. Ab STEP 2 chalao.`);
+      await refresh();
+    } catch (e: any) { setErr(`Wipe failed: ${e.message}`); }
+    finally { setBusy('none'); setProgress(null); }
+  };
+
+  const handleSeed = async () => {
+    if (trainees > 0 && !window.confirm(`Pehle se ${trainees} trainees maujood hain. Duplicate na ho, pehle STEP 1 (wipe) chalana better hai. Phir bhi continue?`)) return;
+    setBusy('seed'); setErr(''); setMsg('');
+    try {
+      const res = await seedMasterPermanentBatch(setProgress);
+      setMsg(`✓ MASTER COY DATA TAIYAAR! "${MASTER_BATCH_NUMBER}" (ACTIVE) — ${res.totalDocs} documents: 150 trainees (Platoon 1-4, mobile/state/address/religion sab) + 20 staff + 10 subjects + tests. Ye data PERMANENT hai — ab kisi bhi screen pe full testing karo.`);
+      await refresh();
+    } catch (e: any) { setErr(`Seed failed: ${e.message}`); }
+    finally { setBusy('none'); setProgress(null); }
+  };
+
+  const pill = !checked
+    ? { cls: 'bg-slate-200 text-slate-500', label: 'CHECKING...' }
+    : trainees > 0
+      ? { cls: 'bg-amber-600 text-white', label: `● READY (${trainees} TRAINEES)` }
+      : { cls: 'bg-slate-200 text-slate-600', label: '○ EMPTY' };
+
+  return (
+    <div className="bg-white border-2 border-amber-400 rounded-xl overflow-hidden shadow-sm">
+      <div className="bg-amber-50 px-4 py-3 border-b border-amber-200 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Building2 size={15} className="text-amber-700" />
+          <h3 className="text-xs font-black text-slate-800 uppercase">
+            🏗️ MASTER COY Permanent Data — 150 Trainees · Platoon 1-4 · Staff · Subjects
+          </h3>
+        </div>
+        <span className={`text-[9px] font-black px-2.5 py-1 rounded-full ${pill.cls}`}>{pill.label}</span>
+      </div>
+
+      <div className="p-5 space-y-4">
+        <p className="text-[11px] text-slate-600 leading-relaxed">
+          Master coy ke liye <strong>realistic permanent testing data</strong> — ready-made ACTIVE batch
+          <strong> "{MASTER_BATCH_NUMBER}"</strong> (Apr–Oct 2026): <strong>150 trainees</strong> (har trainee ka mobile,
+          state, full address, religion, blood group, medical, kit, weapon — sab full detail, <strong>Platoon 1/2/3/4
+          har jagah</strong>), <strong>20 staff</strong>, <strong>10 subjects</strong> + assignments, FPT + weekly tests
+          (pass/fail), absent/medical, attendance/leave/duty, schedule, weekly programs.
+          <br />
+          <span className="text-amber-700 font-black">
+            ⚠️ STEP 1 delete master ka SARA purana business data (batches/trainees/funds/stock/records) — PERMANENT.
+            Billing ledger, customers, users/login, subscriptions SAFE rehte hain. Ye card SIRF master app pe chalti hai.
+          </span>
+        </p>
+
+        <div className="flex flex-wrap gap-2">
+          <button onClick={handleWipe} disabled={busy !== 'none'}
+            className="bg-red-600 text-white text-[10px] font-black uppercase px-4 py-2.5 rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center gap-1.5">
+            <Trash2 size={12} /> {busy === 'wipe' ? 'Deleting...' : 'STEP 1 — SARA PURANA DATA DELETE'}
+          </button>
+          <button onClick={handleSeed} disabled={busy !== 'none'}
+            className="bg-green-700 text-white text-[10px] font-black uppercase px-4 py-2.5 rounded-lg hover:bg-green-800 disabled:opacity-50 flex items-center gap-1.5">
+            <Database size={12} /> {busy === 'seed' ? 'Ban raha hai...' : 'STEP 2 — 150 TRAINEE + STAFF + SUBJECTS BANAO'}
+          </button>
+        </div>
+
+        {progress && (
+          <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+            <p className="text-[10px] font-bold text-slate-600">{progress.step}</p>
+            <div className="h-1.5 bg-slate-200 rounded-full mt-1 overflow-hidden">
+              <div className="h-full bg-amber-500 transition-all" style={{ width: `${Math.round((progress.done / Math.max(progress.total, 1)) * 100)}%` }} />
+            </div>
+            <p className="text-[9px] text-slate-400 mt-0.5">{progress.done}/{progress.total}</p>
+          </div>
+        )}
+        {msg && <div className="bg-green-50 border border-green-300 text-green-800 px-4 py-2.5 rounded text-xs font-semibold">{msg}</div>}
+        {err && <div className="bg-red-50 border border-red-300 text-red-700 px-4 py-2.5 rounded text-xs font-semibold">{err}</div>}
+      </div>
+    </div>
+  );
+};
+
 // 🏋️ TEST BATCH CARD (Tab 3) — permanent demo data
 // ─────────────────────────────────────────────
 const TestBatchCard = () => {

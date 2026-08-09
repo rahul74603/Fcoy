@@ -545,7 +545,7 @@ export const Sidebar = () => {
 
           {/* FOOTER */}
           <div className="p-4 bg-military-950 border-t border-military-800 text-xs text-military-400 text-center">
-            v2.4.0 · Sync Bridge
+            v2.5.0 · Master Data Factory
           </div>
 
         </div>
