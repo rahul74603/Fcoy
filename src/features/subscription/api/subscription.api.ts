@@ -216,6 +216,39 @@ export const renewWithOwnerKey = async (
   }
   if (sub.ownerKey !== ownerKey.trim().toUpperCase()) throw new Error('Owner key GALAT hai.');
 
+  // ── FIRST ACTIVATION: wizard ne plan PENDING rakha tha (planId khaali) ──
+  if (!sub.planId) {
+    const plans = await fetchPlans();
+    const actPlan = plans.find(p => p.durationMonths === months) ?? plans[0];
+    if (!actPlan) throw new Error('Koi plan define nahi mila (subscriptionPlans khaali).');
+    const actStart = new Date();
+    const actEnd = addMonths(actStart, actPlan.durationMonths);
+    const actISO = actStart.toISOString();
+    const activated: UnitSubscription = {
+      ...sub,
+      planId: actPlan.id,
+      planName: actPlan.name,
+      durationMonths: actPlan.durationMonths,
+      amount: actPlan.price,
+      startDate: actISO,
+      endDate: actEnd.toISOString(),
+      paymentMode,
+      paymentRef,
+      remarks: `Owner FIRST activation: ${paymentRef}`,
+      updatedAt: actISO,
+      updatedBy: 'OWNER-RENEW',
+    };
+    await setDoc(doc(db, CURRENT_DOC), activated);
+    await logHistory({
+      action: 'ACTIVATED',
+      planId: actPlan.id, planName: actPlan.name, amount: actPlan.price,
+      startDate: activated.startDate, endDate: activated.endDate,
+      remarks: `Owner first activation via key — ${paymentMode} · ${paymentRef}`,
+      by: 'OWNER-RENEW',
+    });
+    return { endDate: activated.endDate };
+  }
+
   const now = new Date();
   const expired = new Date(sub.endDate) < now;
   const base = expired ? now : new Date(sub.endDate);

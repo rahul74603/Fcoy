@@ -52,8 +52,9 @@ const EMPTY: WizardForm = {
 export const FirstRunSetupScreen: React.FC = () => {
   const navigate = useNavigate();
   const [form, setForm] = useState<WizardForm>(EMPTY);
-  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
+  const [, setPlans] = useState<SubscriptionPlan[]>([]); // list abhi UI me nahi dikhti (fixed 3 options), par fetch defaults seed kar deta hai
   const [planId, setPlanId] = useState('');
+  const [givePlan, setGivePlan] = useState(false); // 🔒 DEFAULT: plan mat do - app LOCKED rahegi
   const [payMode, setPayMode] = useState('UPI');
   const [payRef, setPayRef] = useState('');
   const [busy, setBusy] = useState(false);
@@ -141,13 +142,13 @@ export const FirstRunSetupScreen: React.FC = () => {
       }, { merge: true });
 
       // ── Step 5: Subscription plan activate ──
-      setStep('5/6 · Subscription plan activate...');
+      setStep('5/6 · Subscription setup...');
       const allPlans = await fetchPlans(); // pehli baar me defaults seed ho jaate hain
       setPlans(allPlans);
       const plan = allPlans.find(p => p.id === planId) ?? allPlans[0];
       // Owner ka secret renew key — company ko kabhi mat dena (master notes me save karo)
       const ownerKey = 'OWN-' + Math.random().toString(36).slice(2, 8).toUpperCase();
-      if (plan) {
+      if (givePlan && plan) {
         const start = new Date();
         const end = addMonths(start, plan.durationMonths);
         await setDoc(doc(db, 'subscription', 'current'), {
@@ -169,6 +170,22 @@ export const FirstRunSetupScreen: React.FC = () => {
           planId: plan.id, planName: plan.name, amount: plan.price,
           startDate: start.toISOString(), endDate: end.toISOString(),
           remarks: `First-run activation — ${unitName}`, by: email, at: now,
+        });
+      } else {
+        setStep('5/6 · Owner key bana raha hai (plan PENDING - app LOCKED)...');
+        await setDoc(doc(db, 'subscription', 'current'), {
+          planId: '',
+          planName: '(Pending Activation)',
+          durationMonths: 0,
+          amount: 0,
+          startDate: '',
+          endDate: '',
+          paymentMode: '',
+          paymentRef: '',
+          remarks: 'Pending owner activation - plan owner key se lagega (payment ke baad)',
+          updatedAt: now,
+          updatedBy: email,
+          ownerKey,
         });
       }
 
@@ -351,8 +368,20 @@ export const FirstRunSetupScreen: React.FC = () => {
             </div>
           </div>
 
-          <div className="border border-green-200 bg-green-50 rounded p-3 space-y-2">
-            <div className="text-[10px] font-black text-green-800 uppercase">Subscription Plan (pehli activation)</div>
+          <div className={`border rounded p-3 space-y-2 ${givePlan ? 'border-green-300 bg-green-50' : 'border-red-300 bg-red-50'}`}>
+            <div className="text-[10px] font-black uppercase text-slate-800">Subscription Plan — OWNER KA DECISION</div>
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input type="radio" checked={!givePlan} onChange={() => setGivePlan(false)} className="mt-0.5" />
+              <span className="text-[11px] font-bold text-slate-800">
+                🔒 ABHI NAHI — App LOCKED rahegi (DEFAULT)
+                <span className="block text-[9px] font-semibold text-slate-600">Sirf OWNER KEY banegi. Payment milne pe lock screen se plan activate hoga. Key company ko KABHI mat dena.</span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input type="radio" checked={givePlan} onChange={() => setGivePlan(true)} className="mt-0.5" />
+              <span className="text-[11px] font-bold text-slate-800">💰 PLAN DO — Abhi activate karo (payment already aa gayi hai)</span>
+            </label>
+            {givePlan && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
               <select value={planId} onChange={e => setPlanId(e.target.value)}
                 className="border border-slate-300 px-2 py-2 text-xs rounded bg-white">
@@ -368,9 +397,16 @@ export const FirstRunSetupScreen: React.FC = () => {
                 className="border border-slate-300 px-2 py-2 text-xs rounded bg-white"
                 placeholder="Txn / PO ref (optional)" />
             </div>
-            <p className="text-[9px] font-semibold text-green-700">
-              Plan `subscription/current` pe turant activate hoga — app unlock. Amount plan master se aayega{plans.length > 0 ? '' : ' (save pe load hoga)'}.
-            </p>
+            )}
+            {givePlan ? (
+              <p className="text-[9px] font-semibold text-green-700">
+                Plan `subscription/current` pe turant activate hoga — app unlock.
+              </p>
+            ) : (
+              <p className="text-[9px] font-semibold text-red-700">
+                Sirf owner key save hogi — app LOCKED rahegi jab tak owner plan na lagaye. Tera kanun: sirf subscription ke baad khulegi. 🔒
+              </p>
+            )}
           </div>
 
           <button type="submit" disabled={busy}

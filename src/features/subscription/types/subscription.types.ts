@@ -169,7 +169,7 @@ export const computeSubscriptionState = (
   sub: UnitSubscription | null,
   now: Date = new Date(),
 ): SubscriptionState => {
-  if (!sub || !sub.endDate) {
+  if (!sub || !sub.endDate || !sub.planId) {
     return { status: 'none', daysLeft: 0, totalDays: 0, usedPct: 0, graceDaysLeft: 0 };
   }
 
