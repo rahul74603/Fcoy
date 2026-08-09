@@ -24,7 +24,7 @@ import {
 import {
   collection, doc, getDocs, setDoc, addDoc, limit, query,
 } from 'firebase/firestore';
-import { auth, db } from '../../config/firebase';
+import { auth, db , firebaseConfig } from '../../config/firebase';
 import {
   AlertTriangle, CheckCircle2, Loader2, Building2, Rocket,
 } from 'lucide-react';
@@ -230,6 +230,32 @@ export const FirstRunSetupScreen: React.FC = () => {
           <button onClick={() => navigate('/login')}
             className="w-full bg-military-800 text-white font-black uppercase text-xs py-3 hover:bg-military-900 transition-colors">
             Login Page pe Jao →
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── PERMANENT GUARD 0: MASTER app pe wizard KABHI nahi (confusion-ka-jad band) ──
+  // Master (training-command-erp) = sirf Owner Console + MASTER COY testing.
+  // Company setup SIRF uski ALAG app pe hota hai (deploy script se banti hai).
+  if (firebaseConfig.projectId === 'training-command-erp') {
+    return (
+      <div className="min-h-screen bg-military-950 flex items-center justify-center p-4">
+        <div className="w-full max-w-md bg-white border-t-8 border-red-600 shadow-2xl rounded-sm p-8 text-center space-y-4">
+          <AlertTriangle size={40} className="text-red-600 mx-auto" />
+          <h1 className="text-lg font-black text-military-900 uppercase">Ye MASTER App Hai — Wizard Yahan Nahi</h1>
+          <p className="text-xs text-slate-600 font-semibold leading-relaxed">
+            Ye app sirf <strong>Owner Console + MASTER COY (testing company)</strong> hai.
+            Yahan KOI real company setup nahi hoti (na A Coy, na koi).
+          </p>
+          <p className="text-[11px] text-slate-500 font-semibold leading-relaxed">
+            Nayi company chahiye to VS Code me <strong>New-CompanyApp.ps1 -Code &lt;code&gt;</strong> chalao —
+            uski ALAG app banegi, aur wizard WAHAN chalega (fcoy-erp-&lt;code&gt;.web.app/first-run).
+          </p>
+          <button onClick={() => navigate('/login')}
+            className="w-full bg-military-800 text-white font-black uppercase text-xs py-2.5 hover:bg-military-700">
+            Login pe wapas
           </button>
         </div>
       </div>

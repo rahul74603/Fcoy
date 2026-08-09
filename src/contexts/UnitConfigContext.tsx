@@ -22,11 +22,11 @@ interface UnitConfigContextType {
 
 // Default values — jab tak Firebase se data nahi aata
 const DEFAULT_CONFIG: UnitConfig = {
-  parentUnit: 'STC TEKANPUR',
-  companyName: 'ALPHA COMPANY',
-  companyShort: 'A-COY',
-  location: 'TEKANPUR, MADHYA PRADESH',
-  commanderName: '',
+  parentUnit: 'INTERNAL (OWNER USE ONLY)',
+  companyName: 'MASTER COY',
+  companyShort: 'MASTER',
+  location: 'SANDBOX',
+  commanderName: 'Developer (Owner)',
   updatedAt: '',
   updatedBy: '',
 };
