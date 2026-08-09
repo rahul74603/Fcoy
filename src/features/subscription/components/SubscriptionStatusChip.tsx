@@ -1,0 +1,90 @@
+// 💳 SUBSCRIPTION STATUS CHIP — top bar pe HAMESHA dikhta hai
+// Owner ka kanun: kisi bhi screen pe ek nazar me pata hona chahiye —
+// subscription ACTIVE hai ya nahi, aur kitne din bache hain.
+//   ✅ ACTIVE (green)      - plan chal raha, X din bache
+//   ⚠️ EXPIRING (amber)    - 7 din se kam bache
+//   🔴 GRACE (orange)      - plan khatam, grace ke X din bache
+//   🔒 EXPIRED (red)       - app LOCKED
+//   🔒 NO PLAN (red)       - kabhi plan bana hi nahi -> app LOCKED
+//   🧪 DEV (gray)          - testing account (subscription-free)
+import React from 'react';
+import { BadgeCheck, AlertTriangle, Lock, FlaskConical } from 'lucide-react';
+import { useAuth } from '../../../contexts/AuthContext';
+import { useSubscription } from '../../../contexts/SubscriptionContext';
+
+const SubscriptionStatusChip: React.FC = () => {
+  const { user } = useAuth();
+  const { state, subscription, loading } = useSubscription();
+
+  if (!user) return null;
+
+  // 🧪 Dev sandbox — testing account, sub-free
+  if (user.isDeveloper) {
+    return (
+      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-100 border border-slate-300 print:hidden"
+        title="Testing account — subscription ki zaroorat nahi">
+        <FlaskConical size={12} className="text-slate-500" />
+        <span className="text-[10px] font-black uppercase tracking-wide text-slate-500">DEV · Sub-Free</span>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return <div className="w-20 h-6 bg-slate-200 animate-pulse rounded print:hidden" />;
+  }
+
+  const days = state.status === 'grace' ? state.graceDaysLeft : state.daysLeft;
+  const endOn = subscription?.endDate
+    ? new Date(subscription.endDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+    : '—';
+
+  const cfg: Record<string, { cls: string; icon: React.ReactNode; text: string }> = {
+    none: {
+      cls: 'bg-red-100 border-red-400 text-red-800',
+      icon: <Lock size={12} />,
+      text: 'NO PLAN · LOCKED',
+    },
+    active: {
+      cls: 'bg-green-100 border-green-400 text-green-800',
+      icon: <BadgeCheck size={12} />,
+      text: `ACTIVE · ${days} DIN BACHE`,
+    },
+    expiring: {
+      cls: 'bg-amber-100 border-amber-400 text-amber-800',
+      icon: <AlertTriangle size={12} />,
+      text: `${days} DIN BACHE · RENEW!`,
+    },
+    grace: {
+      cls: 'bg-orange-100 border-orange-500 text-orange-800',
+      icon: <AlertTriangle size={12} />,
+      text: `GRACE · ${days} DIN · LOCK SOON`,
+    },
+    expired: {
+      cls: 'bg-red-600 border-red-700 text-white',
+      icon: <Lock size={12} />,
+      text: 'EXPIRED · LOCKED',
+    },
+  };
+
+  const c = cfg[state.status] ?? cfg.none;
+  const planInfo = subscription?.planName ? `${subscription.planName} · ` : '';
+  const pulse = state.status === 'expiring' || state.status === 'grace';
+
+  return (
+    <div
+      className={`flex items-center gap-1.5 px-2.5 py-1 rounded border-2 print:hidden ${c.cls}`}
+      title={`${planInfo}End date: ${endOn}${state.status === 'none' || state.status === 'expired' ? ' — app locked (owner key se renew)' : ''}`}
+    >
+      {(pulse || state.status === 'expired') && (
+        <span className="relative flex h-2 w-2">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-current opacity-60" />
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-current" />
+        </span>
+      )}
+      {c.icon}
+      <span className="text-[10px] font-black uppercase tracking-wide whitespace-nowrap">{c.text}</span>
+    </div>
+  );
+};
+
+export default SubscriptionStatusChip;

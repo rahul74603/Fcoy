@@ -13,6 +13,7 @@ import { GlobalSearch } from './GlobalSearch';
 
 // 🆕 Subscription Expiry Banner
 import SubscriptionBanner from '../../features/subscription/components/SubscriptionBanner';
+import SubscriptionStatusChip from '../../features/subscription/components/SubscriptionStatusChip';
 import SubscriptionGate from '../../features/subscription/components/SubscriptionGate';
 
 // 🧪 Dev Practice Mode Banner
@@ -150,6 +151,9 @@ export const EnterpriseLayout: React.FC<EnterpriseLayoutProps> = ({ children }) 
                 {time.toLocaleTimeString('en-GB')} IST
               </span>
             </div>
+
+            {/* 💳 SUBSCRIPTION STATUS — har screen pe hamesha dikhna chahiye (owner kanun) */}
+            <div className="print:hidden"><SubscriptionStatusChip /></div>
 
             {/* 🆕 LIVE NOTIFICATION BELL (Was static before) */}
             <div className="print:hidden"><NotificationBell /></div>

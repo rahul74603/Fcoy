@@ -545,7 +545,7 @@ export const Sidebar = () => {
 
           {/* FOOTER */}
           <div className="p-4 bg-military-950 border-t border-military-800 text-xs text-military-400 text-center">
-            v2.1.0 · Plan=Owner Choice
+            v2.2.0 · Sub Status Chip
           </div>
 
         </div>
