@@ -49,7 +49,7 @@ const BatchSwitcher: React.FC = () => {
           onChange={e => setSelectedBatch(e.target.value)}
           className="bg-transparent text-[11px] font-black uppercase text-purple-800 outline-none cursor-pointer max-w-[190px]"
         >
-          {allBatches.length === 0 && <option value="">🧪 TEST-77 (missing — reseed karo)</option>}
+          {allBatches.length === 0 && <option value="">🧪 koi batch nahi — Dev Practice me STEP 2 chalao</option>}
           {allBatches.map(b => (
             <option key={b.id} value={b.id}>
               🧪 {b.batchNumber}{b.status === 'active' ? ' ●LIVE' : ' (completed)'}

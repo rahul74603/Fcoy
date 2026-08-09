@@ -434,7 +434,7 @@ export const generateTestBatch = async (onProgress?: ProgressCb): Promise<{ tota
     const ev = fptEvents.map(e => {
       const passed = chance(88);
       const marks = passed ? rand(e.passingMarks, e.maxMarks) : rand(0, e.passingMarks - 1);
-      return { ...e, marks, passed, runningGrade: e.isRunning ? (marks >= 34 ? 'Excellent' : marks >= 28 ? 'Very Good' : marks >= 20 ? 'Good' : 'Fail') : undefined };
+      return { ...e, marks, passed, runningGrade: e.isRunning ? (marks >= 34 ? 'Excellent' : marks >= 28 ? 'Very Good' : marks >= 20 ? 'Good' : 'Fail') : '' };
     });
     const marks = ev.reduce((s, e) => s + e.marks, 0);
     const passed = ev.every(e => e.passed);

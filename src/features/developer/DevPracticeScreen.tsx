@@ -6,7 +6,7 @@
 //      auto Customer ID (FCOY-2026-001) milti hai
 //   2. SUBSCRIPTIONS — har customer ka plan assign/renew/
 //      extend + payment record + "Apply to Unit"
-//   3. TEST BATCH — 100 trainees + 20 staff demo batch
+//   3. TEST BATCH — MASTER COY permanent data (150 trainees, full detail)
 //   4. PRACTICE SESSION — snapshot + 1-click cleanup
 //
 // CC (non-dev) ko ye panel BILKUL NAHI dikhta — hamesha locked.
@@ -17,7 +17,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Flame, Play, Trash2, ShieldCheck, AlertTriangle,
   Loader2, CheckCircle2, X, RefreshCw, UserPlus, Eye, EyeOff,
-  Database, History, Ban, Info, Crown, Dumbbell,
+  Database, History, Ban, Crown, Dumbbell,
   Building2, CreditCard, Zap, FlaskConical, Search,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -28,10 +28,7 @@ import {
   fetchSessionMeta, KNOWN_COLLECTIONS,
   CleanupPlan, CleanupReport, PracticeSnapshot,
 } from './api/devPractice.api';
-import {
-  countDevSeedData, wipeTestBatch, generateTestBatch,
-  DEV_BATCH_NUMBER, SEEDED_COLLECTIONS, SeedProgress,
-} from './api/testBatchSeed.api';
+import { SeedProgress } from './api/testBatchSeed.api';
 import {
   wipeAllMasterData, seedMasterPermanentBatch, countMasterData, estimateWipe,
   MASTER_BATCH_NUMBER,
@@ -136,7 +133,7 @@ const OwnerPanel = () => {
           refreshKey={refreshKey}
         />
       )}
-      {tab === 'testbatch' && (<><MasterDataCard /><TestBatchCard /></>)}
+      {tab === 'testbatch' && <MasterDataCard />}
       {tab === 'xray' && <XRayTab />}
       {tab === 'practice' && <PracticeTab />}
     </div>
@@ -1220,7 +1217,7 @@ Pakka delete karna hai?`)) return;
           <br />
           <span className="text-amber-700 font-black">
             ⚠️ STEP 1 delete master ka SARA purana business data (batches/trainees/funds/stock/records) — PERMANENT.
-            Billing ledger, customers, users/login, subscriptions SAFE rehte hain. Ye card SIRF master app pe chalti hai.
+            Billing ledger, customers, users/login, subscriptions SAFE rehte hain. Practice Console ka Clean bhi is PERMANENT data ko touch NAHI karta. Ye card SIRF master app pe chalti hai.
           </span>
         </p>
 
@@ -1246,131 +1243,6 @@ Pakka delete karna hai?`)) return;
         )}
         {msg && <div className="bg-green-50 border border-green-300 text-green-800 px-4 py-2.5 rounded text-xs font-semibold">{msg}</div>}
         {err && <div className="bg-red-50 border border-red-300 text-red-700 px-4 py-2.5 rounded text-xs font-semibold">{err}</div>}
-      </div>
-    </div>
-  );
-};
-
-// 🏋️ TEST BATCH CARD (Tab 3) — permanent demo data
-// ─────────────────────────────────────────────
-const TestBatchCard = () => {
-  const navigate = useNavigate();
-  const [counts, setCounts] = useState<{ collection: string; count: number }[]>([]);
-  const [checked, setChecked] = useState(false);
-  const [busy, setBusy] = useState<'none' | 'generate' | 'wipe' | 'check'>('check');
-  const [progress, setProgress] = useState<SeedProgress | null>(null);
-  const [msg, setMsg] = useState('');
-  const [err, setErr] = useState('');
-
-  const totalDocs = counts.reduce((s, c) => s + c.count, 0);
-  const exists = totalDocs > 0;
-
-  const refreshCounts = useCallback(async () => {
-    setCounts(await countDevSeedData());
-    setChecked(true);
-  }, []);
-
-  useEffect(() => { setBusy('check'); refreshCounts().finally(() => setBusy('none')); }, [refreshCounts]);
-
-  const handleGenerate = async () => {
-    if (exists && !window.confirm(`Purana test data (${totalDocs} docs) WIPE hokar fresh batch banega. Pakka?`)) return;
-    setBusy('generate'); setErr(''); setMsg('');
-    try {
-      if (exists) await wipeTestBatch(setProgress);
-      const res = await generateTestBatch(setProgress);
-      setMsg(`✓ TEST BATCH TAIYAAR! "TEST-77" (completed) — ${res.totalDocs} documents: 100 trainees + 20 staff + subjects + tests. /batches ya /profile kholo — sab SIRF TUMHE dikhega. Ye data permanent rahega jab tak Wipe na karo.`);
-      await refreshCounts();
-    } catch (e: any) { setErr(`Generate failed: ${e.message}`); }
-    finally { setBusy('none'); setProgress(null); }
-  };
-
-  const handleWipe = async () => {
-    if (!exists) return;
-    if (!window.confirm(`${totalDocs} test documents PERMANENT delete ho jayenge. Pakka?`)) return;
-    setBusy('wipe'); setErr(''); setMsg('');
-    try {
-      const n = await wipeTestBatch(setProgress);
-      setMsg(`✓ ${n} test documents delete — test batch saaf.`);
-      await refreshCounts();
-    } catch (e: any) { setErr(`Wipe failed: ${e.message}`); }
-    finally { setBusy('none'); setProgress(null); }
-  };
-
-  return (
-    <div className="bg-white border-2 border-purple-300 rounded-xl overflow-hidden shadow-sm">
-      <div className="bg-purple-50 px-4 py-3 border-b border-purple-200 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Dumbbell size={15} className="text-purple-700" />
-          <h3 className="text-xs font-black text-slate-800 uppercase">
-            Full Test Batch — 100 Trainees + 20 Staff (Permanent Demo)
-          </h3>
-        </div>
-        <span className={`text-[9px] font-black px-2.5 py-1 rounded-full ${
-          !checked ? 'bg-slate-200 text-slate-500' : exists ? 'bg-purple-600 text-white' : 'bg-slate-200 text-slate-600'
-        }`}>
-          {!checked ? 'CHECKING...' : exists ? `● SEEDED (${totalDocs} docs)` : '○ NOT SEEDED'}
-        </span>
-      </div>
-
-      <div className="p-5 space-y-4">
-        <p className="text-[11px] text-slate-600 leading-relaxed">
-          Completed batch <strong>"{DEV_BATCH_NUMBER}"</strong> — purane batch jaisa poora data:
-          <strong> 100 trainees</strong> (religion, state, mobile, medical, kit — full detail),
-          <strong> 20 staff</strong>, <strong>8 subjects</strong> + assignments,
-          <strong> FPT + weekly tests</strong> (pass/fail), absent/medical, attendance/leave/duty, schedule, programs.
-          <br />
-          <span className="text-purple-700 font-black">
-            🔒 Sirf dev account ko dikhega — baaki kisi ko kabhi nahi.
-          </span>
-          <span className="text-green-700 font-black"> ♾️ Ye data PERMANENT rahega — jab tak tum khud Wipe/Practice-clean na karo (Practice cleanup isse touch nahi karta).</span>
-        </p>
-
-        {msg && <div className="bg-green-50 border border-green-300 text-green-800 px-3 py-2 rounded text-[11px] font-semibold flex items-start gap-1.5"><CheckCircle2 size={13} className="flex-shrink-0 mt-0.5" /> {msg}</div>}
-        {err && <div className="bg-red-50 border border-red-300 text-red-700 px-3 py-2 rounded text-[11px] font-semibold flex items-start gap-1.5"><AlertTriangle size={13} className="flex-shrink-0 mt-0.5" /> {err}</div>}
-
-        {busy !== 'none' && progress && (
-          <div className="bg-slate-50 border border-slate-200 rounded p-2.5">
-            <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
-              <div className="h-full bg-purple-500 transition-all"
-                style={{ width: `${progress.total ? Math.round((progress.done / progress.total) * 100) : 0}%` }} />
-            </div>
-            <p className="text-[10px] text-slate-500 font-bold mt-1">{progress.step} — {progress.done}/{progress.total}</p>
-          </div>
-        )}
-
-        {exists && busy === 'none' && (
-          <div className="flex flex-wrap gap-1.5">
-            {counts.map(c => (
-              <span key={c.collection} className="text-[9px] font-bold bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full border border-purple-200">
-                {c.collection}: {c.count}
-              </span>
-            ))}
-          </div>
-        )}
-
-        <div className="flex flex-wrap gap-2.5 pt-2 border-t border-slate-100">
-          <button onClick={handleGenerate} disabled={busy !== 'none'}
-            className="bg-purple-700 text-white px-5 py-2.5 text-xs font-black uppercase hover:bg-purple-800 disabled:opacity-50 rounded-lg inline-flex items-center gap-2">
-            {busy === 'generate' ? <><Loader2 size={13} className="animate-spin" /> Generating...</> : <><Dumbbell size={13} /> {exists ? 'Re-Generate (Wipe + Fresh)' : 'Generate Test Batch'}</>}
-          </button>
-          {exists && (
-            <>
-              <button onClick={handleWipe} disabled={busy !== 'none'}
-                className="bg-red-50 border border-red-300 text-red-700 px-5 py-2.5 text-xs font-black uppercase hover:bg-red-100 disabled:opacity-50 rounded-lg inline-flex items-center gap-2">
-                {busy === 'wipe' ? <><Loader2 size={13} className="animate-spin" /> Wiping...</> : <><Trash2 size={13} /> Wipe Test Data</>}
-              </button>
-              <button onClick={() => navigate('/batches')}
-                className="bg-slate-700 text-white px-4 py-2.5 text-xs font-black uppercase hover:bg-slate-800 rounded-lg">
-                View in App →
-              </button>
-            </>
-          )}
-        </div>
-
-        <p className="text-[9px] text-slate-400 font-semibold flex items-start gap-1">
-          <Info size={11} className="flex-shrink-0 mt-0.5" />
-          Batch completed hai — asli active batch touch nahi hota. Collections: {SEEDED_COLLECTIONS.length}. Demo dene ke liye perfect (kal kisi ko app dikhaoge to ready-made company milegi).
-        </p>
       </div>
     </div>
   );
