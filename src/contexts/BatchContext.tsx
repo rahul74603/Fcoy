@@ -11,17 +11,19 @@ import { setBatchScope } from '../utils/batchScope';
 import { useAuth } from './AuthContext';
 
 // ═══════════════════════════════════════════════════════════════
-// 🔒 DEV SANDBOX — PERMANENT LOCK (POORE APP KA KANUN)
+// 🔒 DEV SANDBOX — ISOLATION KANUN (POORE APP KA KANUN)
 //
 // Developer account ko EK ALAG PROJECT ki tarah treat karo:
-//   1. Dev account SIRF apna sandbox batch (TEST-77) dekhta hai —
-//      koi dropdown nahi, koi batch-change system nahi.
+//   1. Dev account SIRF dev sandbox batches (TEST-77 jaise) dekhta hai.
+//      v2.3.0 se DEV batches ke ANDAR switch/create/complete allowed hai
+//      taaki MASTER COY apni poori testing khud kare — par real batch
+//      is duniya me AATA hi nahi, switch hona impossible hai.
 //   2. Dev account me REAL batch ka ek bhi record NAHI dikhega,
-//      aur TEST-77 ka ek bhi record REAL accounts me NAHI dikhega.
+//      aur dev batch (isDevData tagged) ka ek bhi record REAL accounts
+//      me NAHI dikhega.
 //   3. Real batches ke beech STRICT isolation waisa hi rahega.
-//   4. Dev sandbox me naya batch banana/complete karna BLOCKED hai —
-//      TEST-77 permanent hai. Real batch lifecycle sirf REAL
-//      accounts (CC/Clerk) se hota hai.
+//   4. Real batches ka lifecycle (create/complete) SIRF REAL accounts
+//      (CC/Clerk) se hota hai — dev se real batch pe koi write nahi.
 //   5. Dono duniyon ke beech sirf SUBSCRIPTION + RULES ka rishta hai.
 // ═══════════════════════════════════════════════════════════════
 const DEV_SANDBOX_BATCH_ID = 'batch_DEV_TEST_01';
@@ -84,6 +86,7 @@ export const BatchProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const { user } = useAuth();
   const uid = user?.uid ?? 'anon';
   const storageKey = `fcoy_batch_scope:${uid}`; // per-user selection memory
+  const devStorageKey = `fcoy_batch_scope_dev:${uid}`; // 🧪 dev sandbox ki ALAG memory (real selection se mix nahi)
 
   const [activeBatch, setActiveBatch] = useState<Batch | null>(null);
   const [allBatches, setAllBatches] = useState<Batch[]>([]);
@@ -100,16 +103,19 @@ export const BatchProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => onDevViewerChange(setIsDev), []);
 
   // Account badalte hi us account ki apni saved selection load karo
+  // (dev ki selection alag key me — real duniya ki memory se kabhi mix nahi)
   useEffect(() => {
-    if (isDev) return; // dev ki selection listener force karta hai (TEST-77 lock)
-    setSelectedBatchIdState(localStorage.getItem(storageKey));
-  }, [uid, isDev, storageKey]);
+    setSelectedBatchIdState(localStorage.getItem(isDev ? devStorageKey : storageKey));
+  }, [uid, isDev, storageKey, devStorageKey]);
 
   const setSelectedBatch = (batchId: string | null) => {
-    if (isDevRef.current) return; // 🔒 DEV LOCK — sandbox se bahar koi switch nahi
+    // 🧪 Dev bhi switch kar sakta hai — par SIRF dev batches ke beech.
+    // allBatches me dev ke liye real batch hota hi nahi, isliye sandbox se
+    // bahar switch hona STRUCTURALLY impossible hai.
+    const key = isDevRef.current ? devStorageKey : storageKey;
     setSelectedBatchIdState(batchId);
-    if (batchId) localStorage.setItem(storageKey, batchId);
-    else localStorage.removeItem(storageKey);
+    if (batchId) localStorage.setItem(key, batchId);
+    else localStorage.removeItem(key);
   };
 
   // ── Real-time listener for all batches ──
@@ -125,16 +131,18 @@ export const BatchProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           (b as unknown as Record<string, unknown>)[DEV_TAG] === true;
 
         if (isDev) {
-          // 🔒 DEV SANDBOX LOCK — dev account ke liye SIRF dev batches exist karte hain.
+          // 🧪 DEV SANDBOX — dev account ke liye SIRF dev batches exist karte hain.
           // Real batches is duniya me dikhte hi nahi, chune hi nahi ja sakte.
           const devOnly = batches.filter(isDevBatch);
           const lock =
             devOnly.find(b => b.id === DEV_SANDBOX_BATCH_ID) ?? devOnly[0] ?? null;
           setAllBatches(devOnly);
-          // Dev duniya me TEST-77 hi "active batch" hai (isliye saare screens
-          // aur write-side stamping apne aap sandbox batch pe hoti hai)
-          setActiveBatch(lock);
-          setSelectedBatchIdState(lock?.id ?? null);
+          // Sandbox ka ACTIVE dev batch default hai (nayi test entries usi pe stamp hongi)
+          setActiveBatch(devOnly.find(b => b.status === 'active') ?? lock);
+          // Dev ki saved selection sirf dev batches me valid ho tabhi rakho
+          setSelectedBatchIdState(prev =>
+            prev && devOnly.some(b => b.id === prev) ? prev : null
+          );
         } else {
           // 🏢 REAL WORLD — dev/test batches yahan kabhi exist hi nahi karte
           const realOnly = batches.filter(b => !isDevBatch(b));
@@ -175,13 +183,11 @@ export const BatchProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // ── Create New Batch ──
   const createNewBatch = useCallback(async (data: CreateBatchForm) => {
-    // 🔒 KANUN: Dev sandbox me naya batch nahi banega — TEST-77 permanent hai.
-    // Real batches sirf REAL accounts (CC/Clerk) se bante hain.
-    if (isDevRef.current) {
-      throw new Error(
-        'Dev sandbox LOCKED hai — TEST-77 permanent batch hai. Real batch banana hai to real (non-dev) account se login karo.'
-      );
-    }
+    // 🧪 DEV MODE: sandbox ke andar naya TEST batch banana allowed hai
+    // (MASTER COY apni testing khud karega). Naya batch DEV_TAG ke saath banta
+    // hai — real duniya me kabhi nahi dikhega. Dev ka allBatches pehle se
+    // dev-only hai, isliye "complete" hone wala purana batch bhi sirf dev batch hoga.
+    const isDevMode = isDevRef.current;
     try {
       const batch = writeBatch(db);
 
@@ -216,6 +222,8 @@ export const BatchProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         totalTrainees: 0,
         createdAt: new Date().toISOString(),
         createdBy: data.createdBy,
+        // 🧪 Dev sandbox ka batch hamesha tagged — real accounts me kabhi nahi dikhega
+        ...(isDevMode ? { [DEV_TAG]: true } : {}),
       });
 
       // Step 3: activeBatch config doc update
@@ -238,9 +246,10 @@ export const BatchProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // ── Complete/Archive a Batch ──
   const completeBatch = useCallback(async (batchId: string, userId: string) => {
-    // 🔒 KANUN: Dev sandbox ka batch kabhi complete/archive nahi hoga (TEST-77 permanent)
-    if (isDevRef.current) {
-      throw new Error('Dev sandbox LOCKED hai — TEST-77 ko complete/archive nahi kar sakte.');
+    // 🧪 DEV MODE: sandbox batch complete karna allowed hai — par SIRF dev batch.
+    // Dev ka allBatches dev-only hai; list me na milna = real batch = BLOCK.
+    if (isDevRef.current && !allBatches.some(b => b.id === batchId)) {
+      throw new Error('Ye dev sandbox ka batch nahi hai — dev account se complete nahi ho sakta.');
     }
     try {
       await updateDoc(doc(db, 'batches', batchId), {
@@ -252,7 +261,7 @@ export const BatchProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       console.error('Complete batch error:', err);
       throw err;
     }
-  }, []);
+  }, [allBatches]);
 
   const refreshBatches = useCallback(() => {
     console.log('Batches are real-time synced via onSnapshot');

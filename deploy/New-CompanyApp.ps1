@@ -69,30 +69,55 @@ foreach ($cmd in 'gcloud','firebase') {
   }
 }
 
-# -- 1. Project create (idempotent) --
+# -- 1. Project check (UPDATE mode) ya create --
 Write-Host ">> 1/7 Firebase project check/create..." -ForegroundColor Yellow
+$acct = (gcloud config get account 2>$null | Out-String).Trim()
+Write-Host ("  Google account : " + $acct) -ForegroundColor DarkGray
 # cmd /c wrapper: native stderr se script NAHI maregi
 cmd /c "gcloud projects describe $projId --quiet >nul 2>&1"
-if ($LASTEXITCODE -ne 0) {
+$projExists = ($LASTEXITCODE -eq 0)
+if (-not $projExists) {
+  # fallback: kabhi kabhi direct describe token glitch se fail hota hai - list se confirm
+  $plist = (gcloud projects list --filter="projectId=$projId" --format="value(projectId)" 2>$null | Out-String).Trim()
+  if ($plist -eq $projId) { $projExists = $true }
+}
+if (-not $projExists) {
   Write-Host "  Project nahi mila - bana rahe hain..." -ForegroundColor DarkGray
   # GCP rule: display name me sirf letters/numbers/space/hyphen/!/quote allowed, max 30 chars.
   # "B Coy (Bravo Company)" -> "B Coy Bravo Company"  (parentheses hatao)
   $dispName = ("$($company.name)" -replace "[^a-zA-Z0-9 \-!']", "").Trim()
   if ($dispName.Length -gt 30) { $dispName = $dispName.Substring(0, 30).Trim() }
   if ([string]::IsNullOrWhiteSpace($dispName)) { $dispName = $projId }
-  gcloud projects create $projId --name $dispName --quiet
+  $createOut = (gcloud projects create $projId --name $dispName --quiet 2>&1 | Out-String)
   if ($LASTEXITCODE -ne 0) {
-    Write-Host ""
-    Write-Host "  [!] Project '$projId' nahi ban saka. Upar ka ERROR padho:" -ForegroundColor Red
-    Write-Host "      - Agar 'already in use'/'already exists' likha hai -> ye ID kisi aur ka hai:"
-    Write-Host "        powershell -ExecutionPolicy Bypass -File deploy\New-CompanyApp.ps1 -Code $Code -ProjectId fcoy-erp-$Code-74603"
-    Write-Host "      - Agar 'quota'/'permission' aaya hai -> Google account me kam se kam 1 naya project banane ki
-        permission chahiye (naye Google accounts pe limit 5-30 projects hoti hai)"
-    Fail "Project create fail - upar ka red ERROR screen copy karke paste karo"
+    if ($createOut -match 'already in use|already exists|ALREADY_EXISTS') {
+      Write-Host ""
+      Write-Host "  [!] Ye project ID pehle se reserved hai - dobara describe karke dekhte hain..." -ForegroundColor DarkGray
+      cmd /c "gcloud projects describe $projId --quiet >nul 2>&1"
+      if ($LASTEXITCODE -eq 0) { $projExists = $true }
+      else {
+        Write-Host ""
+        Write-Host "  [X] '$projId' is Google account ('$acct') ka NAHI lag raha." -ForegroundColor Red
+        Write-Host "      Jis account se pehle ye project bana tha, usi me login karo:" -ForegroundColor Yellow
+        Write-Host "        gcloud auth login        (browser me WOHI account chuno)" -ForegroundColor Yellow
+        Write-Host "        firebase login --reauth  (wohi account)" -ForegroundColor Yellow
+        Write-Host "      Phir script dobara chalao. Ya nayi ID lo: -ProjectId fcoy-erp-$Code-74603" -ForegroundColor Yellow
+        Fail "Galat Google account - login theek karke wapas aao"
+      }
+    } else {
+      Write-Host ""
+      Write-Host "  [!] Project '$projId' nahi ban saka. GOOGLE KA JAWAB:" -ForegroundColor Red
+      Write-Host $createOut -ForegroundColor Red
+      Write-Host "      - Agar 'quota'/'permission' aaya hai -> Google account me kam se kam 1 naya project banane ki
+          permission chahiye (naye Google accounts pe limit 5-30 projects hoti hai)"
+      Fail "Project create fail - upar ka red ERROR screen copy karke paste karo"
+    }
+  } else {
+    Write-Host "  [OK] Project ban gaya" -ForegroundColor Green
   }
-  Write-Host "  [OK] Project ban gaya" -ForegroundColor Green
-} else {
-  Write-Host "  [OK] Project pehle se maujood hai - aage badh rahe" -ForegroundColor DarkGray
+}
+if ($projExists) {
+  Write-Host "  [OK] Project pehle se maujood hai - UPDATE mode (kuch naya nahi ban raha - sirf latest build deploy hoga)" -ForegroundColor Green
 }
 
 # -- 2. APIs enable --

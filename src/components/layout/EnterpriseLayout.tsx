@@ -28,23 +28,35 @@ interface EnterpriseLayoutProps {
 // ⛓️ BATCH SWITCHER — STRICT BATCH RULE
 // Is dropdown se jo batch select hoga, POORA APP (funds, dashboards,
 // search, reports — sab) sirf USHI batch ka data dikhayega.
-// 🔒 DEVELOPER ACCOUNT: koi dropdown NAHI — wo TEST-77 sandbox se
-// permanently LOCKED hai (alag project jaisa). Sirf static badge dikhega.
+// 🧪 DEVELOPER ACCOUNT: sandbox dropdown — SIRF dev batches (TEST-77 jaise)
+// dikhte hain; real batch yahan aata hi nahi (BatchContext filter).
+// MASTER COY yahan se apne test batches manage karega.
 const BatchSwitcher: React.FC = () => {
   const { user } = useAuth();
   const { allBatches, currentBatch, setSelectedBatch } = useBatch();
 
-  // 🔒 DEV LOCK — developer ke liye batch-change system hi nahi hai
+  // 🧪 DEV SANDBOX — CLICKABLE dropdown, par SIRF dev batches.
+  // BatchContext ne real batches already filter kar diye hain.
   if (user?.isDeveloper) {
     return (
       <div
         className="hidden xl:flex items-center gap-1.5 border-2 rounded-lg px-2.5 py-1.5 bg-purple-50 border-purple-400"
-        title="Dev Sandbox: TEST-77 se permanently locked. Real batch ka data yahan kabhi nahi aata, TEST-77 ka data real me kabhi nahi jaata."
+        title="DEV SANDBOX: sirf test batches (TEST-77 jaise). Real companies ka data yahan kabhi nahi aata. Batch Management screen se naya test batch bhi bana sakte ho."
       >
         <Layers size={13} className="text-purple-700" />
-        <span className="text-[11px] font-black uppercase text-purple-800">
-          🧪 {currentBatch?.batchNumber ?? 'TEST-77'} · DEV SANDBOX · 🔒
-        </span>
+        <select
+          value={currentBatch?.id ?? ''}
+          onChange={e => setSelectedBatch(e.target.value)}
+          className="bg-transparent text-[11px] font-black uppercase text-purple-800 outline-none cursor-pointer max-w-[190px]"
+        >
+          {allBatches.length === 0 && <option value="">🧪 TEST-77 (missing — reseed karo)</option>}
+          {allBatches.map(b => (
+            <option key={b.id} value={b.id}>
+              🧪 {b.batchNumber}{b.status === 'active' ? ' ●LIVE' : ' (completed)'}
+            </option>
+          ))}
+        </select>
+        <span className="text-[9px] font-black uppercase text-purple-500">sandbox</span>
       </div>
     );
   }
