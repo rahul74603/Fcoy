@@ -108,93 +108,110 @@ export const EnterpriseLayout: React.FC<EnterpriseLayoutProps> = ({ children }) 
       <div className="flex-1 flex flex-col h-full relative">
 
         {/* Supreme Command Header */}
-        <header className="h-16 bg-white border-b-2 border-military-800 shadow-flat flex items-center justify-between px-6 z-10 flex-shrink-0">
+        <header className="z-10 flex-shrink-0 border-b-2 border-military-800 bg-white px-3 py-2 shadow-flat sm:px-4 lg:px-5">
+          {/* Identity + live controls. min-w-0/truncate keeps long names on one line. */}
+          <div className="flex min-h-12 w-full items-center gap-2 sm:gap-3">
+            <div className="flex min-w-0 flex-1 items-center gap-2.5 sm:gap-3">
+              {/* Unit Logo */}
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-military-900 text-white shadow-inner sm:h-10 sm:w-10">
+                <Shield size={22} />
+              </div>
 
-          <div className="flex items-center space-x-4">
-            {/* Unit Logo */}
-            <div className="h-10 w-10 bg-military-900 rounded-sm flex items-center justify-center text-white shadow-inner">
-              <Shield size={24} />
+              <div className="min-w-0 flex-1" title="BSF Training Center Management System">
+                <h2 className="truncate whitespace-nowrap text-[14px] font-black uppercase leading-tight tracking-[0.12em] text-military-900 sm:text-[16px]">
+                  <span className="2xl:hidden">BSF Training Center ERP</span>
+                  <span className="hidden 2xl:inline">BSF Training Center Management System</span>
+                </h2>
+
+                <div className="mt-0.5 hidden min-w-0 items-center gap-1.5 overflow-hidden text-[10px] font-bold uppercase tracking-wide text-slate-600 sm:flex">
+                  {configLoading ? (
+                    <span className="flex items-center gap-1 whitespace-nowrap border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-slate-400">
+                      <Loader2 size={9} className="animate-spin" /> Loading...
+                    </span>
+                  ) : (
+                    <>
+                      <span
+                        className="max-w-[150px] truncate whitespace-nowrap border border-military-300 bg-military-50 px-1.5 py-0.5 text-military-800"
+                        title={`Unit: ${unitConfig.parentUnit}`}
+                      >
+                        UNIT: {unitConfig.parentUnit}
+                      </span>
+                      <span
+                        className="max-w-[120px] truncate whitespace-nowrap border border-military-300 bg-military-50 px-1.5 py-0.5 text-military-800"
+                        title={`Company: ${unitConfig.companyShort || unitConfig.companyName}`}
+                      >
+                        COY: {unitConfig.companyShort || unitConfig.companyName}
+                      </span>
+                      {unitConfig.location && (
+                        <span
+                          className="hidden max-w-[150px] items-center gap-1 truncate whitespace-nowrap border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-slate-500 lg:inline-flex"
+                          title={unitConfig.location}
+                        >
+                          <MapPin size={9} className="shrink-0" />
+                          <span className="truncate">{unitConfig.location}</span>
+                        </span>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
 
-            <div className="flex flex-col">
-              <h2 className="text-[18px] font-black text-military-900 uppercase tracking-widest leading-tight">
-                BSF Training Center Management System
-              </h2>
+            <div className="flex shrink-0 items-center gap-1.5 sm:gap-2 lg:gap-3">
+              {/* Live Date & Time — never wraps; compact screens hide it. */}
+              <div className="mr-1 hidden flex-col border-r border-slate-300 pr-3 text-right xl:flex">
+                <span className="whitespace-nowrap text-[11px] font-black uppercase text-military-900">
+                  {time.toLocaleDateString('en-GB', {
+                    day: '2-digit',
+                    month: 'short',
+                    year: 'numeric',
+                  })}
+                </span>
+                <span className="whitespace-nowrap font-mono text-[10px] font-bold text-slate-500">
+                  {time.toLocaleTimeString('en-GB')} IST
+                </span>
+              </div>
 
-              <div className="text-[11px] font-bold text-slate-600 uppercase tracking-wider flex items-center space-x-2 mt-0.5">
-                {configLoading ? (
-                  <span className="text-slate-400 bg-slate-50 px-1.5 py-0.5 border border-slate-200 flex items-center gap-1">
-                    <Loader2 size={9} className="animate-spin" /> Loading...
-                  </span>
-                ) : (
-                  <>
-                    <span className="text-military-800 bg-military-50 px-1.5 py-0.5 border border-military-300">
-                      UNIT: {unitConfig.parentUnit}
-                    </span>
-                    <span className="text-military-800 bg-military-50 px-1.5 py-0.5 border border-military-300">
-                      COY: {unitConfig.companyShort || unitConfig.companyName}
-                    </span>
-                    {unitConfig.location && (
-                      <span className="text-slate-500 bg-slate-50 px-1.5 py-0.5 border border-slate-200 flex items-center gap-1">
-                        <MapPin size={9} /> {unitConfig.location}
-                      </span>
-                    )}
-                  </>
-                )}
+              {/* Desktop/tablet license status. Mobile copy is in the controls row. */}
+              <div className="hidden lg:block print:hidden">
+                <SubscriptionStatusChip />
+              </div>
+
+              <div className="print:hidden"><NotificationBell /></div>
+
+              {/* Dynamic User Profile & Logout */}
+              <div className="flex items-center gap-1.5 border-l border-slate-300 pl-2 sm:gap-2">
+                <div className="hidden max-w-[165px] min-w-0 text-right xl:block" title={`${user?.name || ''} · ${user?.role || ''}`}>
+                  <div className="truncate whitespace-nowrap text-[12px] font-bold leading-tight text-military-900">
+                    {user?.name || 'Loading...'}
+                  </div>
+                  <div className="truncate whitespace-nowrap text-[10px] font-bold uppercase text-red-600">
+                    {user?.role || 'Authenticating'}
+                  </div>
+                </div>
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm border border-military-300 bg-military-100 text-military-800 sm:h-9 sm:w-9">
+                  <User size={18} />
+                </div>
+
+                <button
+                  onClick={logout}
+                  className="print:hidden rounded-sm border border-transparent p-1.5 text-slate-400 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600 sm:p-2"
+                  title="Secure Logout"
+                  aria-label="Secure logout"
+                >
+                  <LogOut size={18} />
+                </button>
               </div>
             </div>
           </div>
 
-          {/* 🔍 GLOBAL SEARCH — "Search everything you can access" */}
-          <GlobalSearch />
-          <BatchSwitcher />
-
-          <div className="flex items-center space-x-6">
-            {/* Live Date & Time */}
-            <div className="flex flex-col text-right mr-4 border-r border-slate-300 pr-6">
-              <span className="text-[12px] font-black text-military-900 uppercase">
-                {time.toLocaleDateString('en-GB', {
-                  day: '2-digit',
-                  month: 'short',
-                  year: 'numeric',
-                })}
-              </span>
-              <span className="text-[11px] font-bold text-slate-500 font-mono">
-                {time.toLocaleTimeString('en-GB')} IST
-              </span>
+          {/* Search is a dedicated responsive row, so it remains usable on mobile. */}
+          <div className="mt-2 flex w-full flex-col gap-2 border-t border-slate-100 pt-2 sm:flex-row sm:items-center">
+            <div className="shrink-0 lg:hidden print:hidden">
+              <SubscriptionStatusChip />
             </div>
-
-            {/* 💳 SUBSCRIPTION STATUS — har screen pe hamesha dikhna chahiye (owner kanun) */}
-            <div className="print:hidden"><SubscriptionStatusChip /></div>
-
-            {/* 🆕 LIVE NOTIFICATION BELL (Was static before) */}
-            <div className="print:hidden"><NotificationBell /></div>
-
-            {/* Dynamic User Profile & Logout */}
-            <div className="flex items-center space-x-4 pl-2 border-l border-slate-300">
-              <div className="flex items-center space-x-3">
-                <div className="text-right">
-                  <div className="text-sm font-bold text-military-900 leading-tight">
-                    {user?.name || 'Loading...'}
-                  </div>
-                  <div className="text-[11px] text-red-600 font-bold uppercase">
-                    {user?.role || 'Authenticating'}
-                  </div>
-                </div>
-                <div className="h-9 w-9 bg-military-100 border border-military-300 text-military-800 rounded-sm flex items-center justify-center">
-                  <User size={18} />
-                </div>
-              </div>
-
-              {/* Logout Button */}
-              <button
-                onClick={logout}
-                className="print:hidden p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-sm transition-colors border border-transparent hover:border-red-200"
-                title="Secure Logout"
-              >
-                <LogOut size={18} />
-              </button>
-            </div>
+            <GlobalSearch className="w-full sm:min-w-[240px]" />
+            <BatchSwitcher />
           </div>
         </header>
 

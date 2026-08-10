@@ -20,7 +20,11 @@ const access: Record<string, { name: string; path: string }[]> = {
 };
 const stringify = (v: any) => typeof v === 'string' || typeof v === 'number' ? String(v) : '';
 
-export const GlobalSearch: React.FC = () => {
+interface GlobalSearchProps {
+  className?: string;
+}
+
+export const GlobalSearch: React.FC<GlobalSearchProps> = ({ className = '' }) => {
   const { user } = useAuth(); const navigate = useNavigate();
   const [value, setValue] = useState(''); const [results, setResults] = useState<Result[]>([]); const [loading, setLoading] = useState(false); const [open, setOpen] = useState(false);
   useEffect(() => {
@@ -38,8 +42,8 @@ export const GlobalSearch: React.FC = () => {
       } catch (e) { console.error('Global search error', e); } finally { setLoading(false); }
     }, 350); return () => window.clearTimeout(timer);
   }, [value, user?.role]);
-  return <div className="relative z-50 hidden min-w-[280px] max-w-[430px] flex-1 lg:block">
-    <div className={`flex items-center gap-2 rounded-lg border-2 bg-amber-50 px-3 py-2 shadow-sm transition-colors ${open ? 'border-amber-500 ring-2 ring-amber-100' : 'border-amber-300'}`}><Search size={17} className="text-amber-700"/><input value={value} onFocus={() => setOpen(true)} onChange={e => setValue(e.target.value)} placeholder="Search everything you can access…" className="w-full bg-transparent text-sm font-semibold text-slate-800 outline-none placeholder:text-slate-500"/>{loading ? <Loader2 size={15} className="animate-spin text-amber-700"/> : value && <button onClick={() => { setValue(''); setOpen(false); }}><X size={14}/></button>}</div>
+  return <div className={`relative z-50 min-w-0 flex-1 ${className}`}>
+    <div className={`flex items-center gap-2 rounded-lg border-2 bg-amber-50 px-3 py-2 shadow-sm transition-colors ${open ? 'border-amber-500 ring-2 ring-amber-100' : 'border-amber-300'}`}><Search size={17} className="shrink-0 text-amber-700"/><input aria-label="Global search" value={value} onFocus={() => setOpen(true)} onChange={e => setValue(e.target.value)} placeholder="Search everything you can access…" className="min-w-0 w-full bg-transparent text-sm font-semibold text-slate-800 outline-none placeholder:text-slate-500"/>{loading ? <Loader2 size={15} className="shrink-0 animate-spin text-amber-700"/> : value && <button type="button" aria-label="Clear search" onClick={() => { setValue(''); setOpen(false); }}><X size={14}/></button>}</div>
     {open && value.trim().length >= 2 && <><div className="fixed inset-0 -z-10" onClick={() => setOpen(false)}/><div className="absolute left-0 right-0 mt-2 max-h-96 overflow-auto rounded-xl border border-amber-200 bg-white p-2 shadow-2xl">{!loading && results.length === 0 ? <p className="p-4 text-center text-xs text-slate-500">No matching records found in your permitted sections.</p> : results.map(r => <button key={`${r.collection}-${r.id}`} onClick={() => { navigate(`${r.path}?search=${encodeURIComponent(r.title)}`); setOpen(false); setValue(''); }} className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left hover:bg-amber-50"><span><b className="block text-sm text-slate-900">{r.title}</b><span className="text-[11px] text-slate-500">{r.collection} {r.detail && `· ${r.detail}`}</span></span><ArrowRight size={14} className="text-amber-600"/></button>)}</div></>}
   </div>;
 };

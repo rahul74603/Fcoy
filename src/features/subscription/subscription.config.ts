@@ -16,10 +16,11 @@
 //    VITE_SUBSCRIPTION_ENABLED: 'true' add karna hai — ek baar.)
 //
 // OFF hone par company app me:
-//   • Koi subscription banner / chip / gate / expiry warning NAHI
+//   • Koi subscription banner / gate / hard lock NAHI
+//   • Read-only top-bar license chip synced plan + days-left dikhata rahega
 //   • /subscription route login par redirect ho jayega
 //   • Sidebar me "👑 Subscription & License" link NAHI aayega
-//   • Firestore 'subscription/current' listener hi nahi lagega
+//   • Sirf 'subscription/current' ka read-only listener lagega
 // ─────────────────────────────────────────────
 
 export const SUBSCRIPTION_ENABLED: boolean =

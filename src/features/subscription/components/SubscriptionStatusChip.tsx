@@ -1,6 +1,6 @@
-// 💳 SUBSCRIPTION STATUS CHIP — top bar pe HAMESHA dikhta hai
-// Owner ka kanun: kisi bhi screen pe ek nazar me pata hona chahiye —
-// subscription ACTIVE hai ya nahi, aur kitne din bache hain.
+// 💳 SUBSCRIPTION / LICENSE STATUS CHIP — top bar pe HAMESHA dikhta hai
+// Master me subscription enforcement chalta hai. Company apps me gate/banner
+// OFF rehte hain, lekin synced plan ka read-only status aur days-left dikhta hai.
 //   ✅ ACTIVE (green)      - plan chal raha, X din bache
 //   ⚠️ EXPIRING (amber)    - 7 din se kam bache
 //   🔴 GRACE (orange)      - plan khatam, grace ke X din bache
@@ -17,8 +17,6 @@ const SubscriptionStatusChip: React.FC = () => {
   const { user } = useAuth();
   const { state, subscription, loading } = useSubscription();
 
-  // 🚩 Company apps me subscription system band hai — chip nahi dikhega
-  if (!SUBSCRIPTION_ENABLED) return null;
   if (!user) return null;
 
   // 🧪 Dev sandbox — testing account, sub-free
@@ -45,7 +43,7 @@ const SubscriptionStatusChip: React.FC = () => {
     none: {
       cls: 'bg-red-100 border-red-400 text-red-800',
       icon: <Lock size={12} />,
-      text: 'NO PLAN · LOCKED',
+      text: SUBSCRIPTION_ENABLED ? 'NO PLAN · LOCKED' : 'NO PLAN · NOT SYNCED',
     },
     active: {
       cls: 'bg-green-100 border-green-400 text-green-800',
@@ -60,12 +58,14 @@ const SubscriptionStatusChip: React.FC = () => {
     grace: {
       cls: 'bg-orange-100 border-orange-500 text-orange-800',
       icon: <AlertTriangle size={12} />,
-      text: `GRACE · ${days} DIN · LOCK SOON`,
+      text: SUBSCRIPTION_ENABLED
+        ? `GRACE · ${days} DIN · LOCK SOON`
+        : `GRACE · ${days} DIN · RENEW`,
     },
     expired: {
       cls: 'bg-red-600 border-red-700 text-white',
       icon: <Lock size={12} />,
-      text: 'EXPIRED · LOCKED',
+      text: SUBSCRIPTION_ENABLED ? 'EXPIRED · LOCKED' : 'EXPIRED · RENEW',
     },
   };
 
@@ -76,7 +76,7 @@ const SubscriptionStatusChip: React.FC = () => {
   return (
     <div
       className={`flex items-center gap-1.5 px-2.5 py-1 rounded border-2 print:hidden ${c.cls}`}
-      title={`${planInfo}End date: ${endOn}${state.status === 'none' || state.status === 'expired' ? ' — app locked (owner key se renew)' : ''}`}
+      title={`${planInfo}End date: ${endOn}${state.status === 'none' || state.status === 'expired' ? (SUBSCRIPTION_ENABLED ? ' — app locked (owner key se renew)' : ' — owner se plan sync/renew karayein') : ''}`}
     >
       {(pulse || state.status === 'expired') && (
         <span className="relative flex h-2 w-2">

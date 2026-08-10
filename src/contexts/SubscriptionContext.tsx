@@ -7,7 +7,6 @@ import {
   UnitSubscription, SubscriptionState,
   computeSubscriptionState,
 } from '../features/subscription/types/subscription.types';
-import { SUBSCRIPTION_ENABLED } from '../features/subscription/subscription.config';
 import { useAuth } from './AuthContext';
 
 interface SubscriptionContextType {
@@ -21,12 +20,9 @@ const INITIAL_STATE: SubscriptionState = {
   status: 'none', daysLeft: 0, totalDays: 0, usedPct: 0, graceDaysLeft: 0,
 };
 
-// 🚩 Subscription OFF deployment (company apps) — hamesha "sab theek" state,
-// koi Firestore listener nahi, koi banner/gate nahi.
-const ALWAYS_ACTIVE_STATE: SubscriptionState = {
-  status: 'active', daysLeft: 36500, totalDays: 36500, usedPct: 0, graceDaysLeft: 0,
-};
-
+// Company deployments me subscription ENFORCEMENT (banner/gate/admin route)
+// feature flag se OFF rehta hai. Lekin read-only status top bar me dikhane ke
+// liye ye context har signed-in unit me `subscription/current` padhta hai.
 const SubscriptionContext = createContext<SubscriptionContextType>({
   subscription: null,
   state: INITIAL_STATE,
@@ -43,15 +39,7 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // 🚩 Subscription system is deployment me band hai — listener hi mat lagao
-    if (!SUBSCRIPTION_ENABLED) {
-      setSubscription(null);
-      setState(ALWAYS_ACTIVE_STATE);
-      setLoading(false);
-      return;
-    }
-
-    // Sirf logged-in user ke liye listener lagao
+    // Sirf logged-in user ke liye read-only status listener lagao.
     // 🔒 Developer account = subscription-free sandbox — koi reads nahi
     if (!user || user.isDeveloper) {
       setSubscription(null);
@@ -113,14 +101,12 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
   // Din raat ko cross ho jayein to har ghante status re-check
   useEffect(() => {
     const timer = setInterval(() => {
-      if (!SUBSCRIPTION_ENABLED) return;
       setState(computeSubscriptionState(subscription));
     }, 60 * 60 * 1000);
     return () => clearInterval(timer);
   }, [subscription]);
 
   const refresh = useCallback(() => {
-    if (!SUBSCRIPTION_ENABLED) return;
     setState(computeSubscriptionState(subscription));
   }, [subscription]);
 
