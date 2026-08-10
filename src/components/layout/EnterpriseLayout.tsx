@@ -105,7 +105,7 @@ export const EnterpriseLayout: React.FC<EnterpriseLayoutProps> = ({ children }) 
       <Sidebar />
 
       {/* Right Side Main Content Wrapper */}
-      <div className="flex-1 flex flex-col h-full relative">
+      <div className="relative flex h-full min-w-0 flex-1 flex-col">
 
         {/* Supreme Command Header */}
         <header className="z-10 flex-shrink-0 border-b-2 border-military-800 bg-white px-3 py-2 shadow-flat sm:px-4 lg:px-5">
