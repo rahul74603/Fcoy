@@ -19,6 +19,8 @@ import { SubscriptionScreen } from './features/subscription/SubscriptionScreen';
 
 // --- Developer Practice ---
 import { DevPracticeScreen } from './features/developer/DevPracticeScreen';
+import { CompanyMonitorScreen } from './features/developer/CompanyMonitorScreen';
+import { SUBSCRIPTION_ENABLED } from './features/subscription/subscription.config';
 
 // --- Dashboards ---
 import { CompanyCommanderDashboard } from './features/dashboard/CompanyCommanderDashboard';
@@ -445,9 +447,27 @@ function App() {
               <Route
                 path="/subscription"
                 element={
-                  <ProtectedRoute allowedRoles={['Company Commander']}>
-                    <EnterpriseLayout><SubscriptionScreen /></EnterpriseLayout>
-                  </ProtectedRoute>
+                  SUBSCRIPTION_ENABLED ? (
+                    <ProtectedRoute allowedRoles={['Company Commander']}>
+                      <EnterpriseLayout><SubscriptionScreen /></EnterpriseLayout>
+                    </ProtectedRoute>
+                  ) : (
+                    <Navigate to="/login" replace />
+                  )
+                }
+              />
+              {/* 🏢 COMPANY MONITOR — master app se A Coy jaisi company apps
+                  ka LIVE data dashboard (bridge read). Master-only. */}
+              <Route
+                path="/company-monitor"
+                element={
+                  SUBSCRIPTION_ENABLED ? (
+                    <ProtectedRoute allowedRoles={['Company Commander']}>
+                      <EnterpriseLayout><CompanyMonitorScreen /></EnterpriseLayout>
+                    </ProtectedRoute>
+                  ) : (
+                    <Navigate to="/login" replace />
+                  )
                 }
               />
               <Route

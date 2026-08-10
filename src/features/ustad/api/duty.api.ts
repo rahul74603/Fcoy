@@ -17,6 +17,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { showDoc } from '../../../utils/devDataFilter';
+import { toJSDate } from '../../../utils/date.utils';
 import {
   StaffDuty,
   DutyFormData,
@@ -40,9 +41,7 @@ const docToDutyType = (
   name: (data.name as string) ?? '',
   description: (data.description as string) ?? '',
   isActive: (data.isActive as boolean) ?? true,
-  createdAt: data.createdAt
-    ? (data.createdAt as Timestamp).toDate()
-    : null,
+  createdAt: toJSDate(data.createdAt),
 });
 
 // Doc → StaffDuty
@@ -57,19 +56,15 @@ const docToDuty = (
   staffName: (data.staffName as string) ?? '',
   forceNumber: (data.forceNumber as string) ?? '',
   rank: (data.rank as string) ?? '',
-  date: data.date ? (data.date as Timestamp).toDate() : null,
+  date: toJSDate(data.date),
   startTime: (data.startTime as string) ?? '',
   endTime: (data.endTime as string) ?? '',
   venue: (data.venue as string) ?? '',
   status: (data.status as DutyStatus) ?? 'assigned',
   remarks: (data.remarks as string) ?? '',
   assignedBy: (data.assignedBy as string) ?? '',
-  assignedAt: data.assignedAt
-    ? (data.assignedAt as Timestamp).toDate()
-    : null,
-  completedAt: data.completedAt
-    ? (data.completedAt as Timestamp).toDate()
-    : null,
+  assignedAt: toJSDate(data.assignedAt),
+  completedAt: toJSDate(data.completedAt),
   transferredTo: (data.transferredTo as string) ?? '',
   transferReason: (data.transferReason as string) ?? '',
 });

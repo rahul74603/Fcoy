@@ -11,11 +11,14 @@ import React from 'react';
 import { BadgeCheck, AlertTriangle, Lock, FlaskConical } from 'lucide-react';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useSubscription } from '../../../contexts/SubscriptionContext';
+import { SUBSCRIPTION_ENABLED } from '../subscription.config';
 
 const SubscriptionStatusChip: React.FC = () => {
   const { user } = useAuth();
   const { state, subscription, loading } = useSubscription();
 
+  // 🚩 Company apps me subscription system band hai — chip nahi dikhega
+  if (!SUBSCRIPTION_ENABLED) return null;
   if (!user) return null;
 
   // 🧪 Dev sandbox — testing account, sub-free

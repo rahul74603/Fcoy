@@ -9,10 +9,11 @@ import {
   Layers, CalendarDays, BarChart3,
   PieChart, Menu,
   Bot, Sparkles,
-  UserCog, ClipboardList, Boxes, FlaskConical, Crown,
+  UserCog, ClipboardList, Boxes, FlaskConical, Crown, Building2,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBatch } from '../../contexts/BatchContext';
+import { SUBSCRIPTION_ENABLED } from '../../features/subscription/subscription.config';
 
 export const Sidebar = () => {
   const navigate = useNavigate();
@@ -536,7 +537,12 @@ export const Sidebar = () => {
                   bgColor="bg-orange-900/40"
                 />
                 <NavItem title="🧪 Practice Console" icon={FlaskConical} path="/dev-practice" />
-                <NavItem title="👑 Subscription & License" icon={Crown} path="/subscription" />
+                {SUBSCRIPTION_ENABLED && (
+                  <NavItem title="👑 Subscription & License" icon={Crown} path="/subscription" />
+                )}
+                {SUBSCRIPTION_ENABLED && (
+                  <NavItem title="🏢 Company Monitor" icon={Building2} path="/company-monitor" />
+                )}
               </>
             )}
 

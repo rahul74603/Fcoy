@@ -8,6 +8,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { showDoc } from '../../../utils/devDataFilter';
+import { toJSDate } from '../../../utils/date.utils';
 import {
   StaffAttendance,
   AttendanceStatus,
@@ -26,14 +27,12 @@ const docToAttendance = (
   staffId: (data.staffId as string) ?? '',
   staffName: (data.staffName as string) ?? '',
   forceNumber: (data.forceNumber as string) ?? '',
-  date: data.date ? (data.date as Timestamp).toDate() : null,
+  date: toJSDate(data.date),
   status: (data.status as AttendanceStatus) ?? 'present',
   remarks: (data.remarks as string) ?? '',
   markedBy: (data.markedBy as string) ?? '',
-  markedAt: data.markedAt ? (data.markedAt as Timestamp).toDate() : null,
-  updatedAt: data.updatedAt
-    ? (data.updatedAt as Timestamp).toDate()
-    : null,
+  markedAt: toJSDate(data.markedAt),
+  updatedAt: toJSDate(data.updatedAt),
 });
 
 // ─── MARK BULK ATTENDANCE ─────────────────────

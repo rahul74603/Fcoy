@@ -149,7 +149,7 @@ export const CompanyAssetsFundScreen: React.FC = () => {
   const recordedBy = user?.email ?? 'Quarter Master';
 
   // ── BATCH CONTEXT ──
-  const { activeBatch, allBatches, loading: batchLoading } = useBatch();
+  const { activeBatch, allBatches } = useBatch();
   const [selectedBatchId, setSelectedBatchId] = useState<string>('All');
 
   useEffect(() => {

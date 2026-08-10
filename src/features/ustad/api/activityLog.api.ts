@@ -11,9 +11,9 @@ import {
   orderBy,
   limit,
   serverTimestamp,
-  Timestamp,
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+import { toJSDate } from '../../../utils/date.utils';
 import { StaffActivityLog } from '../types/performance.types';
 
 const COLLECTION = 'staff_activity_logs';
@@ -68,9 +68,7 @@ export const getRecentLogs = async (
         action: (data.action as string) ?? '',
         details: (data.details as Record<string, unknown>) ?? {},
         targetId: (data.targetId as string) ?? '',
-        timestamp: data.timestamp
-          ? (data.timestamp as Timestamp).toDate()
-          : null,
+        timestamp: toJSDate(data.timestamp),
       };
     });
   } catch (error) {
@@ -102,9 +100,7 @@ export const getLogsByStaff = async (
         action: (data.action as string) ?? '',
         details: (data.details as Record<string, unknown>) ?? {},
         targetId: (data.targetId as string) ?? '',
-        timestamp: data.timestamp
-          ? (data.timestamp as Timestamp).toDate()
-          : null,
+        timestamp: toJSDate(data.timestamp),
       };
     });
   } catch (error) {

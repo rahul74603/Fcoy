@@ -14,6 +14,7 @@ import {
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { showDoc } from '../../utils/devDataFilter';
+import { toJSDate } from '../../utils/date.utils';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBatch } from '../../contexts/BatchContext';
 import { normalizePlatoon, PLATOON_OPTIONS } from '../../utils/platoon';
@@ -686,8 +687,8 @@ export const ReportsScreen: React.FC = () => {
           company: data.company ?? '',
           category: data.category ?? '',
           battalion: data.battalion ?? '',
-          dateOfJoining: data.dateOfJoining?.toDate() ?? null,
-          dateOfPosting: data.dateOfPosting?.toDate() ?? null,
+          dateOfJoining: toJSDate(data.dateOfJoining),
+          dateOfPosting: toJSDate(data.dateOfPosting),
           experienceYears: Number(data.experienceYears ?? 0),
           qualification: data.qualification ?? '',
           bloodGroup: data.bloodGroup ?? '',
@@ -695,8 +696,8 @@ export const ReportsScreen: React.FC = () => {
           status: data.status ?? 'active',
           photoURL: data.photoURL ?? '',
           remarks: data.remarks ?? '',
-          createdAt: data.createdAt?.toDate() ?? null,
-          updatedAt: data.updatedAt?.toDate() ?? null,
+          createdAt: toJSDate(data.createdAt),
+          updatedAt: toJSDate(data.updatedAt),
           createdBy: data.createdBy ?? '',
         };
       });
@@ -716,20 +717,20 @@ export const ReportsScreen: React.FC = () => {
           leaveTypeId: data.leaveTypeId ?? '',
           leaveTypeName: data.leaveTypeName ?? '',
           leaveTypeCode: data.leaveTypeCode ?? '',
-          fromDate: data.fromDate?.toDate() ?? null,
-          toDate: data.toDate?.toDate() ?? null,
+          fromDate: toJSDate(data.fromDate),
+          toDate: toJSDate(data.toDate),
           numberOfDays: Number(data.numberOfDays ?? 0),
           reason: data.reason ?? '',
           leaveAddress: data.leaveAddress ?? '',
           contactNumber: data.contactNumber ?? '',
           status: data.status ?? 'pending',
-          appliedAt: data.appliedAt?.toDate() ?? null,
+          appliedAt: toJSDate(data.appliedAt),
           appliedBy: data.appliedBy ?? '',
           approvedBy: data.approvedBy ?? '',
           approvedByName: data.approvedByName ?? '',
-          approvalDate: data.approvalDate?.toDate() ?? null,
+          approvalDate: toJSDate(data.approvalDate),
           rejectionReason: data.rejectionReason ?? '',
-          returnDate: data.returnDate?.toDate() ?? null,
+          returnDate: toJSDate(data.returnDate),
           joiningReportSubmitted: Boolean(data.joiningReportSubmitted ?? false),
           delayReason: data.delayReason ?? '',
           remarks: data.remarks ?? '',
@@ -749,7 +750,7 @@ export const ReportsScreen: React.FC = () => {
           isPaid: Boolean(data.isPaid ?? true),
           isActive: Boolean(data.isActive ?? true),
           description: data.description ?? '',
-          createdAt: data.createdAt?.toDate() ?? null,
+          createdAt: toJSDate(data.createdAt),
         };
       });
       setLeaveTypes(ltList);
@@ -763,12 +764,12 @@ export const ReportsScreen: React.FC = () => {
           staffId: data.staffId ?? '',
           staffName: data.staffName ?? '',
           forceNumber: data.forceNumber ?? '',
-          date: data.date?.toDate() ?? null,
+          date: toJSDate(data.date),
           status: data.status ?? 'present',
           remarks: data.remarks ?? '',
           markedBy: data.markedBy ?? '',
-          markedAt: data.markedAt?.toDate() ?? null,
-          updatedAt: data.updatedAt?.toDate() ?? null,
+          markedAt: toJSDate(data.markedAt),
+          updatedAt: toJSDate(data.updatedAt),
         };
       });
       setStaffAttendance(saList);
@@ -785,15 +786,15 @@ export const ReportsScreen: React.FC = () => {
           staffName: data.staffName ?? '',
           forceNumber: data.forceNumber ?? '',
           rank: data.rank ?? '',
-          date: data.date?.toDate() ?? null,
+          date: toJSDate(data.date),
           startTime: data.startTime ?? '',
           endTime: data.endTime ?? '',
           venue: data.venue ?? '',
           status: data.status ?? 'assigned',
           remarks: data.remarks ?? '',
           assignedBy: data.assignedBy ?? '',
-          assignedAt: data.assignedAt?.toDate() ?? null,
-          completedAt: data.completedAt?.toDate() ?? null,
+          assignedAt: toJSDate(data.assignedAt),
+          completedAt: toJSDate(data.completedAt),
           transferredTo: data.transferredTo ?? '',
           transferReason: data.transferReason ?? '',
         };
@@ -809,7 +810,7 @@ export const ReportsScreen: React.FC = () => {
           name: data.name ?? '',
           description: data.description ?? '',
           isActive: Boolean(data.isActive ?? true),
-          createdAt: data.createdAt?.toDate() ?? null,
+          createdAt: toJSDate(data.createdAt),
         };
       });
       setDutyTypes(dtList);
@@ -825,8 +826,8 @@ export const ReportsScreen: React.FC = () => {
           category: data.category ?? '',
           description: data.description ?? '',
           isActive: Boolean(data.isActive ?? true),
-          createdAt: data.createdAt?.toDate() ?? null,
-          updatedAt: data.updatedAt?.toDate() ?? null,
+          createdAt: toJSDate(data.createdAt),
+          updatedAt: toJSDate(data.updatedAt),
           createdBy: data.createdBy ?? '',
         };
       });
@@ -844,11 +845,11 @@ export const ReportsScreen: React.FC = () => {
           subjectId: data.subjectId ?? '',
           subjectName: data.subjectName ?? '',
           subjectCode: data.subjectCode ?? '',
-          assignedDate: data.assignedDate?.toDate() ?? null,
+          assignedDate: toJSDate(data.assignedDate),
           assignedBy: data.assignedBy ?? '',
           isActive: Boolean(data.isActive ?? true),
           remarks: data.remarks ?? '',
-          createdAt: data.createdAt?.toDate() ?? null,
+          createdAt: toJSDate(data.createdAt),
         };
       });
       setSubjectAssignments(ssList);

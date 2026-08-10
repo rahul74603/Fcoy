@@ -15,6 +15,7 @@ import {
   collection, getDocs, query, where
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
+import { toJSDate } from '../../utils/date.utils';
 import { useBatch } from '../../contexts/BatchContext';
 import { BatchProgressOverview } from './BatchProgressOverview';
 import { CommanderInformationBoard } from './CommanderInformationBoard';
@@ -1502,8 +1503,8 @@ const [staffLoading, setStaffLoading] = useState(false);
 
           const currentlyOnLeaveCount = leavesSnap.docs.filter(d => {
             const data = d.data();
-            const fromDate = data.fromDate?.toDate();
-            const toDate = data.toDate?.toDate();
+            const fromDate = toJSDate(data.fromDate);
+            const toDate = toJSDate(data.toDate);
             if (!fromDate || !toDate) return false;
             return today >= fromDate && today <= toDate && !data.returnDate;
           }).length;

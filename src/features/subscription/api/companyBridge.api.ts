@@ -22,7 +22,8 @@
 
 import { initializeApp, deleteApp, FirebaseApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { getFirestore, doc, setDoc, addDoc, collection, getDoc } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, addDoc, collection, getDoc, getDocs } from 'firebase/firestore';
+import { toJSDate } from '../../../utils/date.utils';
 import { UnitSubscription, SubscriptionPlan } from '../types/subscription.types';
 
 export interface CompanyBridge {
@@ -105,6 +106,94 @@ export const checkCompanyBridge = async (bridge: CompanyBridge): Promise<string>
     const d = snap.data() as Partial<UnitSubscription>;
     return `LIVE · company app: ${d.planName || 'NO PLAN'} · valid till ${d.endDate ? d.endDate.slice(0, 10) : '—'}`;
   } finally {
+    await deleteApp(app);
+  }
+};
+
+// ═════════════════════════════════════════════════════════════
+// 🏢 COMPANY SNAPSHOT (READ-ONLY) — Company Monitor ke liye
+// Master app se company app ka LIVE dashboard summary laata hai.
+// SIRF padhta hai — company ka data master kabhi nahi badalta.
+// ═════════════════════════════════════════════════════════════
+
+export interface CompanySnapshot {
+  trainees: number;
+  staff: number;
+  onLeaveNow: number;
+  pendingLeaves: number;
+  pendingLeaveNames: string[];
+  dutyToday: number;
+  tests: number;
+  recentTests: { name: string; date: string; pass: number; fail: number }[];
+  batches: { id: string; name: string; status: string }[];
+  planName: string | null;
+  planValidTill: string | null;
+  fetchedAt: string;
+}
+
+export const fetchCompanySnapshot = async (bridge: CompanyBridge): Promise<CompanySnapshot> => {
+  const { app, a, db2 } = await openCompany(bridge);
+  try {
+    // Ek collection fail ho jaye to baaki data phir bhi dikhe
+    const safe = async <T,>(fn: () => Promise<T>, fallback: T): Promise<T> => {
+      try { return await fn(); } catch { return fallback; }
+    };
+    const docsOf = async (col: string) =>
+      safe(async () => (await getDocs(collection(db2, col))).docs.map(d => ({ id: d.id, ...(d.data() as Record<string, unknown>) })), [] as Record<string, unknown>[]);
+
+    const [trainees, staffArr, leaves, duties, tests, batches, subSnap] = await Promise.all([
+      docsOf('trainees'),
+      docsOf('staff'),
+      docsOf('staff_leave'),
+      docsOf('staff_duty'),
+      docsOf('training_tests'),
+      docsOf('batches'),
+      safe(async () => await getDoc(doc(db2, 'subscription', 'current')), null),
+    ]);
+
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+
+    const pending = leaves.filter(l => (l.status as string) === 'pending');
+    const onLeave = leaves.filter(l => {
+      if ((l.status as string) !== 'approved') return false;
+      const from = toJSDate(l.fromDate); const to = toJSDate(l.toDate);
+      if (!from || !to) return false;
+      from.setHours(0, 0, 0, 0); to.setHours(23, 59, 59, 999);
+      return l.returnDate ? false : today >= from && today <= to;
+    });
+
+    const dutyToday = duties.filter(d => {
+      const dd = toJSDate(d.date);
+      if (!dd) return false;
+      dd.setHours(0, 0, 0, 0);
+      return dd.getTime() === today.getTime() && (d.status as string) !== 'completed';
+    });
+
+    const sortedTests = [...tests].sort((x, y) =>
+      (toJSDate(y.testDate)?.getTime() ?? 0) - (toJSDate(x.testDate)?.getTime() ?? 0));
+
+    const sub = subSnap && subSnap.exists() ? (subSnap.data() as Record<string, unknown>) : null;
+
+    return {
+      trainees: trainees.length,
+      staff: staffArr.length,
+      onLeaveNow: onLeave.length,
+      pendingLeaves: pending.length,
+      pendingLeaveNames: pending.slice(0, 6).map(l => `${(l.rank as string) ? l.rank + ' ' : ''}${(l.staffName as string) || '—'}`),
+      dutyToday: dutyToday.length,
+      tests: tests.length,
+      recentTests: sortedTests.slice(0, 3).map(t => ({
+        name: (t.testName as string) || '—',
+        date: toJSDate(t.testDate)?.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) ?? '—',
+        pass: Number(t.passCount ?? 0), fail: Number(t.failCount ?? 0),
+      })),
+      batches: batches.map(b => ({ id: b.id as string, name: ((b.batchName || b.batchNumber || b.id) as string), status: (b.status as string) || '—' })),
+      planName: (sub?.planName as string) ?? null,
+      planValidTill: (sub?.endDate as string)?.slice(0, 10) ?? null,
+      fetchedAt: new Date().toLocaleTimeString('en-IN'),
+    };
+  } finally {
+    try { await signOut(a); } catch { /* noop */ }
     await deleteApp(app);
   }
 };

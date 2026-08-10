@@ -291,8 +291,8 @@ export const seedMasterPermanentBatch = async (onProgress?: ProgressCb): Promise
         forceNumber, name: s.name, rank: s.rank,
         company: 'MASTER COY', category: 'Combatised', battalion: 'MASTER BN 01',
         mobile: mobile(), email: '',
-        dateOfJoining: `${rand(2012, 2020)}-${pad2(rand(1, 12))}-10`,
-        dateOfPosting: '2026-03-28',
+        dateOfJoining: Timestamp.fromDate(new Date(`${rand(2012, 2020)}-${pad2(rand(1, 12))}-10T00:00:00`)),
+        dateOfPosting: Timestamp.fromDate(new Date('2026-03-28T00:00:00')),
         experienceYears: rand(4, 16),
         qualification: pick(['Graduate', '12th Pass', 'B.P.Ed', 'MA'] as const),
         bloodGroup: pick(BLOOD),
@@ -324,7 +324,7 @@ export const seedMasterPermanentBatch = async (onProgress?: ProgressCb): Promise
       data: {
         staffId: st.id, staffName: `${st.rank} ${st.name}`, forceNumber: st.forceNumber,
         subjectId: subj.id, subjectName: subj.name, subjectCode: subj.code,
-        assignedDate: BATCH_START, assignedBy: 'master-seed', isActive: true, remarks: '',
+        assignedDate: Timestamp.fromDate(new Date(`${BATCH_START}T00:00:00`)), assignedBy: 'master-seed', isActive: true, remarks: '',
         ...TAG,
       },
     });

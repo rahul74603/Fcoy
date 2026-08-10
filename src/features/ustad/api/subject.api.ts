@@ -18,6 +18,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { showDoc } from '../../../utils/devDataFilter';
+import { toJSDate } from '../../../utils/date.utils';
 import {
   Subject,
   SubjectFormData,
@@ -40,12 +41,8 @@ const docToSubject = (
   category: (data.category as string) ?? '',
   description: (data.description as string) ?? '',
   isActive: (data.isActive as boolean) ?? true,
-  createdAt: data.createdAt
-    ? (data.createdAt as Timestamp).toDate()
-    : null,
-  updatedAt: data.updatedAt
-    ? (data.updatedAt as Timestamp).toDate()
-    : null,
+  createdAt: toJSDate(data.createdAt),
+  updatedAt: toJSDate(data.updatedAt),
   createdBy: (data.createdBy as string) ?? '',
 });
 
@@ -61,15 +58,11 @@ const docToAssignment = (
   subjectId: (data.subjectId as string) ?? '',
   subjectName: (data.subjectName as string) ?? '',
   subjectCode: (data.subjectCode as string) ?? '',
-  assignedDate: data.assignedDate
-    ? (data.assignedDate as Timestamp).toDate()
-    : null,
+  assignedDate: toJSDate(data.assignedDate),
   assignedBy: (data.assignedBy as string) ?? '',
   isActive: (data.isActive as boolean) ?? true,
   remarks: (data.remarks as string) ?? '',
-  createdAt: data.createdAt
-    ? (data.createdAt as Timestamp).toDate()
-    : null,
+  createdAt: toJSDate(data.createdAt),
 });
 
 // ════════════════════════════════════════════

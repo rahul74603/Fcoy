@@ -285,3 +285,25 @@ https://training-command-erp.web.app
 ---
 
 END OF FILE
+
+---
+
+# 🏢 MULTI-COY + COMPANY MONITOR (v2.6)
+
+Code ek hi hota hai, har Coy ka apna Firebase project + apni `.env`.
+
+- **Master (F Coy)** = full system + 👑 Subscription/License + 🏢 Company Monitor.
+  Local dev ke liye Fcoy ki `.env` me ek baar:
+  `VITE_SUBSCRIPTION_ENABLED=true`
+  (Auto-deploy ke liye deploy.yml Build env me bhi `VITE_SUBSCRIPTION_ENABLED: 'true'` — web se add karna hai.)
+- **Company apps (A Coy/bcoy...)** = flag ka default hi OFF — na banner, na chip,
+  na HARD LOCK gate, na /subscription route. KUCH set karna nahi.
+- **Company Monitor** (`/company-monitor`, master me 👑 section ke neeche):
+  bridge-linked company apps ka LIVE read-only dashboard — trainees, staff,
+  leaves, duties, tests, synced plan. Data sirf dekhta hai, badalta nahi.
+
+Update flow (wahee purana):
+```
+git pull
+powershell -ExecutionPolicy Bypass -File deploy\Update-AllApps.ps1 -Yes
+```

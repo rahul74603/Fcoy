@@ -16,6 +16,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { showDoc } from '../../../utils/devDataFilter';
+import { toJSDate } from '../../../utils/date.utils';
 import {
   StaffLeave,
   LeaveFormData,
@@ -45,9 +46,7 @@ const docToLeaveType = (
   isPaid: (data.isPaid as boolean) ?? true,
   isActive: (data.isActive as boolean) ?? true,
   description: (data.description as string) ?? '',
-  createdAt: data.createdAt
-    ? (data.createdAt as Timestamp).toDate()
-    : null,
+  createdAt: toJSDate(data.createdAt),
 });
 
 // ─── Helper: Doc → StaffLeave ─────────────────
@@ -64,30 +63,20 @@ const docToLeave = (
   leaveTypeId: (data.leaveTypeId as string) ?? '',
   leaveTypeName: (data.leaveTypeName as string) ?? '',
   leaveTypeCode: (data.leaveTypeCode as string) ?? '',
-  fromDate: data.fromDate
-    ? (data.fromDate as Timestamp).toDate()
-    : null,
-  toDate: data.toDate
-    ? (data.toDate as Timestamp).toDate()
-    : null,
+  fromDate: toJSDate(data.fromDate),
+  toDate: toJSDate(data.toDate),
   numberOfDays: (data.numberOfDays as number) ?? 0,
   reason: (data.reason as string) ?? '',
   leaveAddress: (data.leaveAddress as string) ?? '',
   contactNumber: (data.contactNumber as string) ?? '',
   status: (data.status as LeaveStatus) ?? 'pending',
-  appliedAt: data.appliedAt
-    ? (data.appliedAt as Timestamp).toDate()
-    : null,
+  appliedAt: toJSDate(data.appliedAt),
   appliedBy: (data.appliedBy as string) ?? '',
   approvedBy: (data.approvedBy as string) ?? '',
   approvedByName: (data.approvedByName as string) ?? '',
-  approvalDate: data.approvalDate
-    ? (data.approvalDate as Timestamp).toDate()
-    : null,
+  approvalDate: toJSDate(data.approvalDate),
   rejectionReason: (data.rejectionReason as string) ?? '',
-  returnDate: data.returnDate
-    ? (data.returnDate as Timestamp).toDate()
-    : null,
+  returnDate: toJSDate(data.returnDate),
   joiningReportSubmitted: (data.joiningReportSubmitted as boolean) ?? false,
   delayReason: (data.delayReason as string) ?? '',
   remarks: (data.remarks as string) ?? '',

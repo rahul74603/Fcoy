@@ -5,6 +5,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../config/firebase';
+import { toJSDate } from '../../utils/date.utils';
 import { AppNotification } from './notification.types';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBatch } from '../../contexts/BatchContext';
@@ -59,7 +60,7 @@ export const useNotifications = (): UseNotificationsReturn => {
 
         pendingSnap.docs.forEach(d => {
           const data = d.data();
-          const appliedAt = data.appliedAt?.toDate() ?? new Date();
+          const appliedAt = toJSDate(data.appliedAt) ?? new Date();
           allNotifs.push({
             id: `leave_pending_${d.id}`,
             type: 'leave_pending',
@@ -83,7 +84,7 @@ export const useNotifications = (): UseNotificationsReturn => {
 
         approvedSnap.docs.forEach(d => {
           const data = d.data();
-          const toDate = data.toDate?.toDate();
+          const toDate = toJSDate(data.toDate);
           if (!toDate || data.returnDate) return;
 
           if (toDate >= today && toDate <= threeDaysLater) {
@@ -113,7 +114,7 @@ export const useNotifications = (): UseNotificationsReturn => {
         const todayDuties: any[] = [];
         dutySnap.docs.forEach(d => {
           const data = d.data();
-          const dutyDate = data.date?.toDate();
+          const dutyDate = toJSDate(data.date);
           if (!dutyDate) return;
 
           const dutyDateOnly = new Date(dutyDate);
@@ -179,7 +180,7 @@ export const useNotifications = (): UseNotificationsReturn => {
 
           const todaySchedules = scheduleSnap.docs.filter(d => {
             const data = d.data();
-            const schedDate = data.date?.toDate();
+            const schedDate = toJSDate(data.date);
             if (!schedDate) return false;
             const schedDateOnly = new Date(schedDate);
             schedDateOnly.setHours(0, 0, 0, 0);
