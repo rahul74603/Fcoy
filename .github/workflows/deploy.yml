@@ -93,6 +93,7 @@ jobs:
           VITE_AI_ENABLE_GROQ:      ${{ vars.VITE_AI_ENABLE_GROQ      || 'true' }}
           VITE_AI_ENABLE_GEMINI:    ${{ vars.VITE_AI_ENABLE_GEMINI    || 'true' }}
           VITE_AI_ENABLE_PINECONE:  ${{ vars.VITE_AI_ENABLE_PINECONE  || 'false' }}
+          VITE_SUBSCRIPTION_ENABLED: 'true'
         run: npm run build
 
       # ── 6. Sanity check — build khaali to nahi? ──
