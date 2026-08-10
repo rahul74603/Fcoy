@@ -9,7 +9,7 @@
 #   1. deploy\companies.json se <Code> company ki Firebase keys uthata hai
 #   2. .env banata hai (us company ka project)  - ORIGINAL .env ka backup: .env.master.bak
 #   3. npm install (agar zaroori) + npm run build
-#   4. firebase deploy --only hosting,firestore:rules --project <pid>
+#   4. firebase deploy --only hosting,firestore --project <pid>
 #   5. .env wapas master pe restore
 #
 # Pehli baar: firebase login (ek hi baar chahiye)
@@ -83,7 +83,7 @@ try {
 
   # -- 4. Deploy --
   Write-Host ">> firebase deploy ($projId)..." -ForegroundColor Yellow
-  firebase deploy --only hosting,firestore:rules --project $projId
+  firebase deploy --only hosting,firestore --project $projId
   if ($LASTEXITCODE -ne 0) { throw "firebase deploy fail - 'firebase login' chala hai na? Project me Hosting/Firestore enabled hai?" }
 
   Write-Host ""
