@@ -4,8 +4,8 @@ import React, { useState, useEffect } from 'react';
 import {
   Users, UserX, FileText, Shield, Clock,
   X, MapPin, Target,
-  CheckCircle2, ArrowRightLeft, Activity, Layers,
-  TrendingUp, TrendingDown, Loader2, RefreshCw, Calendar,
+  CheckCircle2, Activity, Layers,
+  Loader2, RefreshCw, Calendar,
   Award, Crosshair, AlertCircle, Eye
 } from 'lucide-react';
 import {
@@ -42,20 +42,6 @@ interface TraineeBasic {
   [key: string]: any;
 }
 
-interface UdhariRecord {
-  id: string;
-  ustadName: string;
-  ustadRank: string;
-  category: string;
-  fromCoy: string;
-  toCoy: string;
-  reason: string;
-  eventDetail: string;
-  date: string;
-  returnDate?: string;
-  status: 'Active' | 'Returned';
-  direction: 'given' | 'taken'; // ✅ NEW: Diya ya Liya
-}
 
 interface TodaySession {
   id: string;
@@ -266,7 +252,6 @@ export const ClerkDashboard: React.FC = () => {
   const [trainees, setTrainees]             = useState<TraineeBasic[]>([]);
   const [todaySessions, setTodaySessions]   = useState<TodaySession[]>([]);
   const [weeklyProgram, setWeeklyProgram]   = useState<WeeklyProgram | null>(null);
-  const [udhariRecords, setUdhariRecords]   = useState<UdhariRecord[]>([]);
   const [loading, setLoading]               = useState(true);
   const [lastRefresh, setLastRefresh]       = useState<string>('');
 
@@ -275,7 +260,6 @@ export const ClerkDashboard: React.FC = () => {
   const [failedExamModal, setFailedExamModal] = useState(false);
   const [fptModal, setFptModal]             = useState(false);
   const [incDocsModal, setIncDocsModal]     = useState(false);
-  const [udhariModal, setUdhariModal]       = useState(false);
   const [chestPendingModal, setChestPendingModal] = useState(false);
 const navigate = useNavigate();
   // ── Today info ──
@@ -357,31 +341,6 @@ const navigate = useNavigate();
       }
       setTodaySessions(foundSessions);
 
-      // 3. Fetch Udhari records (active)
-      const uq = query(
-        collection(db, 'udhariRecords'),
-        where('status', '==', 'Active')
-      );
-      const uSnap = await getDocs(uq);
-      const uList: UdhariRecord[] = [];
-      uSnap.forEach(d => {
-        const data = d.data();
-        uList.push({
-          id:          d.id,
-          ustadName:   data.ustadName   || '',
-          ustadRank:   data.ustadRank   || '',
-          category:    data.category    || '',
-          fromCoy:     data.fromCoy     || '',
-          toCoy:       data.toCoy       || '',
-          reason:      data.reason      || '',
-          eventDetail: data.eventDetail || '',
-          date:        data.date        || '',
-          returnDate:  data.returnDate  || '',
-          status:      data.status      || 'Active',
-          direction:   data.direction   || 'taken', // default
-        } as UdhariRecord);
-      });
-      setUdhariRecords(uList);
 
       setLastRefresh(new Date().toLocaleTimeString('en-IN'));
     } catch (err) {
@@ -422,9 +381,6 @@ const navigate = useNavigate();
     return pending.length > 0;
   });
 
-  // Udhari: Given vs Taken
-  const udhariGiven = udhariRecords.filter(r => r.direction === 'given');
-  const udhariTaken = udhariRecords.filter(r => r.direction === 'taken');
 
   // ── Display Helpers ──
   const getDisplaySubject = (session: TodaySession) => {
@@ -604,20 +560,6 @@ const navigate = useNavigate();
   onClick={() => navigate('/documents')}
 />
 
-          <StatCard
-  title="Ustad Len-Den"
-  value={udhariRecords.length}
-  subtitle={
-    udhariRecords.length === 0
-      ? 'No active udhari'
-      : `↗${udhariGiven.length} Diye  ↙${udhariTaken.length} Liye`
-  }
-  icon={<ArrowRightLeft size={28} className="text-cyan-400" />}
-  color={udhariRecords.length > 0 ? 'text-cyan-700' : 'text-slate-500'}
-  borderColor="border-t-cyan-500"
-  clickable
-  onClick={() => setUdhariModal(true)}
-/>
         </div>
       )}
 
@@ -1000,143 +942,6 @@ const navigate = useNavigate();
         ]}
       />
 
-      {/* 5. USTAD UDHARI MODAL — LENA + DENA */}
-      {udhariModal && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
-          onClick={() => setUdhariModal(false)}>
-          <div className="bg-white w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl border border-slate-300"
-            onClick={e => e.stopPropagation()}>
-
-            <div className="bg-cyan-800 px-4 py-3 flex items-center justify-between flex-shrink-0">
-              <div className="flex items-center gap-2">
-                <ArrowRightLeft size={18} className="text-white" />
-                <div>
-                  <h3 className="text-sm font-black text-white uppercase tracking-wider">
-                    Ustad Len-Den Register
-                  </h3>
-                  <p className="text-[10px] text-white/70">
-                    {udhariRecords.length} Active | ↗ {udhariGiven.length} Diye | ↙ {udhariTaken.length} Liye
-                  </p>
-                </div>
-              </div>
-              <button onClick={() => setUdhariModal(false)} className="text-white/80 hover:text-white">
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* Summary Cards */}
-            <div className="grid grid-cols-3 gap-0 border-b border-slate-200 flex-shrink-0">
-              <div className="px-4 py-3 bg-slate-50 border-r border-slate-200 text-center">
-                <p className="text-[10px] font-bold text-slate-500 uppercase">Total Active</p>
-                <p className="text-xl font-black text-cyan-700">{udhariRecords.length}</p>
-              </div>
-              <div className="px-4 py-3 bg-red-50 border-r border-slate-200 text-center">
-                <p className="text-[10px] font-bold text-red-500 uppercase">↗ Diye (Given Out)</p>
-                <p className="text-xl font-black text-red-700">{udhariGiven.length}</p>
-                <p className="text-[9px] text-red-400">Apne Ustad dusri Coy ko diye</p>
-              </div>
-              <div className="px-4 py-3 bg-green-50 text-center">
-                <p className="text-[10px] font-bold text-green-500 uppercase">↙ Liye (Taken In)</p>
-                <p className="text-xl font-black text-green-700">{udhariTaken.length}</p>
-                <p className="text-[9px] text-green-400">Dusri Coy se Ustad liye</p>
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto">
-              {udhariRecords.length === 0 ? (
-                <div className="p-8 text-center">
-                  <CheckCircle2 size={40} className="text-green-400 mx-auto mb-3" />
-                  <p className="text-sm font-bold text-slate-500 uppercase">
-                    Koi active udhari nahi — All Clear!
-                  </p>
-                </div>
-              ) : (
-                <>
-                  {/* GIVEN OUT SECTION */}
-                  {udhariGiven.length > 0 && (
-                    <div>
-                      <div className="bg-red-100 px-4 py-2 border-b border-red-200">
-                        <h4 className="text-[10px] font-black text-red-800 uppercase flex items-center gap-1.5">
-                          <TrendingUp size={12} /> Diye Gaye (Given Out) — Apne Ustad dusri Coy ko
-                        </h4>
-                      </div>
-                      <table className="w-full text-xs">
-                        <thead className="bg-slate-50">
-                          <tr>
-                            {['S.No', 'Rank & Name', 'Category', 'Hamari Coy', '→ Kis Coy Ko', 'Purpose', 'Date'].map(h => (
-                              <th key={h} className="px-3 py-2 text-left text-[10px] font-bold text-slate-500 uppercase">{h}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {udhariGiven.map((r, idx) => (
-                            <tr key={r.id} className="hover:bg-red-50/30">
-                              <td className="px-3 py-2 text-slate-400 font-mono">{idx + 1}</td>
-                              <td className="px-3 py-2 font-bold text-slate-800">{r.ustadRank} {r.ustadName}</td>
-                              <td className="px-3 py-2">
-                                <span className="bg-blue-100 text-blue-800 px-2 py-0.5 text-[9px] font-bold">{r.category}</span>
-                              </td>
-                              <td className="px-3 py-2 font-bold text-military-700">{r.fromCoy}</td>
-                              <td className="px-3 py-2 font-bold text-red-600">→ {r.toCoy}</td>
-                              <td className="px-3 py-2 text-slate-600 text-[10px]">{r.reason}</td>
-                              <td className="px-3 py-2 font-mono text-[10px]">{r.date}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-
-                  {/* TAKEN IN SECTION */}
-                  {udhariTaken.length > 0 && (
-                    <div>
-                      <div className="bg-green-100 px-4 py-2 border-b border-green-200 border-t border-slate-200">
-                        <h4 className="text-[10px] font-black text-green-800 uppercase flex items-center gap-1.5">
-                          <TrendingDown size={12} /> Liye Gaye (Taken In) — Dusri Coy se hamare yahan aaye
-                        </h4>
-                      </div>
-                      <table className="w-full text-xs">
-                        <thead className="bg-slate-50">
-                          <tr>
-                            {['S.No', 'Rank & Name', 'Category', 'Kis Coy Se', '→ Hamari Coy', 'Purpose', 'Date'].map(h => (
-                              <th key={h} className="px-3 py-2 text-left text-[10px] font-bold text-slate-500 uppercase">{h}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {udhariTaken.map((r, idx) => (
-                            <tr key={r.id} className="hover:bg-green-50/30">
-                              <td className="px-3 py-2 text-slate-400 font-mono">{idx + 1}</td>
-                              <td className="px-3 py-2 font-bold text-slate-800">{r.ustadRank} {r.ustadName}</td>
-                              <td className="px-3 py-2">
-                                <span className="bg-blue-100 text-blue-800 px-2 py-0.5 text-[9px] font-bold">{r.category}</span>
-                              </td>
-                              <td className="px-3 py-2 font-bold text-green-600">{r.fromCoy}</td>
-                              <td className="px-3 py-2 font-bold text-military-700">→ {r.toCoy}</td>
-                              <td className="px-3 py-2 text-slate-600 text-[10px]">{r.reason}</td>
-                              <td className="px-3 py-2 font-mono text-[10px]">{r.date}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-
-            <div className="border-t border-slate-200 bg-slate-50 px-4 py-2 flex justify-between items-center flex-shrink-0">
-              <p className="text-[9px] text-slate-500">
-                Udhari manage karne ke liye <strong>Deployment Screen</strong> mein jaayein
-              </p>
-              <button onClick={() => setUdhariModal(false)}
-                className="bg-slate-700 text-white px-4 py-1.5 text-[10px] font-bold uppercase hover:bg-slate-800">
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
