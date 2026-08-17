@@ -13,9 +13,12 @@
 // ─────────────────────────────────────────────
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { UserPlus, Shield, Search, Trash2, AlertTriangle, Eye, EyeOff, Loader2, KeyRound } from 'lucide-react';
-import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
+import { UserPlus, Shield, Search, Trash2, AlertTriangle, Eye, EyeOff, Loader2, KeyRound, Wrench, X, Mail } from 'lucide-react';
+import { collection, getDocs, getDoc, doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import {
+  getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail,
+  signInWithEmailAndPassword, updatePassword, deleteUser,
+} from 'firebase/auth';
 import { getApps, initializeApp } from 'firebase/app';
 import { db, firebaseConfig } from '../../config/firebase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -62,6 +65,131 @@ export const UserManagementPage = () => {
   });
   const [showPw, setShowPw] = useState(false);
   const [resetting, setResetting] = useState('');
+
+  // 🔧 SELF-SERVICE TOOLS (Firebase Console ki zaroorat khatam):
+  // - pwModal:    staff ka password CC khud change kare (purana pw chahiye —
+  //               CC hi passwords deta hai, isliye uske paas hota hai)
+  // - delModal:   Auth account + profile दोनों yahin se FULL delete
+  // - repairOpen: "Profile missing" wale orphan Auth account ko yahin se
+  //               repair karo (login karke UID nikal ke profile bana dete hain)
+  const [pwModal, setPwModal]   = useState<UserModel | null>(null);
+  const [delModal, setDelModal] = useState<UserModel | null>(null);
+  const [repairOpen, setRepairOpen] = useState(false);
+  const [toolBusy, setToolBusy] = useState(false);
+  const [toolMsg, setToolMsg]   = useState('');
+  const [toolForm, setToolForm] = useState({ oldPw: '', newPw: '', email: '', name: '', role: 'Clerk', designation: '', phone: '' });
+  const [showToolPw, setShowToolPw] = useState(false);
+
+  const closeTools = () => {
+    setPwModal(null); setDelModal(null); setRepairOpen(false);
+    setToolBusy(false); setToolMsg(''); setShowToolPw(false);
+    setToolForm({ oldPw: '', newPw: '', email: '', name: '', role: 'Clerk', designation: '', phone: '' });
+  };
+
+  // ── 🔑 CHANGE PASSWORD (no email, no console) ──
+  // Secondary app par staff ke current password se sign-in → updatePassword.
+  // CC ka apna session bilkul untouched rehta hai.
+  const handleChangePassword = async () => {
+    if (!pwModal) return;
+    if (toolForm.newPw.length < 6) { setToolMsg('ERROR: Naya password min 6 characters.'); return; }
+    setToolBusy(true); setToolMsg('');
+    const staffAuth = provisionAuth();
+    try {
+      const cred = await signInWithEmailAndPassword(staffAuth, pwModal.email, toolForm.oldPw);
+      await updatePassword(cred.user, toolForm.newPw);
+      await staffAuth.signOut();
+      setMessage(`SUCCESS: ${pwModal.email} ka password change ho gaya ✓ — naya password staff ko de do.`);
+      closeTools();
+    } catch (err: any) {
+      try { await staffAuth.signOut(); } catch { /* noop */ }
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password') {
+        setToolMsg('ERROR: Current password galat hai. (Password records check karo — bina current password ke sirf reset-email ya Repair→Recreate ka rasta hai.)');
+      } else if (err.code === 'auth/too-many-requests') {
+        setToolMsg('ERROR: Bahut zyada galat attempts — thodi der baad try karo.');
+      } else {
+        setToolMsg(`ERROR: ${err.message}`);
+      }
+      setToolBusy(false);
+    }
+  };
+
+  // ── 🗑️ FULL DELETE (Auth + Firestore profile, no console) ──
+  const handleFullDelete = async () => {
+    if (!delModal) return;
+    setToolBusy(true); setToolMsg('');
+    const staffAuth = provisionAuth();
+    try {
+      const cred = await signInWithEmailAndPassword(staffAuth, delModal.email, toolForm.oldPw);
+      await deleteUser(cred.user);                       // Auth account gaya
+      await deleteDoc(doc(db, 'users', delModal.id));    // Firestore profile gaya
+      setMessage(`DELETED: ${delModal.email} — Auth account + profile दोनों remove ho gaye ✓`);
+      closeTools();
+      fetchUsers();
+    } catch (err: any) {
+      try { await staffAuth.signOut(); } catch { /* noop */ }
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password') {
+        setToolMsg('ERROR: Password galat hai. Full delete ke liye staff ka current password chahiye. (Nahi pata? To account DEACTIVATE karo — login waise bhi block ho jata hai.)');
+      } else if (err.code === 'auth/user-not-found') {
+        // Auth account pehle se gayab — sirf profile saaf karo
+        await deleteDoc(doc(db, 'users', delModal.id));
+        setMessage(`Profile deleted (Auth account pehle se nahi tha): ${delModal.email}`);
+        closeTools(); fetchUsers();
+        return;
+      } else {
+        setToolMsg(`ERROR: ${err.message}`);
+      }
+      setToolBusy(false);
+    }
+  };
+
+  // ── 🔧 REPAIR ORPHAN LOGIN ──
+  // "Profile missing: users me is UID ka doc nahi" wale accounts ke liye:
+  // us account ke email+password se secondary sign-in → UID milta hai →
+  // users/{UID} profile yahin ban jati hai. Console kholne ki zaroorat nahi.
+  const handleRepair = async () => {
+    const email = toolForm.email.trim().toLowerCase();
+    if (!email || !toolForm.oldPw) { setToolMsg('ERROR: Email aur us account ka password दोनों chahiye.'); return; }
+    if (!toolForm.name.trim()) { setToolMsg('ERROR: Staff ka naam bharo.'); return; }
+    setToolBusy(true); setToolMsg('');
+    const staffAuth = provisionAuth();
+    try {
+      const cred = await signInWithEmailAndPassword(staffAuth, email, toolForm.oldPw);
+      const uid = cred.user.uid;
+      const existing = await getDoc(doc(db, 'users', uid));
+      if (existing.exists()) {
+        await staffAuth.signOut();
+        setToolMsg('INFO: Is UID ki profile pehle se hai — ye account theek hai, repair ki zaroorat nahi.');
+        setToolBusy(false);
+        return;
+      }
+      await setDoc(doc(db, 'users', uid), {
+        name: toolForm.name.trim(),
+        email,
+        phone: toolForm.phone.trim(),
+        designation: toolForm.designation.trim(),
+        role: toolForm.role,
+        isActive: true,
+        isDeveloper: false,
+        createdAt: new Date().toISOString(),
+        createdBy: user?.uid || 'System',
+        repairedAt: new Date().toISOString(),
+      });
+      await staffAuth.signOut();
+      setMessage(`REPAIRED: ${email} ki profile ban gayi ✓ — ab login chalega.`);
+      closeTools();
+      fetchUsers();
+    } catch (err: any) {
+      try { await staffAuth.signOut(); } catch { /* noop */ }
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password') {
+        setToolMsg('ERROR: Password galat hai — repair ke liye us account ka sahi password chahiye.');
+      } else if (err.code === 'auth/user-not-found') {
+        setToolMsg('ERROR: Is email ka Auth account hi nahi hai — upar "Create Staff Login Account" se naya banao.');
+      } else {
+        setToolMsg(`ERROR: ${err.message}`);
+      }
+      setToolBusy(false);
+    }
+  };
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -171,19 +299,11 @@ export const UserManagementPage = () => {
     const broken = !isLoginCapable(u.id);
 
     // 🔒 SAFE USER LIFECYCLE:
-    // Login-capable profiles delete karne se ek orphan Firebase Auth account
-    // bach jata hai jo login kar sakta hai par ERP profile ke bina "Unassigned"
-    // ban jata hai. Normal operation ke liye DEACTIVATE hi sahi hai — profile
-    // delete sirf BROKEN profiles (jinka Auth account kabhi bana hi nahi) ke liye.
+    // - BROKEN profile (Auth account bana hi nahi) → seedha profile delete.
+    // - LOGIN-capable account → FULL DELETE modal (Auth + profile दोनों yahin
+    //   se, staff ke current password se — Firebase Console ki zaroorat nahi).
     if (!broken) {
-      window.alert(
-        `${u.name} (${u.email}) ek LOGIN-capable account hai.\n\n` +
-        `Ise DELETE karne ke bajaye "Deactivate" karo — user login nahi kar payega ` +
-        `par record/audit safe rahega.\n\n` +
-        `Permanent removal chahiye to pehle Firebase Console → Authentication se ` +
-        `Auth account delete karo (Admin SDK/Console — client se possible nahi), ` +
-        `phir ye profile delete option khud enable ho jayega.`
-      );
+      setDelModal(u);
       return;
     }
 
@@ -211,6 +331,13 @@ export const UserManagementPage = () => {
           <p className="text-sm text-slate-500 font-semibold mt-1">Command Control: Staff Login Accounts & Roles</p>
         </div>
         <div className="flex space-x-2">
+          <button
+            onClick={() => { closeTools(); setRepairOpen(true); }}
+            title='"Profile missing" error wale login ko yahin se theek karo'
+            className="bg-amber-600 text-white px-3 py-1 text-[10px] font-bold uppercase rounded-sm flex items-center hover:bg-amber-700"
+          >
+            <Wrench size={13} className="mr-1" /> Repair Login
+          </button>
           <span className="bg-military-800 text-white px-3 py-1 text-[10px] font-bold uppercase rounded-sm flex items-center">
             <Shield size={14} className="mr-1" /> Commander Clearance
           </span>
@@ -361,13 +488,22 @@ export const UserManagementPage = () => {
                         </td>
                         <td className="px-4 py-2 text-center">
                           <div className="flex items-center justify-center gap-1">
+                          {!broken && (
+                            <button
+                              onClick={() => { closeTools(); setPwModal(u); }}
+                              title="Password change karo (yahin se — koi email/console nahi)"
+                              className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-sm border border-transparent hover:border-blue-200 transition-colors"
+                            >
+                              <KeyRound size={13} />
+                            </button>
+                          )}
                           <button
                             onClick={() => handleResetPassword(u)}
                             disabled={resetting === u.id}
-                            title="Password reset email bhejo"
+                            title="Password reset email bhejo (real email wale accounts ke liye)"
                             className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-sm border border-transparent hover:border-amber-200 transition-colors disabled:opacity-40"
                           >
-                            {resetting === u.id ? <Loader2 size={13} className="animate-spin" /> : <KeyRound size={13} />}
+                            {resetting === u.id ? <Loader2 size={13} className="animate-spin" /> : <Mail size={13} />}
                           </button>
                           <button
                             onClick={() => handleDeleteProfile(u)}
@@ -387,6 +523,167 @@ export const UserManagementPage = () => {
           </div>
         </div>
       </div>
+
+      {/* ═══════════════════════════════════════
+          🔑 CHANGE PASSWORD MODAL
+          ═══════════════════════════════════════ */}
+      {pwModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={closeTools}>
+          <div className="bg-white w-full max-w-md shadow-2xl border border-slate-300" onClick={e => e.stopPropagation()}>
+            <div className="bg-blue-800 px-4 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <KeyRound size={16} className="text-white" />
+                <div>
+                  <h3 className="text-sm font-black text-white uppercase">Change Password</h3>
+                  <p className="text-[10px] text-blue-200">{pwModal.name} · {pwModal.email}</p>
+                </div>
+              </div>
+              <button onClick={closeTools} className="text-white/80 hover:text-white"><X size={18} /></button>
+            </div>
+            <div className="p-4 space-y-3">
+              {toolMsg && <div className={`p-2 text-[10px] font-bold border ${toolMsg.startsWith('ERROR') ? 'bg-red-50 text-red-700 border-red-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>{toolMsg}</div>}
+              <p className="text-[10px] text-slate-500 leading-snug bg-slate-50 border border-slate-200 p-2">
+                Staff ka <b>current password</b> daalo (passwords tum hi dete ho) + naya password set karo.
+                Na email jayegi, na Firebase Console kholna padega. Tumhara CC session safe rahega.
+              </p>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase">Current Password *</label>
+                <input type={showToolPw ? 'text' : 'password'} value={toolForm.oldPw}
+                  onChange={e => setToolForm(f => ({ ...f, oldPw: e.target.value }))} className={inputClass} />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase">New Password (min 6) *</label>
+                <div className="relative">
+                  <input type={showToolPw ? 'text' : 'password'} value={toolForm.newPw} minLength={6}
+                    onChange={e => setToolForm(f => ({ ...f, newPw: e.target.value }))} className={inputClass} />
+                  <button type="button" onClick={() => setShowToolPw(s => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400">
+                    {showToolPw ? <EyeOff size={13} /> : <Eye size={13} />}
+                  </button>
+                </div>
+              </div>
+              <p className="text-[9px] text-slate-400 leading-snug">
+                Current password nahi pata? Real email wale account ko <b>reset-email</b> (✉️ button) bhejo,
+                ya account ko Deactivate karke naya bana do.
+              </p>
+              <button onClick={handleChangePassword} disabled={toolBusy}
+                className="w-full bg-blue-700 text-white font-bold uppercase text-xs py-2 hover:bg-blue-800 disabled:opacity-50 flex items-center justify-center gap-2">
+                {toolBusy ? <><Loader2 size={13} className="animate-spin" /> Changing...</> : 'Change Password'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════
+          🗑️ FULL DELETE MODAL (Auth + Profile)
+          ═══════════════════════════════════════ */}
+      {delModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={closeTools}>
+          <div className="bg-white w-full max-w-md shadow-2xl border border-slate-300" onClick={e => e.stopPropagation()}>
+            <div className="bg-red-800 px-4 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Trash2 size={16} className="text-white" />
+                <div>
+                  <h3 className="text-sm font-black text-white uppercase">Full Delete Account</h3>
+                  <p className="text-[10px] text-red-200">{delModal.name} · {delModal.email}</p>
+                </div>
+              </div>
+              <button onClick={closeTools} className="text-white/80 hover:text-white"><X size={18} /></button>
+            </div>
+            <div className="p-4 space-y-3">
+              {toolMsg && <div className={`p-2 text-[10px] font-bold border ${toolMsg.startsWith('ERROR') ? 'bg-red-50 text-red-700 border-red-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>{toolMsg}</div>}
+              <div className="bg-red-50 border border-red-200 p-2.5 text-[10px] text-red-800 font-bold leading-snug">
+                ⚠️ Ye PERMANENT hai — login account + ERP profile दोनों delete honge.
+                Email dobara use ho sakegi. Records/audit chahiye to iske bajaye <b>Deactivate</b> karo.
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase">Staff ka Current Password (confirm) *</label>
+                <input type="password" value={toolForm.oldPw}
+                  onChange={e => setToolForm(f => ({ ...f, oldPw: e.target.value }))} className={inputClass}
+                  placeholder="Delete confirm karne ke liye" />
+              </div>
+              <div className="flex gap-2">
+                <button onClick={closeTools} className="flex-1 bg-slate-200 text-slate-700 font-bold uppercase text-xs py-2 hover:bg-slate-300">
+                  Cancel
+                </button>
+                <button onClick={handleFullDelete} disabled={toolBusy || !toolForm.oldPw}
+                  className="flex-1 bg-red-700 text-white font-bold uppercase text-xs py-2 hover:bg-red-800 disabled:opacity-50 flex items-center justify-center gap-2">
+                  {toolBusy ? <><Loader2 size={13} className="animate-spin" /> Deleting...</> : 'Delete Permanently'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════
+          🔧 REPAIR LOGIN MODAL (orphan Auth → profile)
+          ═══════════════════════════════════════ */}
+      {repairOpen && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={closeTools}>
+          <div className="bg-white w-full max-w-md shadow-2xl border border-slate-300" onClick={e => e.stopPropagation()}>
+            <div className="bg-amber-700 px-4 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Wrench size={16} className="text-white" />
+                <div>
+                  <h3 className="text-sm font-black text-white uppercase">Repair Login</h3>
+                  <p className="text-[10px] text-amber-200">"Profile missing" error fix — bina Firebase Console ke</p>
+                </div>
+              </div>
+              <button onClick={closeTools} className="text-white/80 hover:text-white"><X size={18} /></button>
+            </div>
+            <div className="p-4 space-y-3">
+              {toolMsg && <div className={`p-2 text-[10px] font-bold border ${toolMsg.startsWith('ERROR') ? 'bg-red-50 text-red-700 border-red-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>{toolMsg}</div>}
+              <p className="text-[10px] text-slate-500 leading-snug bg-slate-50 border border-slate-200 p-2">
+                Jab login par <b>"Profile missing: users me is UID ka document nahi hai"</b> aaye —
+                us account ka email+password yahan daalo. System UID nikal ke sahi profile bana dega.
+              </p>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase">Account Email *</label>
+                <input type="email" value={toolForm.email}
+                  onChange={e => setToolForm(f => ({ ...f, email: e.target.value }))} className={inputClass} />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase">Account Password *</label>
+                <input type="password" value={toolForm.oldPw}
+                  onChange={e => setToolForm(f => ({ ...f, oldPw: e.target.value }))} className={inputClass} />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Staff Name *</label>
+                  <input type="text" value={toolForm.name}
+                    onChange={e => setToolForm(f => ({ ...f, name: e.target.value }))} className={inputClass} />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Role *</label>
+                  <select value={toolForm.role} onChange={e => setToolForm(f => ({ ...f, role: e.target.value }))} className={inputClass}>
+                    <option value="Clerk">Clerk</option>
+                    <option value="Quarter Master">Quarter Master</option>
+                    <option value="Ustad">Ustad</option>
+                    <option value="Company Commander">Company Commander</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Designation</label>
+                  <input type="text" value={toolForm.designation}
+                    onChange={e => setToolForm(f => ({ ...f, designation: e.target.value }))} className={inputClass} />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Phone</label>
+                  <input type="text" value={toolForm.phone}
+                    onChange={e => setToolForm(f => ({ ...f, phone: e.target.value }))} className={inputClass} />
+                </div>
+              </div>
+              <button onClick={handleRepair} disabled={toolBusy}
+                className="w-full bg-amber-600 text-white font-bold uppercase text-xs py-2 hover:bg-amber-700 disabled:opacity-50 flex items-center justify-center gap-2">
+                {toolBusy ? <><Loader2 size={13} className="animate-spin" /> Repairing...</> : 'Repair — Profile Banao'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
