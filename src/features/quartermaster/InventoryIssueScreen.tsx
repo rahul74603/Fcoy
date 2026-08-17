@@ -11,43 +11,18 @@ import {
 } from 'lucide-react';
 import {
   collection, query, where, getDocs,
-  doc, updateDoc, addDoc, serverTimestamp,
-  onSnapshot
+  doc, serverTimestamp,
+  onSnapshot, writeBatch
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { ModuleReportButton } from '../system/ModuleReportButton';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBatch } from '../../contexts/BatchContext';
 
-const SHOE_SIZES  = ['5', '6', '7', '8', '9', '10', '11', '12', '13'];
-const SHIRT_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'];
-
-interface BaseTrainingItem {
-  id: string;
-  name: string;
-  emoji: string;
-  category: string;
-  hasSizes?: boolean;
-  sizeOptions?: string[];
-  isCustom?: boolean;
-}
-
-const FIXED_TRAINING_ITEMS: BaseTrainingItem[] = [
-  { id: 'dm-shoes',     name: 'DM Shoes',     emoji: '👞', category: 'Footwear',  hasSizes: true, sizeOptions: SHOE_SIZES  },
-  { id: 'pt-shoes',     name: 'PT Shoes',     emoji: '👟', category: 'Footwear',  hasSizes: true, sizeOptions: SHOE_SIZES  },
-  { id: 'ankle-shoes',  name: 'Ankle Shoes',  emoji: '🥾', category: 'Footwear',  hasSizes: true, sizeOptions: SHOE_SIZES  },
-  { id: 'pt-t-shirt',   name: 'PT T-Shirt',   emoji: '👕', category: 'Uniform',   hasSizes: true, sizeOptions: SHIRT_SIZES },
-  { id: 'ground-sheet', name: 'Ground Sheet', emoji: '🛏️', category: 'Bedding'   },
-  { id: 'plate',        name: 'Plate',        emoji: '🍽️', category: 'Mess Item' },
-  { id: 'glass',        name: 'Glass',        emoji: '🥤', category: 'Mess Item' },
-  { id: 'bucket',       name: 'Bucket',       emoji: '🪣', category: 'Equipment' },
-  { id: 'mug',          name: 'Mug',          emoji: '☕', category: 'Mess Item' },
-  { id: 'mess-tin',     name: 'Mess Tin',     emoji: '🥫', category: 'Mess Item' },
-  { id: 'mosquito-net', name: 'Mosquito Net', emoji: '🦟', category: 'Bedding'   },
-  { id: 'water-bottle', name: 'Water Bottle', emoji: '💧', category: 'Equipment' },
-  { id: 'towel',        name: 'Towel',        emoji: '🧻', category: 'Equipment' },
-  { id: 'lock',         name: 'Lock',         emoji: '🔒', category: 'Equipment' },
-];
+// 📦 QM ITEM MASTER — centralized in qmCatalog.ts (single source of truth).
+// Trainee Profile bhi yahi list use karti hai — dono screens kabhi drift nahi karenge.
+import { FIXED_TRAINING_ITEMS } from './qmCatalog';
+import type { BaseTrainingItem } from './qmCatalog';
 
 interface SizeBreakdown { size: string; quantity: number; }
 
@@ -1138,12 +1113,15 @@ export const InventoryIssueScreen: React.FC = () => {
         ...newIssuedItems,
       ];
 
-      await updateDoc(doc(db, 'trainees', trainee.id), {
+      // 🔐 ATOMIC — trainee kit update + issue_record ek saath commit hote
+      // hain. Pehle 2 alag writes the: beech me fail hone par trainee ke paas
+      // kit dikhti thi par issue register me entry nahi hoti thi (ya ulta).
+      const wb = writeBatch(db);
+      wb.update(doc(db, 'trainees', trainee.id), {
         issuedKitItems:   updatedIssuedItems,
         lastKitIssueDate: issueDateISO,
       });
-
-      await addDoc(collection(db, 'issue_records'), {
+      wb.set(doc(collection(db, 'issue_records')), {
         traineeId:        trainee.id,
         traineeName:      trainee.name,
         chestNo:          trainee.chestNo,
@@ -1159,6 +1137,7 @@ export const InventoryIssueScreen: React.FC = () => {
         issuedAt:         serverTimestamp(),
         issueDateISO,
       });
+      await wb.commit();
 
       setSuccessMsg(
         `✓ ${cartItems.length} item(s) ${trainee.name} (${trainee.chestNo}) ko issue ho gaye.`

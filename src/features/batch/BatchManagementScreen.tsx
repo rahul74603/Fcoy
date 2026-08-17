@@ -1,6 +1,6 @@
 // src/features/batch/BatchManagementScreen.tsx
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   Layers, Plus, CheckCircle2, AlertTriangle, X, Loader2,
   Calendar, Users, Archive, Shield,
@@ -57,13 +57,19 @@ export const BatchManagementScreen: React.FC = () => {
   };
 
   // ── Auto-generate batch number ──
+  // SAFE SEQUENCE: uses (highest existing sequence + 1) instead of a count.
+  // With a count, deleting e.g. "2026-03" would make the next batch reuse
+  // "2026-04" and create a duplicate. Max+1 can never collide, and
+  // BatchContext additionally rejects an already-existing batch id at
+  // creation time (protection against simultaneous creation).
   const generateBatchNumber = () => {
-    const now = new Date();
-    const year = now.getFullYear();
-    const existing = allBatches.filter(b =>
-      b.batchNumber.startsWith(`${year}-`)
-    ).length;
-    return `${year}-${String(existing + 1).padStart(2, '0')}`;
+    const year = new Date().getFullYear();
+    const maxSeq = allBatches.reduce((max, b) => {
+      const m = /^(\d{4})-(\d+)$/.exec(String(b.batchNumber || '').trim());
+      if (!m || Number(m[1]) !== year) return max;
+      return Math.max(max, Number(m[2]));
+    }, 0);
+    return `${year}-${String(maxSeq + 1).padStart(2, '0')}`;
   };
 
   // ── Handle Create New Batch ──
@@ -107,28 +113,26 @@ export const BatchManagementScreen: React.FC = () => {
     }
   };
 
-  const isFakeBatch = (batch: any) => String(batch.batchNumber || '') === '900' || String(batch.batchName || '').toLowerCase().includes('dev test') || String(batch.batchName || '').toLowerCase().includes('hidden');
+  // ⚠️ SAFETY: Test/dev data is identified ONLY by the explicit
+  // `isDevData: true` tag (set by the dev sandbox seeders) — NEVER by
+  // batch name/number text matching. Name-based deletion previously
+  // risked destroying real business batches and has been removed.
+  const isDevTaggedBatch = (batch: any) => batch?.isDevData === true;
   const safeDate = (value: any) => {
     if (!value) return '—';
     const parsed = new Date(value);
     return Number.isNaN(parsed.getTime()) ? '—' : parsed.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
   };
-  const deleteFakeBatch = async (batch: any) => {
-    if (!isCommander || !isFakeBatch(batch)) return;
-    if (!window.confirm(`Delete fake batch "${batch.batchName || batch.batchNumber}" permanently?`)) return;
+  const deleteDevBatch = async (batch: any) => {
+    if (!isCommander || !isDevTaggedBatch(batch)) return;
+    if (!window.confirm(`Delete DEV/TEST batch "${batch.batchName || batch.batchNumber}" permanently? (isDevData tagged)`)) return;
     try {
       await deleteDoc(doc(db, 'batches', batch.id));
-      setSuccess(`Fake batch "${batch.batchName || batch.batchNumber}" deleted.`);
+      setSuccess(`Dev batch "${batch.batchName || batch.batchNumber}" deleted.`);
     } catch (err: any) {
       setError(`Batch delete failed: ${err.message}`);
     }
   };
-
-  useEffect(() => {
-    if (!isCommander || !allBatches.length) return;
-    const fake = allBatches.find(isFakeBatch);
-    if (fake) deleteDoc(doc(db, 'batches', fake.id)).catch(err => console.error('Fake batch cleanup failed:', err));
-  }, [isCommander, allBatches]);
 
   // ── Stats ──
   const activeBatches = allBatches.filter(b => b.status === 'active');
@@ -629,7 +633,7 @@ export const BatchManagementScreen: React.FC = () => {
                     </td>
                     <td className="px-4 py-3 text-slate-400 text-[10px]">{safeDate(batch.createdAt)}</td>
                     <td className="px-4 py-3">
-                      {isFakeBatch(batch) && isCommander && <button onClick={(e) => { e.stopPropagation(); deleteFakeBatch(batch); }} className="rounded bg-red-600 px-2 py-1 text-[9px] font-black uppercase text-white hover:bg-red-700">Delete fake</button>}
+                      {isDevTaggedBatch(batch) && isCommander && <button onClick={(e) => { e.stopPropagation(); deleteDevBatch(batch); }} className="rounded bg-red-600 px-2 py-1 text-[9px] font-black uppercase text-white hover:bg-red-700">Delete dev batch</button>}
                     </td>
                   </tr>
                 ))}

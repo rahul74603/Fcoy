@@ -2,8 +2,8 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import {
-  doc, collection, onSnapshot, getDoc,
-  updateDoc, query, orderBy, writeBatch
+  doc, collection, onSnapshot,
+  updateDoc, query, orderBy, runTransaction
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { isDevViewer, onDevViewerChange, DEV_TAG } from '../utils/devDataFilter';
@@ -188,61 +188,68 @@ export const BatchProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // hai — real duniya me kabhi nahi dikhega. Dev ka allBatches pehle se
     // dev-only hai, isliye "complete" hone wala purana batch bhi sirf dev batch hoga.
     const isDevMode = isDevRef.current;
+
+    // 🔒 BUSINESS RULE (enforced here too, not just in the screen):
+    // Real batch creation/activation is a Company Commander action.
+    // Dev sandbox accounts may create isDevData-tagged test batches.
+    if (!isDevMode && user?.role !== 'Company Commander') {
+      throw new Error('Sirf Company Commander naya batch create/activate kar sakta hai.');
+    }
+
     try {
-      const batch = writeBatch(db);
-
-      // Step 1: Current active batch ko "completed" karo
-      const currentActive = allBatches.find(b => b.status === 'active');
-      if (currentActive) {
-        const oldBatchRef = doc(db, 'batches', currentActive.id);
-        batch.update(oldBatchRef, {
-          status: 'completed',
-          completedAt: new Date().toISOString(),
-          completedBy: data.createdBy,
-        });
-      }
-
-      // Step 2: Naya batch create karo with status "active"
       const batchId = `batch_${data.batchNumber.replace(/[^a-zA-Z0-9]/g, '_')}`;
       const newBatchRef = doc(db, 'batches', batchId);
+      const currentActive = allBatches.find(b => b.status === 'active');
 
-      // Check if already exists
-      const existingDoc = await getDoc(newBatchRef);
-      if (existingDoc.exists()) {
-        throw new Error(`Batch "${data.batchNumber}" pehle se exist karta hai!`);
-      }
+      // 🔐 TRANSACTION — duplicate check + archive + create + config update
+      // happen atomically. Two simultaneous creations of the same batch
+      // number can never both succeed (the read is re-validated at commit).
+      await runTransaction(db, async (tx) => {
+        const existingDoc = await tx.get(newBatchRef);
+        if (existingDoc.exists()) {
+          throw new Error(`Batch "${data.batchNumber}" pehle se exist karta hai!`);
+        }
 
-      batch.set(newBatchRef, {
-        batchNumber: data.batchNumber,
-        batchName: data.batchName,
-        status: 'active',
-        startDate: data.startDate,
-        endDate: data.endDate,
-        description: data.description,
-        totalTrainees: 0,
-        createdAt: new Date().toISOString(),
-        createdBy: data.createdBy,
-        // 🧪 Dev sandbox ka batch hamesha tagged — real accounts me kabhi nahi dikhega
-        ...(isDevMode ? { [DEV_TAG]: true } : {}),
+        // Step 1: Current active batch ko "completed" karo
+        if (currentActive) {
+          tx.update(doc(db, 'batches', currentActive.id), {
+            status: 'completed',
+            completedAt: new Date().toISOString(),
+            completedBy: data.createdBy,
+          });
+        }
+
+        // Step 2: Naya batch create karo with status "active"
+        tx.set(newBatchRef, {
+          batchNumber: data.batchNumber,
+          batchName: data.batchName,
+          status: 'active',
+          startDate: data.startDate,
+          endDate: data.endDate,
+          description: data.description,
+          totalTrainees: 0,
+          createdAt: new Date().toISOString(),
+          createdBy: data.createdBy,
+          // 🧪 Dev sandbox ka batch hamesha tagged — real accounts me kabhi nahi dikhega
+          ...(isDevMode ? { [DEV_TAG]: true } : {}),
+        });
+
+        // Step 3: activeBatch config doc update (dev sandbox real config nahi chhedta)
+        if (!isDevMode) {
+          tx.set(doc(db, 'config', 'activeBatch'), {
+            batchId: batchId,
+            batchNumber: data.batchNumber,
+            batchName: data.batchName,
+            updatedAt: new Date().toISOString(),
+            updatedBy: data.createdBy,
+          });
+        }
       });
-
-      // Step 3: activeBatch config doc update
-      const configRef = doc(db, 'config', 'activeBatch');
-      batch.set(configRef, {
-        batchId: batchId,
-        batchNumber: data.batchNumber,
-        batchName: data.batchName,
-        updatedAt: new Date().toISOString(),
-        updatedBy: data.createdBy,
-      });
-
-      // Commit all changes atomically
-      await batch.commit();
     } catch (err: any) {
       console.error('Create batch error:', err);
       throw err;
     }
-  }, [allBatches]);
+  }, [allBatches, user?.role]);
 
   // ── Complete/Archive a Batch ──
   const completeBatch = useCallback(async (batchId: string, userId: string) => {

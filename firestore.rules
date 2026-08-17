@@ -1,34 +1,335 @@
 rules_version = '2';
+
+// ═══════════════════════════════════════════════════════════════
+// F COY TRAINING COMMAND ERP — ROLE-BASED FIRESTORE RULES
+//
+// Role model (server-side — UI checks are NOT a security boundary):
+//   Company Commander  → full authorised access
+//   Clerk              → trainee administration (trainees, docs,
+//                        medical, weekly programme, staff admin)
+//   Quarter Master     → inventory, kit issue, funds, vendors
+//   Ustad              → training records (read trainees, no finance)
+//   Developer flag     → dev-sandbox accounts (isDeveloper: true);
+//                        practice data is tagged isDevData: true
+//
+// The role is read from the TRUSTED users/{uid} profile document,
+// never from anything the client sends with the request.
+// Inactive users (isActive == false) are denied everywhere.
+// ═══════════════════════════════════════════════════════════════
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // ── Identity helpers ─────────────────────────────────────
     function signedIn() { return request.auth != null; }
-    function roleIs(role) {
-      return signedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role;
+
+    function userPath() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
     }
-    function canManage() {
-      return roleIs('Company Commander') || roleIs('Clerk');
+    function hasProfile() { return signedIn() && exists(userPath()); }
+    function profile() { return get(userPath()).data; }
+
+    // Active check — old profiles without isActive stay valid
+    function isActiveUser() { return hasProfile() && profile().isActive != false; }
+
+    // Legacy data may store short/lowercase role names — accept known variants
+    function isCC() {
+      return isActiveUser()
+        && profile().role in ['Company Commander', 'CC', 'cc', 'Commander', 'commander', 'company commander'];
+    }
+    function isClerk() {
+      return isActiveUser() && profile().role in ['Clerk', 'clerk'];
+    }
+    function isQM() {
+      return isActiveUser()
+        && profile().role in ['Quarter Master', 'QM', 'qm', 'Quartermaster', 'quartermaster', 'quarter master'];
+    }
+    function isUstad() {
+      return isActiveUser()
+        && profile().role in ['Ustad', 'ustad', 'Instructor', 'instructor'];
+    }
+    // 🧪 Dev/practice account — sandbox testing (data tagged isDevData)
+    function isDev() { return isActiveUser() && profile().isDeveloper == true; }
+
+    function isStaff() { return isCC() || isClerk() || isQM() || isUstad() || isDev(); }
+
+    // Domain groups
+    function traineeAdmin() { return isCC() || isClerk() || isDev(); }
+    function qmAdmin()      { return isCC() || isQM()    || isDev(); }
+    function trainingStaff(){ return isCC() || isClerk() || isUstad() || isDev(); }
+
+    // First-run marker — after setup completes, self-provisioning closes
+    function firstRunDone() {
+      return exists(/databases/$(database)/documents/config/firstRun);
     }
 
-    // Subject Master and staff assignments are used by the training administration screens.
-    // All authenticated staff may view them; only CC and Clerk may modify them.
-    match /subject_master/{id} {
+    // Update touches ONLY the listed keys
+    function onlyKeys(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+
+    // ═════════════════════════════════════════════════════════
+    // USERS — profiles & roles (the trust anchor)
+    // ═════════════════════════════════════════════════════════
+    match /users/{userId} {
+      // CC sees all; a user sees their own doc.
+      // Legacy profiles used a random doc id — AuthContext falls back to an
+      // email lookup, so allow reading docs whose email matches the token.
+      allow get: if isCC() || isDev()
+        || (signedIn() && request.auth.uid == userId)
+        || (signedIn() && request.auth.token.email != null
+            && resource.data.email == request.auth.token.email);
+      // list: CC (user management), dev practice snapshot, email-match
+      // legacy lookup, and the first-run wizard's "already set up?" probe.
+      allow list: if isCC() || isDev()
+        || (signedIn() && request.auth.token.email != null
+            && resource.data.email == request.auth.token.email)
+        || (signedIn() && !firstRunDone());
+      // CC provisions staff (dev = CC-provisioned master tooling).
+      // Self-create is ONLY open before first-run completes (fresh
+      // deployment wizard), and only for your own uid.
+      allow create: if isCC() || isDev()
+        || (signedIn() && request.auth.uid == userId && !firstRunDone());
+      // CC manages accounts; users may edit their own basic profile fields
+      allow update: if isCC() || isDev()
+        || (signedIn() && request.auth.uid == userId
+            && onlyKeys(['name', 'phone', 'designation', 'updatedAt']));
+      allow delete: if isCC() || isDev();
+    }
+
+    // ═════════════════════════════════════════════════════════
+    // SYSTEM / CONFIG
+    // ═════════════════════════════════════════════════════════
+    match /config/{docId} {
+      allow read: if isStaff();
+      // firstRun + activeBatch markers are written during CC flows
+      allow create, update: if isCC();
+      allow delete: if isCC();
+    }
+
+    match /unitConfig/{docId} {
       allow read: if signedIn();
-      allow create, update, delete: if canManage();
+      allow write: if isCC();
+    }
+
+    match /subscription/{docId} {
+      allow read: if signedIn();
+      allow write: if isCC();
+    }
+    match /subscriptionPlans/{docId} {
+      allow read: if signedIn();
+      // seeded during first-run (before profile exists) or managed by CC
+      allow write: if isCC() || (signedIn() && !firstRunDone());
+    }
+    match /subscriptionHistory/{docId} {
+      allow read, write: if isCC();
+    }
+    match /customerSubscriptions/{docId} {
+      allow read: if signedIn();
+      allow write: if isCC();
+    }
+    match /customers/{docId} {
+      allow read, write: if isCC();
+    }
+
+    // 🧪 Developer sandbox tooling
+    match /devTools/{docId} {
+      allow read, write: if isDev() || isCC();
+    }
+
+    match /activity_logs/{id} {
+      allow read: if isStaff();
+      allow create: if isStaff();
+      allow update, delete: if isCC();
+    }
+
+    // ═════════════════════════════════════════════════════════
+    // BATCHES — created/activated ONLY by Company Commander
+    // (dev accounts may manage isDevData-tagged sandbox batches)
+    // ═════════════════════════════════════════════════════════
+    match /batches/{batchId} {
+      allow read: if isStaff();
+      allow create: if isCC()
+        || (isDev() && request.resource.data.isDevData == true);
+      // Clerk may only maintain the trainee counter during registration
+      allow update: if isCC()
+        || (isDev() && resource.data.isDevData == true)
+        || (isClerk() && onlyKeys(['totalTrainees']));
+      allow delete: if isCC()
+        || (isDev() && resource.data.isDevData == true);
+    }
+
+    // ═════════════════════════════════════════════════════════
+    // TRAINEES — Clerk administers; QM/Ustad get scoped access
+    // ═════════════════════════════════════════════════════════
+    match /trainees/{traineeId} {
+      allow read: if isStaff();
+      allow create: if traineeAdmin();
+      // QM may ONLY touch kit/recovery-related fields — never
+      // personal data (name, aadhaar, address, documents, ...)
+      allow update: if traineeAdmin()
+        || (isQM() && onlyKeys([
+              'issuedKitItems', 'lastKitIssueDate', 'kitIssued',
+              'issuedItems', 'pendingRecoveryAmount',
+              'shoeSize', 'dressSize', 'updatedAt'
+            ]));
+      // isDev delete: dev-practice cleanup engine session-created docs
+      // delete/restore karta hai (jo hamesha tagged nahi hote)
+      allow delete: if isCC() || isDev();
+    }
+
+    // ── Clerk operational domain ──
+    match /absentRecords/{id} {
+      allow read: if isStaff();
+      allow write: if traineeAdmin();
+    }
+    match /medicalRecords/{id} {
+      allow read: if isStaff();
+      allow create, update: if traineeAdmin();
+      allow delete: if isCC() || isDev(); // history is voided, not deleted
+    }
+    match /weeklyPrograms/{id} {
+      allow read: if isStaff();
+      allow write: if traineeAdmin();
+    }
+    match /udhariRecords/{id} {
+      allow read: if isStaff();
+      allow write: if traineeAdmin();
+    }
+    match /ustads/{id} {
+      allow read: if isStaff();
+      allow write: if traineeAdmin();
+    }
+
+    // ── Training / examination records ──
+    match /training_tests/{id} {
+      allow read: if isStaff();
+      allow write: if traineeAdmin();
+    }
+    match /weeklyTestRecords/{id} {
+      allow read: if isStaff();
+      allow write: if traineeAdmin();
+    }
+    match /fptRecords/{id} {
+      allow read: if isStaff();
+      allow write: if traineeAdmin();
+    }
+    match /batch_progress/{id} {
+      allow read: if isStaff();
+      allow write: if trainingStaff();
+    }
+    match /training_schedule/{id} {
+      allow read: if isStaff();
+      allow write: if trainingStaff();
+    }
+
+    // ── Staff (Ustad/instructor) administration ──
+    match /staff/{id} {
+      allow read: if isStaff();
+      allow write: if traineeAdmin();
+    }
+    match /subject_master/{id} {
+      allow read: if isStaff();
+      allow create, update, delete: if traineeAdmin();
     }
     match /staff_subjects/{id} {
-      allow read: if signedIn();
-      allow create, update, delete: if canManage();
+      allow read: if isStaff();
+      allow create, update, delete: if traineeAdmin();
     }
-    match /activity_logs/{id} {
-      allow read: if signedIn();
-      allow create: if signedIn();
+    match /staff_attendance/{id} {
+      allow read: if isStaff();
+      allow write: if traineeAdmin();
+    }
+    match /staff_duty/{id} {
+      allow read: if isStaff();
+      allow write: if traineeAdmin();
+    }
+    match /staff_leave/{id} {
+      allow read: if isStaff();
+      allow create: if isStaff();          // Ustad may apply for leave
+      allow update, delete: if traineeAdmin(); // approval is admin-side
+    }
+    match /leave_types/{id} {
+      allow read: if isStaff();
+      allow write: if traineeAdmin();
+    }
+    match /duty_types/{id} {
+      allow read: if isStaff();
+      allow write: if traineeAdmin();
+    }
+    match /deputation_records/{id} {
+      allow read: if isStaff();
+      allow write: if traineeAdmin();
+    }
+    match /staff_activity_logs/{id} {
+      allow read: if isStaff();
+      allow create: if isStaff();
+      allow update, delete: if isCC();
     }
 
-    // Existing ERP modules use many legacy collections. Keep the application
-    // operational for authenticated staff while those modules are migrated to
-    // collection-specific role rules.
+    // ═════════════════════════════════════════════════════════
+    // QUARTER MASTER — inventory, kit issue, item masters
+    // ═════════════════════════════════════════════════════════
+    match /item_master/{id} {
+      allow read: if isStaff();
+      allow write: if qmAdmin();
+    }
+    match /training_custom_items/{id} {
+      allow read: if isStaff();
+      allow write: if qmAdmin();
+    }
+    match /mess_custom_categories/{id} {
+      allow read: if isStaff();
+      allow write: if qmAdmin();
+    }
+    match /company_assets_custom_items/{id} {
+      allow read: if isStaff();
+      allow write: if qmAdmin();
+    }
+    match /issue_records/{id} {
+      allow read: if isStaff();
+      allow write: if qmAdmin();
+    }
+    match /mess_boys/{id} {
+      allow read: if isStaff();
+      allow write: if qmAdmin();
+    }
+    match /mess_boy_salaries/{id} {
+      allow read: if isStaff();
+      allow write: if qmAdmin();
+    }
+
+    // ═════════════════════════════════════════════════════════
+    // FINANCE — QM + CC ONLY (Clerk/Ustad have NO access,
+    // not even read — enforced at the database, not the UI)
+    // ═════════════════════════════════════════════════════════
+    match /mess_fund_collections/{id}      { allow read, write: if qmAdmin(); }
+    match /mess_fund_expenses/{id}         { allow read, write: if qmAdmin(); }
+    match /training_fund_collections/{id}  { allow read, write: if qmAdmin(); }
+    match /training_fund_expenses/{id}     { allow read, write: if qmAdmin(); }
+    match /training_fund_recoveries/{id}   { allow read, write: if qmAdmin(); }
+    match /general_fund_collections/{id}   { allow read, write: if qmAdmin(); }
+    match /general_fund_expenses/{id}      { allow read, write: if qmAdmin(); }
+    match /company_assets_collections/{id} { allow read, write: if qmAdmin(); }
+    match /company_assets_expenses/{id}    { allow read, write: if qmAdmin(); }
+    match /fund_transfers/{id}             { allow read, write: if qmAdmin(); }
+    match /fund_summary/{id}               { allow read, write: if qmAdmin(); }
+    match /vendors/{id}                    { allow read, write: if qmAdmin(); }
+    match /vendor_entries/{id}             { allow read, write: if qmAdmin(); }
+    match /vendor_payments/{id}            { allow read, write: if qmAdmin(); }
+    match /bills/{id}                      { allow read, write: if qmAdmin(); }
+    // Legacy finance collections (early QM module)
+    match /collections/{id}                { allow read, write: if qmAdmin(); }
+    match /expenses/{id}                   { allow read, write: if qmAdmin(); }
+    match /recoveries/{id}                 { allow read, write: if qmAdmin(); }
+
+    // ═════════════════════════════════════════════════════════
+    // SAFETY VALVE — any legacy collection not matched above is
+    // reachable ONLY by the Company Commander (and dev sandbox).
+    // The old "any signed-in user can read/write everything"
+    // fallback is intentionally GONE.
+    // ═════════════════════════════════════════════════════════
     match /{document=**} {
-      allow read, write: if signedIn();
+      allow read, write: if isCC() || isDev();
     }
   }
 }

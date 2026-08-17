@@ -276,6 +276,7 @@ export const ClerkDashboard: React.FC = () => {
   const [fptModal, setFptModal]             = useState(false);
   const [incDocsModal, setIncDocsModal]     = useState(false);
   const [udhariModal, setUdhariModal]       = useState(false);
+  const [chestPendingModal, setChestPendingModal] = useState(false);
 const navigate = useNavigate();
   // ── Today info ──
   const todayDayName = DAYS_MAP[new Date().getDay()] || 'Sunday';
@@ -398,6 +399,11 @@ const navigate = useNavigate();
   const totalTrainees   = trainees.length;
   const presentTrainees = trainees.filter(t => t.attn === 'P' || !t.attn);
   const absentTrainees  = trainees.filter(t => t.attn && ABSENT_TYPES.includes(t.attn));
+
+  // Chest Number lifecycle — registration ke time chest optional hai,
+  // arrival ke baad Clerk assign karta hai. Ye list = assignment pending.
+  const chestPendingTrainees = trainees.filter(t => !String(t.chestNo ?? '').trim());
+  const chestAssignedCount   = totalTrainees - chestPendingTrainees.length;
 
   const failedExam      = trainees.filter(t => t.weeklyExamResult === 'Fail');
   const fptFailed       = trainees.filter(t => t.fptResult === 'Fail');
@@ -534,6 +540,19 @@ const navigate = useNavigate();
             icon={<Users size={28} className="text-military-400" />}
             color="text-military-900"
             borderColor="border-t-military-700"
+          />
+
+          <StatCard
+            title="Chest Pending"
+            value={chestPendingTrainees.length}
+            subtitle={`${chestAssignedCount} Assigned`}
+            icon={<Target size={28} className="text-indigo-400" />}
+            color={chestPendingTrainees.length > 0 ? 'text-indigo-700' : 'text-green-700'}
+            borderColor="border-t-indigo-500"
+            clickable
+            onClick={() => setChestPendingModal(true)}
+            badge={chestPendingTrainees.length > 0 ? `${chestPendingTrainees.length} Pending` : undefined}
+            badgeColor="bg-indigo-100 text-indigo-700"
           />
 
           <StatCard
@@ -724,6 +743,49 @@ const navigate = useNavigate();
       {/* ═══════════════════════════════════════
           MODALS
           ═══════════════════════════════════════ */}
+
+      {/* 0. CHEST PENDING — assignment ke liye waiting */}
+      <ListModal
+        open={chestPendingModal}
+        onClose={() => setChestPendingModal(false)}
+        title="Chest Number Pending — Assignment Required"
+        icon={<Target size={18} className="text-white" />}
+        headerColor="bg-indigo-800"
+        trainees={chestPendingTrainees}
+        emptyMessage="Sab trainees ko Chest No assigned hai — All Clear!"
+        columns={[
+          {
+            label: 'Reg No',
+            render: t => <span className="font-mono font-bold text-military-800">{t.regNo || '—'}</span>
+          },
+          {
+            label: 'Rank & Name',
+            render: t => <span className="font-bold text-slate-800">{t.rank || 'RCT'} {t.name}</span>
+          },
+          {
+            label: 'Platoon',
+            render: t => <span className="bg-slate-100 px-2 py-0.5 text-[10px] font-bold">{t.platoon || '—'}</span>
+          },
+          {
+            label: 'Chest No',
+            render: () => (
+              <span className="px-2 py-0.5 text-[10px] font-bold border bg-indigo-100 text-indigo-800 border-indigo-300">
+                PENDING
+              </span>
+            )
+          },
+          {
+            label: 'Action',
+            render: t => (
+              <button
+                onClick={() => navigate(`/profile?search=${encodeURIComponent(t.regNo || '')}`)}
+                className="bg-military-800 text-white px-2 py-0.5 text-[9px] font-black uppercase hover:bg-military-900">
+                Assign
+              </button>
+            )
+          },
+        ]}
+      />
 
       {/* 1. ABSENT */}
       <ListModal

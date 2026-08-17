@@ -169,10 +169,25 @@ export const UserManagementPage = () => {
 
   const handleDeleteProfile = async (u: UserModel) => {
     const broken = !isLoginCapable(u.id);
-    const warn = broken
-      ? `${u.name} (${u.email}) — ye BROKEN profile hai (Auth account kabhi bana hi nahi tha, isse login possible nahi). DELETE karein?`
-      : `${u.name} (${u.email}) ka Firestore profile DELETE karein?\n\n⚠ Dhyan dein: Auth account Firebase Console se alag se delete karna hoga — warna wo email dobara use nahi hoga.`;
-    if (!window.confirm(warn)) return;
+
+    // 🔒 SAFE USER LIFECYCLE:
+    // Login-capable profiles delete karne se ek orphan Firebase Auth account
+    // bach jata hai jo login kar sakta hai par ERP profile ke bina "Unassigned"
+    // ban jata hai. Normal operation ke liye DEACTIVATE hi sahi hai — profile
+    // delete sirf BROKEN profiles (jinka Auth account kabhi bana hi nahi) ke liye.
+    if (!broken) {
+      window.alert(
+        `${u.name} (${u.email}) ek LOGIN-capable account hai.\n\n` +
+        `Ise DELETE karne ke bajaye "Deactivate" karo — user login nahi kar payega ` +
+        `par record/audit safe rahega.\n\n` +
+        `Permanent removal chahiye to pehle Firebase Console → Authentication se ` +
+        `Auth account delete karo (Admin SDK/Console — client se possible nahi), ` +
+        `phir ye profile delete option khud enable ho jayega.`
+      );
+      return;
+    }
+
+    if (!window.confirm(`${u.name} (${u.email}) — ye BROKEN profile hai (Auth account kabhi bana hi nahi tha, isse login possible nahi). DELETE karein?`)) return;
     try {
       await deleteDoc(doc(db, 'users', u.id));
       setMessage(`Deleted: ${u.email}`);

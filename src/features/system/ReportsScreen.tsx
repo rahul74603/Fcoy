@@ -204,7 +204,10 @@ const downloadCSV = (filename: string, headers: string[], rows: string[][]) => {
   URL.revokeObjectURL(link.href);
 };
 
-const printReport = (title: string, headers: string[], rows: string[][], summary?: string) => {
+// Middle-signature label depends on report type — pehle har report par
+// "Verified By (QM)" hardcode tha, jo trainee/staff/training reports ke liye
+// galat attribution tha. Approval hamesha CC ka hai (business rule).
+const printReport = (title: string, headers: string[], rows: string[][], summary?: string, verifierLabel = 'Checked By') => {
   const html = `
     <!DOCTYPE html>
     <html>
@@ -248,7 +251,7 @@ const printReport = (title: string, headers: string[], rows: string[][], summary
       ${summary ? `<div class="summary">📊 SUMMARY: ${summary}</div>` : ''}
       <div class="stamp">
         <div><div class="line">Prepared By</div></div>
-        <div><div class="line">Verified By (QM)</div></div>
+        <div><div class="line">${verifierLabel}</div></div>
         <div><div class="line">Approved By (CC)</div></div>
       </div>
       <div class="footer">
@@ -986,7 +989,7 @@ export const ReportsScreen: React.FC = () => {
     const title = 'Kit Issue Register — Trainee Wise';
 
     if (format === 'EXCEL') downloadCSV('Kit_Issue_Register', headers, rows);
-    else printReport(title, headers, rows, summary);
+    else printReport(title, headers, rows, summary, 'Verified By (QM)');
     addToHistory(title, 'Kit Issue', format, rows.length);
     setSuccess(`${title} generated!`);
     setGenerating(null);
@@ -1037,7 +1040,7 @@ export const ReportsScreen: React.FC = () => {
     const title = 'Live Inventory Stock Report (Item-wise)';
 
     if (format === 'EXCEL') downloadCSV('Stock_Report', headers, rows);
-    else printReport(title, headers, rows, summary);
+    else printReport(title, headers, rows, summary, 'Verified By (QM)');
     addToHistory(title, 'Stock', format, rows.length);
     setSuccess(`${title} generated!`);
     setGenerating(null);
@@ -1066,7 +1069,7 @@ export const ReportsScreen: React.FC = () => {
     const title = `Fund Collection Report ${filterFund !== 'All' ? `— ${filterFund} Fund` : '— All Funds'}`;
 
     if (format === 'EXCEL') downloadCSV('Collection_Report', headers, rows);
-    else printReport(title, headers, rows, summary);
+    else printReport(title, headers, rows, summary, 'Verified By (QM)');
     addToHistory(title, 'Collection', format, filtered.length);
     setSuccess(`${title} generated!`);
     setGenerating(null);
@@ -1095,7 +1098,7 @@ export const ReportsScreen: React.FC = () => {
     const title = `Fund Expense Report ${filterFund !== 'All' ? `— ${filterFund} Fund` : '— All Funds'}`;
 
     if (format === 'EXCEL') downloadCSV('Expense_Report', headers, rows);
-    else printReport(title, headers, rows, summary);
+    else printReport(title, headers, rows, summary, 'Verified By (QM)');
     addToHistory(title, 'Expense', format, filtered.length);
     setSuccess(`${title} generated!`);
     setGenerating(null);
@@ -1137,7 +1140,7 @@ export const ReportsScreen: React.FC = () => {
     const title = 'Vendor Dues — Outstanding Payments';
 
     if (format === 'EXCEL') downloadCSV('Vendor_Dues', headers, rows);
-    else printReport(title, headers, rows, summary);
+    else printReport(title, headers, rows, summary, 'Verified By (QM)');
     addToHistory(title, 'Vendor Dues', format, rows.length);
     setSuccess(`${title} generated!`);
     setGenerating(null);
@@ -1196,7 +1199,7 @@ export const ReportsScreen: React.FC = () => {
     const title = 'Company Fund Summary — All 4 Funds';
 
     if (format === 'EXCEL') downloadCSV('Fund_Summary', headers, rows);
-    else printReport(title, headers, rows, summary);
+    else printReport(title, headers, rows, summary, 'Verified By (QM)');
     addToHistory(title, 'Fund Summary', format, rows.length);
     setSuccess(`${title} generated!`);
     setGenerating(null);
@@ -1683,8 +1686,25 @@ export const ReportsScreen: React.FC = () => {
   const totalDue = expenses.reduce((s, e) => s + e.dueAmount, 0);
   const pendingBills = expenses.filter(e => e.billStatus === 'Pending').length;
 
+  // ─── ROLE-BASED REPORT ACCESS ────────────
+  // UI-level gating (DB rules alag se enforce hoti hain — Firestore rules
+  // Clerk/Ustad ko finance collections read hi nahi karne detin):
+  //   Commander → sab reports
+  //   Clerk     → trainee / training / staff reports
+  //   QM        → inventory / finance reports (+ trainee master for kit work)
+  //   Ustad     → training performance reports
+  const ROLE_REPORT_CATEGORIES: Record<string, string[] | null> = {
+    'Company Commander': null, // null = all
+    'Clerk':          ['Trainee Management', 'Training Performance', 'Staff Management — Instructors'],
+    'Quarter Master': ['Trainee Management', 'Inventory / Quarter Master', 'Finance — 4 Funds'],
+    'Ustad':          ['Training Performance'],
+  };
+  const roleKey = user?.role ?? '';
+  const allowedCategories: string[] | null =
+    roleKey in ROLE_REPORT_CATEGORIES ? ROLE_REPORT_CATEGORIES[roleKey] : [];
+
   // ─── REPORT CARDS CONFIG ────────────────
-  const reportCards = [
+  const allReportCards = [
     {
       category: 'Trainee Management',
       icon: <Users size={16} />,
@@ -1890,6 +1910,11 @@ export const ReportsScreen: React.FC = () => {
       ],
     },
   ];
+
+  // Role filter apply — Commander (null) ko sab dikhega
+  const reportCards = allowedCategories === null
+    ? allReportCards
+    : allReportCards.filter(section => allowedCategories.includes(section.category));
 
   // ─── RENDER ─────────────────────────────
   if (loading) {

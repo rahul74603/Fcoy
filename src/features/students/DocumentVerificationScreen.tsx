@@ -12,6 +12,7 @@ import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 // ✅ HOOK IMPORT
 import { useTraineeSearch } from '../../hooks/useTraineeSearch';
+import { useAuth } from '../../contexts/AuthContext';
 
 // ─────────────────────────────────────────────
 // CONSTANTS
@@ -66,18 +67,28 @@ interface FileInfo {
   fileSize: string;
   fileType: string;
   uploadedAt: string;
+  uploadedBy?: string; // audit — optional, old files display fine without it
 }
 
+// Audit fields are OPTIONAL — old documents saved before this change
+// continue to load and display correctly (backward compatible).
 interface DocStatusItem {
   status: 'Pending' | 'Uploaded' | 'Verified' | 'Rejected';
   isRequired: boolean;
   files: FileInfo[];
+  verifiedBy?: string;
+  verifiedAt?: string;
+  rejectedBy?: string;
+  rejectedAt?: string;
+  rejectionReason?: string;
 }
 
 // ═══════════════════════════════════════════════════════════
 // MAIN SCREEN
 // ═══════════════════════════════════════════════════════════
 export const DocumentVerificationScreen = () => {
+
+  const { user } = useAuth();
 
   // ✅ useTraineeSearch HOOK — batch lock + search
   const {
@@ -123,6 +134,12 @@ export const DocumentVerificationScreen = () => {
             fileType:   existing.fileType   || 'image/jpeg',
             uploadedAt: existing.uploadedAt || '',
           }] : []),
+          // Preserve existing audit trail (if present) across re-saves
+          ...(existing.verifiedBy      ? { verifiedBy: existing.verifiedBy }           : {}),
+          ...(existing.verifiedAt      ? { verifiedAt: existing.verifiedAt }           : {}),
+          ...(existing.rejectedBy      ? { rejectedBy: existing.rejectedBy }           : {}),
+          ...(existing.rejectedAt      ? { rejectedAt: existing.rejectedAt }           : {}),
+          ...(existing.rejectionReason ? { rejectionReason: existing.rejectionReason } : {}),
         };
       } else {
         status[d.key] = { status: 'Pending', isRequired: d.defaultRequired, files: [] };
@@ -192,6 +209,7 @@ export const DocumentVerificationScreen = () => {
     setMessage('');
 
     const newFiles: FileInfo[] = [];
+    const failedFiles: string[] = [];
 
     for (const file of filesArray) {
       const fileSizeKB = Math.round(file.size / 1024);
@@ -209,32 +227,38 @@ export const DocumentVerificationScreen = () => {
           fileSize:   `${fileSizeKB}KB`,
           fileType:   file.type,
           uploadedAt: new Date().toISOString(),
+          uploadedBy: user?.email ?? user?.name ?? 'Unknown',
         });
-      } catch {
-        // Offline fallback — local URL
-        const localUrl = URL.createObjectURL(file);
-        newFiles.push({
-          fileName:   file.name,
-          fileUrl:    localUrl,
-          fileSize:   `${fileSizeKB}KB`,
-          fileType:   file.type,
-          uploadedAt: new Date().toISOString(),
-        });
+      } catch (err) {
+        // ⚠️ NO silent fallback. Pehle yahan ek temporary blob: URL Firestore
+        // me save ho jata tha jo page refresh ke baad kabhi nahi khulta —
+        // user ko lagta tha upload ho gaya, par file kahin store nahi hui thi.
+        console.error(`Upload failed for ${file.name}:`, err);
+        failedFiles.push(file.name);
       }
     }
 
-    setDocStatus(prev => ({
-      ...prev,
-      [currentUploadKey]: {
-        ...prev[currentUploadKey],
-        status: 'Uploaded',
-        files:  currentUploadMultiple
-          ? [...(prev[currentUploadKey]?.files || []), ...newFiles]
-          : newFiles,
-      },
-    }));
+    if (newFiles.length > 0) {
+      setDocStatus(prev => ({
+        ...prev,
+        [currentUploadKey]: {
+          ...prev[currentUploadKey],
+          status: 'Uploaded',
+          files:  currentUploadMultiple
+            ? [...(prev[currentUploadKey]?.files || []), ...newFiles]
+            : newFiles,
+        },
+      }));
+    }
 
-    setMessage(`SUCCESS: ${newFiles.length} file(s) upload ho gayi!`);
+    if (failedFiles.length > 0) {
+      setMessage(
+        `ERROR: ${failedFiles.join(', ')} upload NAHI hui (network/permission issue) — dobara try karein.` +
+        (newFiles.length ? ` (${newFiles.length} file(s) successful)` : '')
+      );
+    } else {
+      setMessage(`SUCCESS: ${newFiles.length} file(s) upload ho gayi!`);
+    }
     setUploadingKey('');
     setCurrentUploadKey('');
     setCurrentUploadMultiple(false);
@@ -261,10 +285,22 @@ export const DocumentVerificationScreen = () => {
   };
 
   const handleStatusChange = (docKey: string, newStatus: string) => {
-    setDocStatus(prev => ({
-      ...prev,
-      [docKey]: { ...prev[docKey], status: newStatus as DocStatusItem['status'] },
-    }));
+    // 🔍 Audit trail — kaun/kab Verified ya Rejected kiya
+    const actor = user?.email ?? user?.name ?? 'Unknown';
+    const now = new Date().toISOString();
+    setDocStatus(prev => {
+      const updated: DocStatusItem = { ...prev[docKey], status: newStatus as DocStatusItem['status'] };
+      if (newStatus === 'Verified') {
+        updated.verifiedBy = actor;
+        updated.verifiedAt = now;
+      } else if (newStatus === 'Rejected') {
+        updated.rejectedBy = actor;
+        updated.rejectedAt = now;
+        const reason = window.prompt('Rejection reason (optional):') ?? '';
+        if (reason.trim()) updated.rejectionReason = reason.trim();
+      }
+      return { ...prev, [docKey]: updated };
+    });
   };
 
   const toggleRequired = (docKey: string) => {

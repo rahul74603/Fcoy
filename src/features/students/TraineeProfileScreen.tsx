@@ -1,6 +1,7 @@
 // src/features/trainee/TraineeProfileScreen.tsx
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Search, UserSquare, Activity, ShieldAlert, Crosshair, Save, Package,
   AlertCircle, CheckCircle2, FileText, User, Shield, Heart, Phone, Award,
@@ -8,14 +9,16 @@ import {
   Users, Camera, Upload, Loader2, Layers, Hash
 } from 'lucide-react';
 import {
-  collection, addDoc, getDocs, query, where, doc, updateDoc,
-  onSnapshot
+  collection, getDocs, query, where, doc, updateDoc,
+  onSnapshot, writeBatch, increment
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
+import { getStorage, ref, uploadString, getDownloadURL, deleteObject } from 'firebase/storage';
 
 import { useTraineeSearch } from '../../hooks/useTraineeSearch';
 import type { TraineeSearchResult } from '../../hooks/useTraineeSearch';
 import { ReportButton } from '../../components/common/ReportButton';
+import { useAuth } from '../../contexts/AuthContext';
 
 type TraineeData = TraineeSearchResult;
 
@@ -32,29 +35,13 @@ const CATEGORIES      = ['General', 'OBC', 'SC', 'ST', 'EWS'];
 const EDUCATION_QUALS = ['10th Pass', '12th Pass', 'Graduation', 'Post Graduation'];
 
 // ═══════════════════════════════════════════════════════════
-// QM CATALOG — Same as InventoryIssueScreen.tsx
-// Ye list QM ke FIXED_TRAINING_ITEMS ke equivalent hai
+// QM CATALOG — centralized master (qmCatalog.ts), SAME list as
+// InventoryIssueScreen. Duplicated hardcoded copies removed.
 // ═══════════════════════════════════════════════════════════
-const QM_FIXED_ITEMS = [
-  { name: 'DM Shoes',     emoji: '👞', category: 'Footwear' },
-  { name: 'PT Shoes',     emoji: '👟', category: 'Footwear' },
-  { name: 'Ankle Shoes',  emoji: '🥾', category: 'Footwear' },
-  { name: 'PT T-Shirt',   emoji: '👕', category: 'Uniform'  },
-  { name: 'Ground Sheet', emoji: '🛏️', category: 'Bedding'  },
-  { name: 'Plate',        emoji: '🍽️', category: 'Mess Item'},
-  { name: 'Glass',        emoji: '🥤', category: 'Mess Item'},
-  { name: 'Bucket',       emoji: '🪣', category: 'Equipment'},
-  { name: 'Mug',          emoji: '☕', category: 'Mess Item'},
-  { name: 'Mess Tin',     emoji: '🥫', category: 'Mess Item'},
-  { name: 'Mosquito Net', emoji: '🦟', category: 'Bedding'  },
-  { name: 'Water Bottle', emoji: '💧', category: 'Equipment'},
-  { name: 'Towel',        emoji: '🧻', category: 'Equipment'},
-  { name: 'Lock',         emoji: '🔒', category: 'Equipment'},
-];
+import { QM_FIXED_ITEMS, normalizeItemName } from '../quartermaster/qmCatalog';
 
 // ── HELPERS ──
-const normalizeName = (v: string) =>
-  (v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+const normalizeName = normalizeItemName;
 
 const isAssetLike = (category?: string, name?: string) => {
   const c = (category || '').toLowerCase();
@@ -109,7 +96,7 @@ interface PhotoUploadProps {
 }
 
 const PhotoUpload: React.FC<PhotoUploadProps> = ({
-  traineeId, traineeName, currentPhotoURL,
+  traineeId, traineeName, currentPhotoURL, currentPhotoPath,
   onUploadComplete, onDeleteComplete, compact = false,
 }) => {
   const fileInputRef              = useRef<HTMLInputElement>(null);
@@ -140,13 +127,31 @@ const PhotoUpload: React.FC<PhotoUploadProps> = ({
       const localURL = URL.createObjectURL(file);
       setPreview(localURL); setProgress(30);
       const base64 = await compressImageToBase64(file);
-      setProgress(60);
+      setProgress(50);
+
+      // 📦 PREFERRED: Firebase Storage (chhota Firestore doc, tez reads).
+      // Fallback: legacy base64-in-Firestore (agar Storage unreachable ho).
+      // Reads backward-compatible hain — purane base64 photos <img src> me
+      // waise hi chalte hain jaise Storage URLs.
+      let savedURL = base64;
+      let savedPath = `base64_${traineeId}`;
+      try {
+        const photoPath = `trainee-photos/${traineeId}/photo.jpg`;
+        const photoRef = ref(getStorage(), photoPath);
+        await uploadString(photoRef, base64, 'data_url');
+        savedURL = await getDownloadURL(photoRef);
+        savedPath = photoPath;
+      } catch (storageErr) {
+        console.warn('Storage photo upload failed — falling back to base64:', storageErr);
+      }
+
+      setProgress(75);
       await updateDoc(doc(db, 'trainees', traineeId), {
-        photoURL: base64, photoPath: `base64_${traineeId}`,
+        photoURL: savedURL, photoPath: savedPath,
         updatedAt: new Date().toISOString(),
       });
-      setProgress(100); setPreview(base64);
-      onUploadComplete(base64, `base64_${traineeId}`);
+      setProgress(100); setPreview(savedURL);
+      onUploadComplete(savedURL, savedPath);
       setSuccess('Photo saved!');
       setTimeout(() => { setSuccess(''); setProgress(0); }, 2000);
     } catch (err: any) {
@@ -162,6 +167,11 @@ const PhotoUpload: React.FC<PhotoUploadProps> = ({
     if (!preview || !window.confirm('Photo delete karna hai?')) return;
     setDeleting(true); setError('');
     try {
+      // Best-effort Storage cleanup (legacy base64_ paths me koi file nahi hoti)
+      if (currentPhotoPath && currentPhotoPath.startsWith('trainee-photos/')) {
+        try { await deleteObject(ref(getStorage(), currentPhotoPath)); }
+        catch { /* file already gone — Firestore cleanup is what matters */ }
+      }
       await updateDoc(doc(db, 'trainees', traineeId), {
         photoURL: '', photoPath: '', updatedAt: new Date().toISOString(),
       });
@@ -319,6 +329,8 @@ interface QMCatalogItem {
 // ═══════════════════════════════════════════════════════════
 export const TraineeProfileScreen = () => {
 
+  const { user } = useAuth();
+
   const {
     trainee:    searchedTrainee,
     traineeId:  searchedTraineeId,
@@ -352,11 +364,14 @@ export const TraineeProfileScreen = () => {
   const getEmptyForm = () => ({
     batchId: activeBatch?.id || '', batchNumber: activeBatch?.batchNumber || '',
     batchName: activeBatch?.batchName || '',
+    // ⚠️ Sensitive personal fields (blood group, religion, category, state)
+    // intentionally start EMPTY — silently prefilled values ("O+", "Hindu",
+    // "General", "Rajasthan") risked saving wrong personal data unnoticed.
     name: '', fatherName: '', motherName: '', dob: '', age: '', gender: 'Male',
-    bloodGroup: 'O+', religion: 'Hindu', category: 'General', maritalStatus: 'Unmarried',
+    bloodGroup: '', religion: '', category: '', maritalStatus: 'Unmarried',
     regNo: '', aadharNo: '', panNo: '', mobileNo: '', emergencyContact: '',
     emergencyContactName: '', relationship: '', village: '', tehsil: '', district: '',
-    state: 'Rajasthan', pinCode: '', education: '12th Pass', boardUniversity: '',
+    state: '', pinCode: '', education: '12th Pass', boardUniversity: '',
     passingYear: '', percentage: '', recruitmentCenter: '', joinDate: '',
     platoon: 'Platoon 1', section: 'Section A', height: '', weight: '', chest: '',
     medStat: 'SHAPE-1', medRemarks: '', chestNo: '', remarks: '-',
@@ -485,6 +500,18 @@ export const TraineeProfileScreen = () => {
     await searchTrainee(searchQuery);
   };
 
+  // Deep-link support: /profile?search=<regNo|chestNo> (Chest Pending list,
+  // Global Search etc. yahan bhejte hain) — auto-search on arrival.
+  const location = useLocation();
+  useEffect(() => {
+    const param = new URLSearchParams(location.search).get('search');
+    if (param && hasBatch) {
+      setSearchQuery(param);
+      searchTrainee(param);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search, hasBatch]);
+
   useEffect(() => {
     if (searchedTrainee) {
       setEditData({ ...searchedTrainee, id: searchedTrainee.id || searchedTraineeId });
@@ -501,33 +528,73 @@ export const TraineeProfileScreen = () => {
     setEditData(prev => ({ ...prev, photoURL: '', photoPath: '' }));
   };
 
+  // ── CHEST NUMBER UNIQUENESS ──
+  // Chest No is intentionally OPTIONAL at registration (assigned after the
+  // trainee physically arrives). But once assigned it is the operational
+  // identity — the same chest number must NEVER belong to two trainees in
+  // the same batch. Returns the conflicting trainee's name or null.
+  const findChestConflict = async (
+    chestNo: string, batchId: string, excludeTraineeId?: string
+  ): Promise<string | null> => {
+    const trimmed = (chestNo || '').trim();
+    if (!trimmed || !batchId) return null;
+    const snap = await getDocs(query(
+      collection(db, 'trainees'),
+      where('batchId', '==', batchId),
+      where('chestNo', '==', trimmed)
+    ));
+    const clash = snap.docs.find(d => d.id !== excludeTraineeId);
+    return clash ? String(clash.data().name ?? clash.id) : null;
+  };
+
   // ── Registration ──
   const handleRegistration = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.batchId) { setFormMessage('ERROR: Pehle ek Batch select karo!'); return; }
     setFormLoading(true); setFormMessage('');
     try {
-      const q  = query(collection(db, 'trainees'), where('regNo', '==', formData.regNo));
+      const regNo = formData.regNo.trim();
+      if (!regNo) {
+        setFormMessage('ERROR: Registration Number required hai!');
+        setFormLoading(false); return;
+      }
+      const q  = query(collection(db, 'trainees'), where('regNo', '==', regNo));
       const qs = await getDocs(q);
       if (!qs.empty) {
         setFormMessage('ERROR: Yeh Registration Number pehle se exist karta hai!');
         setFormLoading(false); return;
       }
-      await addDoc(collection(db, 'trainees'), {
+      // Chest No optional — but if given at registration, must be unique in batch
+      const chestNo = (formData.chestNo || '').trim();
+      if (chestNo) {
+        const conflict = await findChestConflict(chestNo, formData.batchId);
+        if (conflict) {
+          setFormMessage(`ERROR: Chest No "${chestNo}" pehle se "${conflict}" ko assigned hai!`);
+          setFormLoading(false); return;
+        }
+      }
+      // 🔐 ATOMIC — trainee create + batch counter ek saath commit.
+      // (Pehle: addDoc ke baad poora collection re-read karke count update
+      // hota tha — do clerks ek saath register karein to count galat ho
+      // sakta tha, aur beech me fail hone par counter out-of-sync rehta tha.)
+      const wb = writeBatch(db);
+      wb.set(doc(collection(db, 'trainees')), {
         ...formData,
+        regNo,
+        chestNo,
         kitIssued: false, issuedItems: [], issuedKitItems: [],
         attn: 'P', rank: 'RCT', photoURL: '', photoPath: '',
         createdAt: new Date().toISOString(),
+        // 🔍 Chest assignment audit trail (only when assigned at registration)
+        ...(chestNo ? {
+          chestAssignedAt: new Date().toISOString(),
+          chestAssignedBy: user?.email ?? user?.name ?? 'Unknown',
+        } : {}),
       });
-      if (formData.batchId) {
-        try {
-          const batchRef  = doc(db, 'batches', formData.batchId);
-          const batchSnap = await getDocs(
-            query(collection(db, 'trainees'), where('batchId', '==', formData.batchId))
-          );
-          await updateDoc(batchRef, { totalTrainees: batchSnap.size });
-        } catch { /* ignore */ }
-      }
+      wb.update(doc(db, 'batches', formData.batchId), {
+        totalTrainees: increment(1),
+      });
+      await wb.commit();
       setFormMessage('SUCCESS: Rangroot ka registration safaltapurvak ho gaya!');
       setFormSuccess(true);
       setTimeout(() => {
@@ -549,6 +616,21 @@ export const TraineeProfileScreen = () => {
       const { id: _removed, ...dataToSave } = editData;
       if (dataToSave.dob) dataToSave.age = calculateAge(dataToSave.dob);
 
+      // 🔒 Chest assignment control — uniqueness + audit trail.
+      // Assigning (or changing) a chest number checks the whole batch so
+      // two active trainees can never share an operational identity.
+      const newChest = String(dataToSave.chestNo ?? '').trim();
+      const oldChest = String(searchedTrainee?.chestNo ?? '').trim();
+      const chestChanged = newChest !== oldChest;
+      if (chestChanged && newChest) {
+        const batchForCheck = String(dataToSave.batchId ?? searchedTrainee?.batchId ?? '');
+        const conflict = await findChestConflict(newChest, batchForCheck, targetId);
+        if (conflict) {
+          setEditMessage(`ERROR: Chest No "${newChest}" pehle se "${conflict}" ko assigned hai!`);
+          setEditLoading(false); return;
+        }
+      }
+
       const sanitized: Record<string, any> = {};
       Object.keys(dataToSave).forEach(key => {
         const val = (dataToSave as any)[key];
@@ -556,6 +638,14 @@ export const TraineeProfileScreen = () => {
           sanitized[key] = val === null ? null : val;
         }
       });
+
+      if (chestChanged) {
+        sanitized.chestNo = newChest;
+        if (newChest) {
+          sanitized.chestAssignedAt = new Date().toISOString();
+          sanitized.chestAssignedBy = user?.email ?? user?.name ?? 'Unknown';
+        }
+      }
 
       await updateDoc(doc(db, 'trainees', targetId), {
         ...sanitized, updatedAt: new Date().toISOString(),
@@ -864,12 +954,13 @@ export const TraineeProfileScreen = () => {
                       <div><label className={labelCls}>Age (Auto)</label><input readOnly value={formData.age ? `${formData.age} Years` : ''} className={`${inputCls} bg-slate-100 font-bold`} placeholder="DOB select karo" /></div>
                       <div>
                         <label className={labelCls}>Blood Group *</label>
-                        <select value={formData.bloodGroup} onChange={e => setFormData(p => ({ ...p, bloodGroup: e.target.value }))} className={selectCls}>
+                        <select required value={formData.bloodGroup} onChange={e => setFormData(p => ({ ...p, bloodGroup: e.target.value }))} className={selectCls}>
+                          <option value="">— Select —</option>
                           {['O+','O-','A+','A-','B+','B-','AB+','AB-'].map(b => <option key={b}>{b}</option>)}
                         </select>
                       </div>
-                      <div><label className={labelCls}>Religion</label><select value={formData.religion} onChange={e => setFormData(p => ({ ...p, religion: e.target.value }))} className={selectCls}>{RELIGIONS.map(r => <option key={r}>{r}</option>)}</select></div>
-                      <div><label className={labelCls}>Category</label><select value={formData.category} onChange={e => setFormData(p => ({ ...p, category: e.target.value }))} className={selectCls}>{CATEGORIES.map(c => <option key={c}>{c}</option>)}</select></div>
+                      <div><label className={labelCls}>Religion</label><select value={formData.religion} onChange={e => setFormData(p => ({ ...p, religion: e.target.value }))} className={selectCls}><option value="">— Select —</option>{RELIGIONS.map(r => <option key={r}>{r}</option>)}</select></div>
+                      <div><label className={labelCls}>Category</label><select value={formData.category} onChange={e => setFormData(p => ({ ...p, category: e.target.value }))} className={selectCls}><option value="">— Select —</option>{CATEGORIES.map(c => <option key={c}>{c}</option>)}</select></div>
                       <div><label className={labelCls}>Aadhar Number *</label><input required type="text" maxLength={12} value={formData.aadharNo} onChange={e => setFormData(p => ({ ...p, aadharNo: e.target.value.replace(/\D/g,'') }))} className={`${inputCls} font-mono`} placeholder="12 digit" /></div>
                       <div><label className={labelCls}>PAN Number</label><input type="text" maxLength={10} value={formData.panNo} onChange={e => setFormData(p => ({ ...p, panNo: e.target.value.toUpperCase() }))} className={`${inputCls} font-mono`} /></div>
                       <div><label className={labelCls}>Registration Number *</label><input required type="text" value={formData.regNo} onChange={e => setFormData(p => ({ ...p, regNo: e.target.value }))} className={`${inputCls} font-mono font-bold`} /></div>
@@ -894,7 +985,7 @@ export const TraineeProfileScreen = () => {
                       <div className="md:col-span-2"><label className={labelCls}>Village / Mohalla *</label><input required type="text" value={formData.village} onChange={e => setFormData(p => ({ ...p, village: e.target.value }))} className={inputCls} /></div>
                       <div><label className={labelCls}>Tehsil *</label><input required type="text" value={formData.tehsil} onChange={e => setFormData(p => ({ ...p, tehsil: e.target.value }))} className={inputCls} /></div>
                       <div><label className={labelCls}>District *</label><input required type="text" value={formData.district} onChange={e => setFormData(p => ({ ...p, district: e.target.value }))} className={inputCls} /></div>
-                      <div><label className={labelCls}>State *</label><select value={formData.state} onChange={e => setFormData(p => ({ ...p, state: e.target.value }))} className={selectCls}>{STATES_OF_INDIA.map(s => <option key={s}>{s}</option>)}</select></div>
+                      <div><label className={labelCls}>State *</label><select required value={formData.state} onChange={e => setFormData(p => ({ ...p, state: e.target.value }))} className={selectCls}><option value="">— Select —</option>{STATES_OF_INDIA.map(s => <option key={s}>{s}</option>)}</select></div>
                       <div><label className={labelCls}>PIN Code *</label><input required type="text" maxLength={6} value={formData.pinCode} onChange={e => setFormData(p => ({ ...p, pinCode: e.target.value.replace(/\D/g,'') }))} className={`${inputCls} font-mono`} /></div>
                     </div>
                   </div>
@@ -1548,10 +1639,10 @@ export const TraineeProfileScreen = () => {
                 <div><label className={labelCls}>Mother Name</label><input type="text" value={editData?.motherName || ''} onChange={e => setEditData(p => ({ ...p, motherName: e.target.value.toUpperCase() }))} className={inputCls} /></div>
                 <div><label className={labelCls}>DOB</label><input type="date" min={minDob} max={maxDob} value={editData?.dob || ''} onChange={e => setEditData(p => ({ ...p, dob: e.target.value, age: calculateAge(e.target.value) }))} className={inputCls} /></div>
                 <div><label className={labelCls}>Age (Auto)</label><input readOnly value={editData?.age ? `${editData.age} Years` : ''} className={`${inputCls} bg-slate-100 font-bold`} /></div>
-                <div><label className={labelCls}>Blood Group</label><select value={editData?.bloodGroup || 'O+'} onChange={e => setEditData(p => ({ ...p, bloodGroup: e.target.value }))} className={selectCls}>{['O+','O-','A+','A-','B+','B-','AB+','AB-'].map(b => <option key={b}>{b}</option>)}</select></div>
+                <div><label className={labelCls}>Blood Group</label><select value={editData?.bloodGroup || ''} onChange={e => setEditData(p => ({ ...p, bloodGroup: e.target.value }))} className={selectCls}><option value="">— Select —</option>{['O+','O-','A+','A-','B+','B-','AB+','AB-'].map(b => <option key={b}>{b}</option>)}</select></div>
                 <div><label className={labelCls}>Gender</label><select value={editData?.gender || 'Male'} onChange={e => setEditData(p => ({ ...p, gender: e.target.value }))} className={selectCls}><option>Male</option><option>Female</option></select></div>
-                <div><label className={labelCls}>Religion</label><select value={editData?.religion || 'Hindu'} onChange={e => setEditData(p => ({ ...p, religion: e.target.value }))} className={selectCls}>{RELIGIONS.map(r => <option key={r}>{r}</option>)}</select></div>
-                <div><label className={labelCls}>Category</label><select value={editData?.category || 'General'} onChange={e => setEditData(p => ({ ...p, category: e.target.value }))} className={selectCls}>{CATEGORIES.map(c => <option key={c}>{c}</option>)}</select></div>
+                <div><label className={labelCls}>Religion</label><select value={editData?.religion || ''} onChange={e => setEditData(p => ({ ...p, religion: e.target.value }))} className={selectCls}><option value="">— Select —</option>{RELIGIONS.map(r => <option key={r}>{r}</option>)}</select></div>
+                <div><label className={labelCls}>Category</label><select value={editData?.category || ''} onChange={e => setEditData(p => ({ ...p, category: e.target.value }))} className={selectCls}><option value="">— Select —</option>{CATEGORIES.map(c => <option key={c}>{c}</option>)}</select></div>
 
                 {/* Contact */}
                 <div className="md:col-span-3 pt-1 pb-1 border-b border-slate-200">
@@ -1560,7 +1651,7 @@ export const TraineeProfileScreen = () => {
                 <div><label className={labelCls}>Mobile</label><input type="tel" maxLength={10} value={editData?.mobileNo || ''} onChange={e => setEditData(p => ({ ...p, mobileNo: e.target.value.replace(/\D/g,'') }))} className={`${inputCls} font-mono`} /></div>
                 <div><label className={labelCls}>Emergency</label><input type="tel" maxLength={10} value={editData?.emergencyContact || ''} onChange={e => setEditData(p => ({ ...p, emergencyContact: e.target.value.replace(/\D/g,'') }))} className={`${inputCls} font-mono`} /></div>
                 <div><label className={labelCls}>District</label><input type="text" value={editData?.district || ''} onChange={e => setEditData(p => ({ ...p, district: e.target.value }))} className={inputCls} /></div>
-                <div><label className={labelCls}>State</label><select value={editData?.state || 'Rajasthan'} onChange={e => setEditData(p => ({ ...p, state: e.target.value }))} className={selectCls}>{STATES_OF_INDIA.map(s => <option key={s}>{s}</option>)}</select></div>
+                <div><label className={labelCls}>State</label><select value={editData?.state || ''} onChange={e => setEditData(p => ({ ...p, state: e.target.value }))} className={selectCls}><option value="">— Select —</option>{STATES_OF_INDIA.map(s => <option key={s}>{s}</option>)}</select></div>
 
                 {/* Training & Physical */}
                 <div className="md:col-span-3 pt-1 pb-1 border-b border-slate-200">

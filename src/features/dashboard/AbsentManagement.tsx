@@ -158,7 +158,8 @@ export const AbsentManagement: React.FC = () => {
           fromDate: data.date ?? '',
           toDate: data.date ?? '',
           totalDays: Number(data.recommendedDays ?? 1),
-          status: data.status === 'Fit / Discharged' ? 'Returned' : 'Active',
+          // 'Void / Corrected' medical records active absence nahi hain
+          status: data.status === 'Fit / Discharged' || data.status === 'Void / Corrected' ? 'Returned' : 'Active',
           remarks: data.remarks ?? data.wardNo ?? '',
           createdAt: data.createdAt ?? data.date ?? '',
         });
@@ -258,12 +259,20 @@ export const AbsentManagement: React.FC = () => {
   };
 
   // ── Delete ──
+  // ⚠️ Medical history kabhi bhi physically delete NAHI hoti — galat entry
+  // 'Void / Corrected' mark hoti hai (Medical Register isse hide/strike karta hai).
+  // Sirf plain absent/leave rows (non-medical) delete ho sakti hain.
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Delete karna hai?')) return;
     try {
       if (id.startsWith('medical_')) {
-        await deleteDoc(doc(db, 'medicalRecords', id.replace('medical_', '')));
+        if (!window.confirm('Ye MEDICAL record hai — delete ke bajaye VOID (corrected) mark hoga. Continue?')) return;
+        await updateDoc(doc(db, 'medicalRecords', id.replace('medical_', '')), {
+          status: 'Void / Corrected',
+          voidedAt: new Date().toISOString(),
+          voidReason: 'Voided from Daily Tracking',
+        });
       } else {
+        if (!window.confirm('Delete karna hai?')) return;
         await deleteDoc(doc(db, 'absentRecords', id));
       }
       fetchData();

@@ -15,8 +15,11 @@ const access: Record<string, { name: string; path: string }[]> = {
   'Quarter Master': [
     { name: 'trainees', path: '/issue-kit' }, { name: 'company_assets_expenses', path: '/company-assets-fund' }, { name: 'training_fund_expenses', path: '/training-fund' }, { name: 'mess_fund_expenses', path: '/mess-fund' }, { name: 'general_fund_expenses', path: '/general-fund' }, { name: 'vendor_entries', path: '/vendors' }, { name: 'issue_records', path: '/issue-kit' }, { name: 'batches', path: '/batches' },
   ],
-  Clerk: [{ name: 'trainees', path: '/profile' }, { name: 'staff', path: '/staff' }, { name: 'batches', path: '/batches' }, { name: 'subject_master', path: '/subjects' }, { name: 'staff_subjects', path: '/subject-assignment' }, { name: 'attendance', path: '/staff-attendance' }, { name: 'absent_records', path: '/absent-management' }],
-  Ustad: [{ name: 'trainees', path: '/ustad' }, { name: 'staff', path: '/staff' }, { name: 'subject_master', path: '/subjects' }, { name: 'staff_subjects', path: '/subject-assignment' }, { name: 'attendance', path: '/staff-attendance' }, { name: 'test_records', path: '/test-records' }, { name: 'training_schedules', path: '/training-schedule' }],
+  // NOTE: collection names must match real Firestore collections —
+  // pehle yahan 'attendance'/'absent_records'/'test_records' jaise galat naam
+  // the jo kabhi kuch return nahi karte the.
+  Clerk: [{ name: 'trainees', path: '/profile' }, { name: 'staff', path: '/staff' }, { name: 'batches', path: '/batches' }, { name: 'subject_master', path: '/subjects' }, { name: 'staff_subjects', path: '/subject-assignment' }, { name: 'staff_attendance', path: '/staff-attendance' }, { name: 'absentRecords', path: '/absent-management' }],
+  Ustad: [{ name: 'trainees', path: '/ustad' }, { name: 'staff', path: '/staff' }, { name: 'subject_master', path: '/subjects' }, { name: 'staff_subjects', path: '/subject-assignment' }, { name: 'staff_attendance', path: '/staff-attendance' }, { name: 'training_tests', path: '/test-records' }, { name: 'training_schedule', path: '/training-schedule' }],
 };
 const stringify = (v: any) => typeof v === 'string' || typeof v === 'number' ? String(v) : '';
 
@@ -34,8 +37,11 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ className = '' }) =>
       try {
         const allowed = access[user?.role || ''] || [];
         const found: Result[] = [];
+        // Per-source failure fatal nahi — ek collection permission-denied ho
+        // to baaki results phir bhi aane chahiye (Promise.all reject nahi hoga).
         await Promise.all(allowed.map(async source => {
-          const snap = await getDocs(collection(db, source.name));
+          const snap = await getDocs(collection(db, source.name)).catch(() => null);
+          if (!snap) return;
           snap.docs.forEach(d => { const data = d.data(); if (!showDoc(data) || !batchScopeRule(data)) return; /* 🧪 dev data + ⛓️ batch rule */ const text = Object.values(data).map(stringify).join(' ').toLowerCase(); if (text.includes(term)) { const title = stringify(data.name || data.itemName || data.traineeName || data.vendorName || data.subjectName || data.batchNumber || d.id); const detail = [data.chestNo, data.email, data.code, data.category, data.amount != null ? `₹${data.amount}` : '', data.quantity != null ? `Qty ${data.quantity}` : ''].filter(Boolean).join(' · '); found.push({ id: d.id, title: title || d.id, detail, collection: source.name, path: source.path }); } });
         }));
         setResults(found.slice(0, 30));

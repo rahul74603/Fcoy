@@ -1,0 +1,64 @@
+rules_version = '2';
+
+// ═══════════════════════════════════════════════════════════════
+// F COY ERP — FIREBASE STORAGE RULES
+//
+// The bucket stores sensitive trainee documents (Aadhaar, PAN,
+// medical, police verification, bank, photos) under:
+//   documents/{regNo}/{fileName}
+//
+// Access is role-based using the trusted Firestore users/{uid}
+// profile — the same trust anchor as firestore.rules.
+// Nothing in this bucket is publicly readable.
+// ═══════════════════════════════════════════════════════════════
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function signedIn() { return request.auth != null; }
+
+    function profile() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+    function isActiveUser() {
+      return signedIn()
+        && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+        && profile().isActive != false;
+    }
+    function isCC() {
+      return isActiveUser()
+        && profile().role in ['Company Commander', 'CC', 'cc', 'Commander', 'commander', 'company commander'];
+    }
+    function isClerk() {
+      return isActiveUser() && profile().role in ['Clerk', 'clerk'];
+    }
+    function isDev() { return isActiveUser() && profile().isDeveloper == true; }
+
+    // Document verification is a Clerk/Commander workflow
+    function docAdmin() { return isCC() || isClerk() || isDev(); }
+
+    // ── Trainee verification documents ──
+    match /documents/{regNo}/{fileName} {
+      allow read: if docAdmin();
+      allow write: if docAdmin()
+        // uploads are size- and type-limited (mirror of the UI limits)
+        && request.resource.size < 5 * 1024 * 1024
+        && (request.resource.contentType.matches('image/.*')
+            || request.resource.contentType == 'application/pdf');
+      allow delete: if docAdmin();
+    }
+
+    // ── Trainee photos ──
+    match /trainee-photos/{traineeId}/{fileName} {
+      allow read: if isActiveUser(); // staff dashboards show trainee photos
+      allow write: if docAdmin()
+        && request.resource.size < 3 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if docAdmin();
+    }
+
+    // ── Everything else: Commander only ──
+    match /{allPaths=**} {
+      allow read, write: if isCC() || isDev();
+    }
+  }
+}

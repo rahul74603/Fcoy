@@ -6,9 +6,10 @@ import {
   AlertCircle, Layers, CheckCircle2, X, Loader2, Activity,
   Stethoscope, BedDouble
 } from 'lucide-react';
-import { collection, addDoc, getDocs, getDoc, updateDoc, deleteDoc, doc, query, where, orderBy } from 'firebase/firestore';
+import { collection, getDocs, getDoc, updateDoc, doc, query, where, orderBy, writeBatch } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { useBatch } from '../../contexts/BatchContext';
+import { useAuth } from '../../contexts/AuthContext';
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -28,7 +29,7 @@ interface MedicalRecord {
   wardNo?: string;
   recommendedDays?: number;
   remarks: string;
-  status: 'Active' | 'Fit / Discharged';
+  status: 'Active' | 'Fit / Discharged' | 'Void / Corrected';
 }
 
 const CATEGORIES = ['Sick Report', 'Hospital Admit', 'B-Rest', 'C-Rest', 'Medical Board'];
@@ -61,6 +62,7 @@ const categoryToMedStat = (category: MedicalRecord['category']): string => {
 // ═══════════════════════════════════════════════════════════
 export const MedicalRegisterScreen = () => {
   const { activeBatch } = useBatch();
+  const { user } = useAuth();
   const hasBatch = !!activeBatch;
 
   const [records, setRecords] = useState<MedicalRecord[]>([]);
@@ -154,13 +156,21 @@ export const MedicalRegisterScreen = () => {
     setSaving(true);
     setMessage('');
     try {
-      await addDoc(collection(db, 'medicalRecords'), { ...form, batchId: activeBatch.id });
-      await updateDoc(doc(db, 'trainees', form.traineeId), {
+      // 🔐 ATOMIC — medical record + trainee status ek saath commit
+      const wb = writeBatch(db);
+      wb.set(doc(collection(db, 'medicalRecords')), {
+        ...form,
+        batchId: activeBatch.id,
+        createdAt: new Date().toISOString(),
+        createdBy: user?.email ?? user?.name ?? 'Unknown',
+      });
+      wb.update(doc(db, 'trainees', form.traineeId), {
         attn: categoryToAttendance(form.category),
         medStat: categoryToMedStat(form.category),
         medicalStatus: form.category,
         lastMedicalUpdate: new Date().toISOString(),
       });
+      await wb.commit();
       setMessage('SUCCESS: Medical record save ho gaya aur trainee status sync ho gaya!');
       setShowForm(false);
       setForm(getEmptyForm());
@@ -209,17 +219,33 @@ export const MedicalRegisterScreen = () => {
     }
   };
 
-  const deleteRecord = async (id: string) => {
-    if (!window.confirm("Kya aap sure hain?")) return;
+  // ── Void (Correct) Record ──
+  // ⚠️ MEDICAL HISTORY IS NEVER PHYSICALLY DELETED. Galat entry ko
+  // 'Void / Corrected' mark kiya jata hai — audit trail ke saath.
+  // Purana destructive deleteDoc() flow history hamesha ke liye uda deta tha.
+  const voidRecord = async (id: string) => {
+    const reason = window.prompt(
+      'Ye medical record VOID (galat entry / correction) mark hoga — history delete NAHI hogi.\n\nVoid karne ka reason likho:'
+    );
+    if (reason === null) return; // cancelled
     try {
       const currentRecord = records.find(r => r.id === id);
       let record: MedicalRecord | null = currentRecord ?? null;
+      const audit = {
+        voidedAt: new Date().toISOString(),
+        voidedBy: user?.email ?? user?.name ?? 'Unknown',
+        voidReason: reason.trim() || 'Not specified',
+      };
       if (currentRecord?.source === 'absent' && currentRecord.linkedAbsentId) {
-        await deleteDoc(doc(db, 'absentRecords', currentRecord.linkedAbsentId));
+        await updateDoc(doc(db, 'absentRecords', currentRecord.linkedAbsentId), {
+          status: 'Returned', ...audit,
+        });
       } else {
         const recordSnap = await getDoc(doc(db, 'medicalRecords', id));
         record = recordSnap.exists() ? ({ id, ...recordSnap.data() } as MedicalRecord) : null;
-        await deleteDoc(doc(db, 'medicalRecords', id));
+        await updateDoc(doc(db, 'medicalRecords', id), {
+          status: 'Void / Corrected', ...audit,
+        });
       }
 
       if (record?.traineeId && record.status === 'Active') {
@@ -241,7 +267,7 @@ export const MedicalRegisterScreen = () => {
         }
       }
       fetchData();
-    } catch { alert('Delete failed'); }
+    } catch { alert('Void failed'); }
   };
 
   // ── Stats ──
@@ -392,9 +418,11 @@ export const MedicalRegisterScreen = () => {
                         </p>
                       </td>
                       <td className="px-3 py-2">
-                        {r.status === 'Active' 
+                        {r.status === 'Active'
                           ? <span className="text-[9px] font-bold text-red-600 bg-red-50 px-2 py-1 rounded">● Active Case</span>
-                          : <span className="text-[9px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded">✓ Fit</span>}
+                          : r.status === 'Void / Corrected'
+                            ? <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded line-through">✕ Void</span>
+                            : <span className="text-[9px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded">✓ Fit</span>}
                       </td>
                       <td className="px-3 py-2 flex gap-2">
                         {r.status === 'Active' && (
@@ -402,7 +430,9 @@ export const MedicalRegisterScreen = () => {
                             Mark Fit
                           </button>
                         )}
-                        <button onClick={() => r.id && deleteRecord(r.id)} className="text-red-400 hover:text-red-600"><Trash2 size={14}/></button>
+                        {r.status !== 'Void / Corrected' && (
+                          <button title="Void / Correct entry (history preserved)" onClick={() => r.id && voidRecord(r.id)} className="text-red-400 hover:text-red-600"><Trash2 size={14}/></button>
+                        )}
                       </td>
                     </tr>
                   ))}
