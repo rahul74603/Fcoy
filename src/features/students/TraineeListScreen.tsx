@@ -31,6 +31,9 @@ import {
 import { db } from '../../config/firebase';
 import { useBatch } from '../../contexts/BatchContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { useUnitConfig } from '../../contexts/UnitConfigContext';
+import { printTraineeFullReport } from './traineeFullReport';
+import { FileText } from 'lucide-react';
 
 interface TraineeRow {
   id: string;
@@ -159,6 +162,24 @@ export const TraineeListScreen: React.FC = () => {
     navigate(`/profile?search=${encodeURIComponent(key)}`);
   };
 
+  // 📄 Row se hi FULL DOSSIER report (personal + saare events)
+  const { unitConfig } = useUnitConfig();
+  const [reportBusyId, setReportBusyId] = useState('');
+  const handleRowReport = async (r: TraineeRow) => {
+    setReportBusyId(r.id);
+    try {
+      await printTraineeFullReport(r, {
+        unitLine: `${unitConfig.companyShort || 'F COY'} — ${unitConfig.parentUnit || 'BSF TRAINING CENTER'}`,
+        preparedBy: user?.name || user?.email || 'System',
+      });
+    } catch (err) {
+      console.error('Row report error:', err);
+      alert('Report generate nahi hui — dobara try karein.');
+    } finally {
+      setReportBusyId('');
+    }
+  };
+
   // ═══════════ RENDER ═══════════
   return (
     <div className="w-full flex flex-col space-y-4 pb-8">
@@ -277,6 +298,7 @@ export const TraineeListScreen: React.FC = () => {
                 <thead className="bg-slate-50 border-b-2 border-military-800 sticky top-0">
                   <tr>
                     <th className="px-3 py-2.5 text-[10px] font-black text-slate-500 uppercase">#</th>
+                    <th className="px-3 py-2.5 text-[10px] font-black text-slate-500 uppercase">Photo</th>
                     <th className="px-3 py-2.5 text-[10px] font-black text-slate-500 uppercase">Chest No</th>
                     <th className="px-3 py-2.5 text-[10px] font-black text-slate-500 uppercase">Name / Father</th>
                     <th className="px-3 py-2.5 text-[10px] font-black text-slate-500 uppercase">Reg No</th>
@@ -293,6 +315,18 @@ export const TraineeListScreen: React.FC = () => {
                     return (
                       <tr key={r.id} className={`border-b border-slate-100 hover:bg-slate-50 ${!hasChest ? 'bg-indigo-50/40' : ''}`}>
                         <td className="px-3 py-2 text-[10px] text-slate-400 font-bold">{i + 1}</td>
+
+                        {/* PHOTO — Storage URL ya legacy base64 dono chalte hain */}
+                        <td className="px-3 py-1.5">
+                          {r.photoURL ? (
+                            <img src={r.photoURL} alt={r.name || 'photo'}
+                              className="w-9 h-11 object-cover object-top border border-slate-300 bg-slate-100" />
+                          ) : (
+                            <div className="w-9 h-11 border border-dashed border-slate-300 bg-slate-50 flex items-center justify-center">
+                              <UserSquare size={14} className="text-slate-300" />
+                            </div>
+                          )}
+                        </td>
 
                         {/* CHEST — assigned to number, pending to assign UI */}
                         <td className="px-3 py-2">
@@ -340,10 +374,18 @@ export const TraineeListScreen: React.FC = () => {
                             : <span className="text-[9px] font-black text-amber-600">PENDING</span>}
                         </td>
                         <td className="px-3 py-2 text-right">
-                          <button onClick={() => openProfile(r)}
-                            className="bg-military-800 text-white px-3 py-1.5 text-[9px] font-black uppercase hover:bg-military-900 inline-flex items-center gap-1.5">
-                            Profile <ArrowRight size={10} />
-                          </button>
+                          <div className="inline-flex items-center gap-1.5">
+                            <button onClick={() => handleRowReport(r)}
+                              disabled={reportBusyId === r.id}
+                              title="Full dossier report — personal + kit + medical + tests + documents sab"
+                              className="bg-slate-100 text-military-800 border border-slate-300 px-2.5 py-1.5 text-[9px] font-black uppercase hover:bg-slate-200 inline-flex items-center gap-1 disabled:opacity-50">
+                              {reportBusyId === r.id ? <Loader2 size={10} className="animate-spin" /> : <FileText size={10} />} Report
+                            </button>
+                            <button onClick={() => openProfile(r)}
+                              className="bg-military-800 text-white px-3 py-1.5 text-[9px] font-black uppercase hover:bg-military-900 inline-flex items-center gap-1.5">
+                              Profile <ArrowRight size={10} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );

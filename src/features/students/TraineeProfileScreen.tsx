@@ -19,6 +19,8 @@ import { useTraineeSearch } from '../../hooks/useTraineeSearch';
 import type { TraineeSearchResult } from '../../hooks/useTraineeSearch';
 import { ReportButton } from '../../components/common/ReportButton';
 import { useAuth } from '../../contexts/AuthContext';
+import { useUnitConfig } from '../../contexts/UnitConfigContext';
+import { printTraineeFullReport } from './traineeFullReport';
 
 type TraineeData = TraineeSearchResult;
 
@@ -330,6 +332,8 @@ interface QMCatalogItem {
 export const TraineeProfileScreen = () => {
 
   const { user } = useAuth();
+  const { unitConfig } = useUnitConfig();
+  const [reportBusy, setReportBusy] = useState(false);
 
   const {
     trainee:    searchedTrainee,
@@ -342,6 +346,26 @@ export const TraineeProfileScreen = () => {
     searchTrainee,
     setTrainee:   setSearchedTrainee,
   } = useTraineeSearch();
+
+  // 📄 FULL DOSSIER — personal + saare events ki printable report
+  const handleFullReport = async () => {
+    if (!searchedTrainee) return;
+    setReportBusy(true);
+    try {
+      await printTraineeFullReport(
+        { ...searchedTrainee, id: searchedTrainee.id || searchedTraineeId },
+        {
+          unitLine: `${unitConfig.companyShort || 'F COY'} — ${unitConfig.parentUnit || 'BSF TRAINING CENTER'}`,
+          preparedBy: user?.name || user?.email || 'System',
+        },
+      );
+    } catch (err) {
+      console.error('Full report error:', err);
+      alert('Report generate nahi hui — dobara try karein.');
+    } finally {
+      setReportBusy(false);
+    }
+  };
 
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -1123,11 +1147,20 @@ export const TraineeProfileScreen = () => {
                     </div>
                   </div>
                 </div>
-                <button
-                  onClick={() => { setEditData({ ...searchedTrainee, id: searchedTrainee.id || searchedTraineeId }); setShowEditModal(true); }}
-                  className="flex-shrink-0 bg-yellow-500 text-black px-3 py-1.5 text-[10px] font-bold uppercase hover:bg-yellow-400 flex items-center gap-1">
-                  <Edit3 size={12} /> Edit Profile
-                </button>
+                <div className="flex-shrink-0 flex flex-col gap-1.5">
+                  <button
+                    onClick={() => { setEditData({ ...searchedTrainee, id: searchedTrainee.id || searchedTraineeId }); setShowEditModal(true); }}
+                    className="bg-yellow-500 text-black px-3 py-1.5 text-[10px] font-bold uppercase hover:bg-yellow-400 flex items-center gap-1">
+                    <Edit3 size={12} /> Edit Profile
+                  </button>
+                  <button
+                    onClick={handleFullReport}
+                    disabled={reportBusy}
+                    title="Personal + Kit + Medical + Absent + Tests + Recovery + Documents — sab ek report me (Print → Save as PDF)"
+                    className="bg-white text-military-900 px-3 py-1.5 text-[10px] font-black uppercase hover:bg-slate-100 flex items-center gap-1 disabled:opacity-60">
+                    {reportBusy ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />} Full Report
+                  </button>
+                </div>
               </div>
             </div>
 
