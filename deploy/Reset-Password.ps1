@@ -35,7 +35,13 @@ Write-Host ""
 $tok = (gcloud auth print-access-token 2>$null | Select-Object -First 1)
 if (-not $tok) { throw "[X] gcloud token nahi mila - pehle 'gcloud auth login' chalao (Firebase owner Google account se)." }
 $tok = "$tok".Trim()
-$headers = @{ Authorization = "Bearer $tok"; 'Content-Type' = 'application/json' }
+# x-goog-user-project ZAROORI hai - warna gcloud ka default project alag
+# hone par Google 403 Forbidden deta hai (quota project mismatch).
+$headers = @{
+  Authorization        = "Bearer $tok"
+  'Content-Type'       = 'application/json'
+  'x-goog-user-project' = $ProjectId
+}
 $base = "https://identitytoolkit.googleapis.com/v1/projects/$ProjectId"
 
 # -- 2. Email se UID dhoondo --
