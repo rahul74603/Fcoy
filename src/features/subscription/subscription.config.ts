@@ -23,5 +23,26 @@
 //   • Sirf 'subscription/current' ka read-only listener lagega
 // ─────────────────────────────────────────────
 
-export const SUBSCRIPTION_ENABLED: boolean =
+// ─────────────────────────────────────────────
+// 👑 MASTER vs COMPANY — OWNER KA KANUN:
+//
+//   MASTER APP  (VITE_SUBSCRIPTION_ENABLED=true — sirf F Coy/tumhari app):
+//     • Owner Admin Panel / Customers / Sync / Company Monitor = ON
+//     • LOCK/GATE/BANNER = KABHI NAHI — master pe CC/QM/Clerk/Ustad
+//       koi bhi account kholo, app HAMESHA free chalegi.
+//
+//   COMPANY APPS (flag unset/false — A Coy, B Coy...):
+//     • Owner admin tools = OFF (wo master ki cheez hai)
+//     • SUBSCRIPTION LOCK = ON — active plan hai to app chalegi,
+//       nahi/expire to FULL LOCK. Renew master se sync hota hai.
+// ─────────────────────────────────────────────
+
+/** Ye deployment MASTER app hai? (env flag sirf master ki build me true hota hai) */
+export const IS_MASTER_APP: boolean =
   import.meta.env.VITE_SUBSCRIPTION_ENABLED === 'true';
+
+/** Owner admin tools (subscription screen, customers, monitor) — sirf MASTER */
+export const SUBSCRIPTION_ENABLED: boolean = IS_MASTER_APP;
+
+/** Hard lock/gate/banner enforcement — sirf COMPANY apps (master kabhi lock nahi) */
+export const SUBSCRIPTION_LOCK_ENABLED: boolean = !IS_MASTER_APP;

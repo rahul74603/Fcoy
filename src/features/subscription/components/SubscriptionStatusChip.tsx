@@ -1,6 +1,6 @@
-// 💳 SUBSCRIPTION / LICENSE STATUS CHIP — top bar pe HAMESHA dikhta hai
-// Master me subscription enforcement chalta hai. Company apps me gate/banner
-// OFF rehte hain, lekin synced plan ka read-only status aur days-left dikhta hai.
+// 💳 SUBSCRIPTION / LICENSE STATUS CHIP
+// 👑 MASTER APP: chip nahi dikhta (owner ki apni app — koi subscription nahi).
+// COMPANY APPS: synced plan ka status + days-left dikhta hai, lock enforcement ON.
 //   ✅ ACTIVE (green)      - plan chal raha, X din bache
 //   ⚠️ EXPIRING (amber)    - 7 din se kam bache
 //   🔒 EXPIRED (red)       - app LOCKED
@@ -10,13 +10,17 @@ import React from 'react';
 import { BadgeCheck, AlertTriangle, Lock, FlaskConical } from 'lucide-react';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useSubscription } from '../../../contexts/SubscriptionContext';
-import { SUBSCRIPTION_ENABLED } from '../subscription.config';
+import { IS_MASTER_APP, SUBSCRIPTION_LOCK_ENABLED } from '../subscription.config';
 
 const SubscriptionStatusChip: React.FC = () => {
   const { user } = useAuth();
   const { state, subscription, loading } = useSubscription();
 
   if (!user) return null;
+
+  // 👑 Master app = owner ki apni app — koi subscription chip/lock nahi
+  // (Dev chip neeche alag hai — wo dikhta rahega)
+  if (IS_MASTER_APP && !user.isDeveloper) return null;
 
   // 🧪 Dev sandbox — testing account, sub-free
   if (user.isDeveloper) {
@@ -42,7 +46,7 @@ const SubscriptionStatusChip: React.FC = () => {
     none: {
       cls: 'bg-red-100 border-red-400 text-red-800',
       icon: <Lock size={12} />,
-      text: SUBSCRIPTION_ENABLED ? 'NO PLAN · LOCKED' : 'NO PLAN · NOT SYNCED',
+      text: SUBSCRIPTION_LOCK_ENABLED ? 'NO PLAN · LOCKED' : 'NO PLAN · NOT SYNCED',
     },
     active: {
       cls: 'bg-green-100 border-green-400 text-green-800',
@@ -57,7 +61,7 @@ const SubscriptionStatusChip: React.FC = () => {
     expired: {
       cls: 'bg-red-600 border-red-700 text-white',
       icon: <Lock size={12} />,
-      text: SUBSCRIPTION_ENABLED ? 'EXPIRED · LOCKED' : 'EXPIRED · RENEW',
+      text: SUBSCRIPTION_LOCK_ENABLED ? 'EXPIRED · LOCKED' : 'EXPIRED · RENEW',
     },
   };
 
@@ -68,7 +72,7 @@ const SubscriptionStatusChip: React.FC = () => {
   return (
     <div
       className={`flex items-center gap-1.5 px-2.5 py-1 rounded border-2 print:hidden ${c.cls}`}
-      title={`${planInfo}End date: ${endOn}${state.status === 'none' || state.status === 'expired' ? (SUBSCRIPTION_ENABLED ? ' — app locked (owner key se renew)' : ' — owner se plan sync/renew karayein') : ''}`}
+      title={`${planInfo}End date: ${endOn}${state.status === 'none' || state.status === 'expired' ? (SUBSCRIPTION_LOCK_ENABLED ? ' — app locked (owner key se renew)' : ' — owner se plan sync/renew karayein') : ''}`}
     >
       {(pulse || state.status === 'expired') && (
         <span className="relative flex h-2 w-2">

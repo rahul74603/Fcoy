@@ -16,7 +16,7 @@ import { useAuth } from '../../../contexts/AuthContext';
 import { useSubscription } from '../../../contexts/SubscriptionContext';
 import { useUnitConfig } from '../../../contexts/UnitConfigContext';
 import OwnerRenewPanel from './OwnerRenewPanel';
-import { SUBSCRIPTION_ENABLED } from '../subscription.config';
+import { SUBSCRIPTION_LOCK_ENABLED } from '../subscription.config';
 
 // Owner ka contact — lock screen pe dikhta hai (yahin se badal sakte ho)
 const OWNER_CONTACT = {
@@ -29,8 +29,9 @@ const SubscriptionGate: React.FC<{ children: React.ReactNode }> = ({ children })
   const { state, subscription, loading } = useSubscription();
   const { unitConfig } = useUnitConfig();
 
-  // 🚩 Is deployment me subscription system hi band hai (company apps) — koi lock nahi
-  if (!SUBSCRIPTION_ENABLED) return <>{children}</>;
+  // 👑 MASTER APP = owner ki apni app — YAHAN KABHI LOCK NAHI
+  // (CC/QM/Clerk/Ustad koi bhi account ho). Lock sirf COMPANY apps me.
+  if (!SUBSCRIPTION_LOCK_ENABLED) return <>{children}</>;
 
   // 🧪 Dev sandbox kabhi lock nahi hota
   if (!user || user.isDeveloper) return <>{children}</>;

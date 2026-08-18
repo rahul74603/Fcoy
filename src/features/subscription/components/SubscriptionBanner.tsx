@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { XCircle, Crown, Clock } from 'lucide-react';
 import { useSubscription } from '../../../contexts/SubscriptionContext';
 import { useAuth } from '../../../contexts/AuthContext';
-import { SUBSCRIPTION_ENABLED } from '../subscription.config';
+import { SUBSCRIPTION_LOCK_ENABLED } from '../subscription.config';
 import { formatDate } from '../types/subscription.types';
 
 // ─────────────────────────────────────────────
@@ -18,8 +18,8 @@ export const SubscriptionBanner: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  // 🚩 Is deployment me subscription system hi band hai (company apps)
-  if (!SUBSCRIPTION_ENABLED) return null;
+  // 👑 Master app pe koi subscription warning/banner nahi — sirf company apps me
+  if (!SUBSCRIPTION_LOCK_ENABLED) return null;
   if (loading || !user) return null;
   if (user.isDeveloper) return null; // 🔒 Dev sandbox — subscription sirf customers ki cheez hai
   if (state.status === 'active') return null; // sab theek — kuch mat dikhao
