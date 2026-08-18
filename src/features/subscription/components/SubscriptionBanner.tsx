@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, XCircle, Crown, Clock } from 'lucide-react';
+import { XCircle, Crown, Clock } from 'lucide-react';
 import { useSubscription } from '../../../contexts/SubscriptionContext';
 import { useAuth } from '../../../contexts/AuthContext';
 import { SUBSCRIPTION_ENABLED } from '../subscription.config';
@@ -10,7 +10,7 @@ import { formatDate } from '../types/subscription.types';
 
 // ─────────────────────────────────────────────
 // Slim banner jo har screen ke upar dikhta hai
-// jab subscription expiring / grace / expired ho.
+// jab subscription expiring / expired ho. (NO GRACE — expired = locked)
 // Company Commander ko manage button bhi milta hai.
 // ─────────────────────────────────────────────
 export const SubscriptionBanner: React.FC = () => {
@@ -55,22 +55,7 @@ export const SubscriptionBanner: React.FC = () => {
     );
   }
 
-  // ── GRACE PERIOD ──
-  if (state.status === 'grace') {
-    return (
-      <div className="bg-orange-600 border-b border-orange-700 text-white px-4 py-1.5 flex items-center justify-center gap-2 text-[11px] font-bold">
-        <AlertTriangle size={13} className="flex-shrink-0" />
-        <span>
-          ⚠ Subscription EXPIRE ho chuka hai — Grace Period: sirf{' '}
-          <strong>{state.graceDaysLeft} din</strong> bache. Abhi renew karein,
-          warna system READ-ONLY ho jayega.
-        </span>
-        <ManageBtn dark />
-      </div>
-    );
-  }
-
-  // ── EXPIRED ──
+  // ── EXPIRED ── (⚠️ NO GRACE — endDate ke baad seedha lock)
   if (state.status === 'expired') {
     return (
       <div className="bg-red-700 border-b border-red-800 text-white px-4 py-1.5 flex items-center justify-center gap-2 text-[11px] font-bold">

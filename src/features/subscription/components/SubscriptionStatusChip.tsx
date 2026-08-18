@@ -3,7 +3,6 @@
 // OFF rehte hain, lekin synced plan ka read-only status aur days-left dikhta hai.
 //   ✅ ACTIVE (green)      - plan chal raha, X din bache
 //   ⚠️ EXPIRING (amber)    - 7 din se kam bache
-//   🔴 GRACE (orange)      - plan khatam, grace ke X din bache
 //   🔒 EXPIRED (red)       - app LOCKED
 //   🔒 NO PLAN (red)       - kabhi plan bana hi nahi -> app LOCKED
 //   🧪 DEV (gray)          - testing account (subscription-free)
@@ -34,7 +33,7 @@ const SubscriptionStatusChip: React.FC = () => {
     return <div className="w-20 h-6 bg-slate-200 animate-pulse rounded print:hidden" />;
   }
 
-  const days = state.status === 'grace' ? state.graceDaysLeft : state.daysLeft;
+  const days = state.daysLeft;
   const endOn = subscription?.endDate
     ? new Date(subscription.endDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
     : '—';
@@ -55,13 +54,6 @@ const SubscriptionStatusChip: React.FC = () => {
       icon: <AlertTriangle size={12} />,
       text: `${days} DIN BACHE · RENEW!`,
     },
-    grace: {
-      cls: 'bg-orange-100 border-orange-500 text-orange-800',
-      icon: <AlertTriangle size={12} />,
-      text: SUBSCRIPTION_ENABLED
-        ? `GRACE · ${days} DIN · LOCK SOON`
-        : `GRACE · ${days} DIN · RENEW`,
-    },
     expired: {
       cls: 'bg-red-600 border-red-700 text-white',
       icon: <Lock size={12} />,
@@ -71,7 +63,7 @@ const SubscriptionStatusChip: React.FC = () => {
 
   const c = cfg[state.status] ?? cfg.none;
   const planInfo = subscription?.planName ? `${subscription.planName} · ` : '';
-  const pulse = state.status === 'expiring' || state.status === 'grace';
+  const pulse = state.status === 'expiring';
 
   return (
     <div

@@ -321,15 +321,13 @@ export const SubscriptionScreen = () => {
                         <div className={`w-28 h-28 rounded-full border-8 flex flex-col items-center justify-center flex-shrink-0 ${
                           state.status === 'active'   ? 'border-green-400 bg-green-50'
                           : state.status === 'expiring' ? 'border-amber-400 bg-amber-50'
-                          : state.status === 'grace'  ? 'border-orange-400 bg-orange-50'
                           : 'border-red-400 bg-red-50'
                         }`}>
                           <span className="text-3xl font-black text-slate-800">
-                            {state.status === 'grace' ? state.graceDaysLeft
-                             : activeLikeStatus ? state.daysLeft : 0}
+                            {activeLikeStatus ? state.daysLeft : 0}
                           </span>
                           <span className="text-[9px] font-black text-slate-500 uppercase">
-                            {state.status === 'grace' ? 'Grace Days' : 'Din Bache'}
+                            Din Bache
                           </span>
                         </div>
 
@@ -357,11 +355,6 @@ export const SubscriptionScreen = () => {
                           </div>
                           <p className="text-[10px] text-slate-500 font-semibold">
                             {state.usedPct}% period use ho gaya
-                            {state.status === 'grace' && (
-                              <span className="text-orange-600 font-black">
-                                {' '}— GRACE PERIOD chal raha hai, jaldi renew karein!
-                              </span>
-                            )}
                             {state.status === 'expired' && (
                               <span className="text-red-600 font-black">
                                 {' '}— EXPIRED. Data safe hai, renew karke access wapas lein.

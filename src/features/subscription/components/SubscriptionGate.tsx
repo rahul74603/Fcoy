@@ -1,9 +1,9 @@
 // 🔒 SUBSCRIPTION GATE (HARD LOCK) — "only subscription k baad hi khule"
 //
-// Rules (owner ka kanun):
-//   - status 'active' / 'expiring' / 'grace'  → app chalti hai (grace me banner chillata hai)
+// Rules (owner ka kanun — SIRF 2 RASTE, KOI GRACE NAHI):
+//   - status 'active' / 'expiring'             → app chalti hai
 //   - status 'none' (kabhi plan bana hi nahi)  → FULL LOCK
-//   - status 'expired' (grace bhi nikal gayi)  → FULL LOCK
+//   - status 'expired' (endDate nikal gayi)    → turant FULL LOCK
 //   - Developer account (TEST-77) → KABHI lock nahi (sandbox bypass)
 //
 // Lock screen me embedded OwnerRenewPanel — payment ke baad owner key se

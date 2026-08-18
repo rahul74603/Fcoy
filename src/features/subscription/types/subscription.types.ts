@@ -58,26 +58,26 @@ export interface SubscriptionHistoryEntry {
 // STATUS
 // ─────────────────────────────────────────────
 
+// ⚠️ NO GRACE PERIOD — owner ka kanun:
+// Subscription hai → app chalegi. Nahi hai / expire → FULL LOCK. Bas 2 raste.
+// ('expiring' sirf ek WARNING hai active ke andar — access active jaisa hi hai.)
 export type SubscriptionStatus =
-  | 'none'      // kabhi subscription liya hi nahi
+  | 'none'      // kabhi subscription liya hi nahi → LOCKED
   | 'active'    // chal raha hai
-  | 'expiring'  // active hai lekin 30 din se kam bache
-  | 'grace'     // expire ho gaya, grace period me (read-only)
-  | 'expired';  // poori tarah khatam
+  | 'expiring'  // active hai lekin 30 din se kam bache (warning only)
+  | 'expired';  // endDate nikal gayi → turant LOCKED (koi grace nahi)
 
 export interface SubscriptionState {
   status: SubscriptionStatus;
-  daysLeft: number;        // active: endDate tak ke din; grace: grace ke bache din (negative nahi)
+  daysLeft: number;        // active: endDate tak ke din
   totalDays: number;       // poore period ke din
   usedPct: number;         // 0-100 progress bar ke liye
-  graceDaysLeft: number;
 }
 
 // ─────────────────────────────────────────────
 // CONSTANTS
 // ─────────────────────────────────────────────
 
-export const GRACE_DAYS = 30;         // expiry ke baad 30 din grace (data dikhega)
 export const EXPIRING_SOON_DAYS = 30; // itne din bache to warning
 
 // Default plans — pehli baar Firestore me auto-seed honge,
@@ -164,19 +164,18 @@ export const savingsPct = (
   return Math.max(0, Math.round(((full - plan.price) / full) * 100));
 };
 
-/** Current subscription doc se poora status nikaalo */
+/** Current subscription doc se poora status nikaalo
+ *  ⚠️ NO GRACE: endDate ke baad turant 'expired' → app LOCKED. */
 export const computeSubscriptionState = (
   sub: UnitSubscription | null,
   now: Date = new Date(),
 ): SubscriptionState => {
   if (!sub || !sub.endDate || !sub.planId) {
-    return { status: 'none', daysLeft: 0, totalDays: 0, usedPct: 0, graceDaysLeft: 0 };
+    return { status: 'none', daysLeft: 0, totalDays: 0, usedPct: 0 };
   }
 
   const start = new Date(sub.startDate);
   const end = new Date(sub.endDate);
-  const graceEnd = addMonths(end, 0);
-  graceEnd.setDate(graceEnd.getDate() + GRACE_DAYS);
 
   const msDay = 1000 * 60 * 60 * 24;
   const totalDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / msDay));
@@ -185,24 +184,20 @@ export const computeSubscriptionState = (
     100,
     Math.max(0, Math.round(((now.getTime() - start.getTime()) / (end.getTime() - start.getTime())) * 100)),
   );
-  const graceDaysLeft = Math.max(0, Math.ceil((graceEnd.getTime() - now.getTime()) / msDay));
 
   if (now <= end) {
     return {
       status: daysLeft <= EXPIRING_SOON_DAYS ? 'expiring' : 'active',
-      daysLeft, totalDays, usedPct, graceDaysLeft: GRACE_DAYS,
+      daysLeft, totalDays, usedPct,
     };
   }
-  if (now <= graceEnd) {
-    return { status: 'grace', daysLeft: 0, totalDays, usedPct: 100, graceDaysLeft };
-  }
-  return { status: 'expired', daysLeft: 0, totalDays, usedPct: 100, graceDaysLeft: 0 };
+  // endDate nikal gayi = seedha EXPIRED (koi grace period nahi)
+  return { status: 'expired', daysLeft: 0, totalDays, usedPct: 100 };
 };
 
 export const STATUS_META: Record<SubscriptionStatus, { label: string; color: string; bg: string }> = {
   none:     { label: 'No Subscription', color: 'text-slate-600',  bg: 'bg-slate-100 border-slate-300' },
   active:   { label: 'Active',          color: 'text-green-700',  bg: 'bg-green-100 border-green-300' },
   expiring: { label: 'Expiring Soon',   color: 'text-amber-700',  bg: 'bg-amber-100 border-amber-300' },
-  grace:    { label: 'Grace Period',    color: 'text-orange-700', bg: 'bg-orange-100 border-orange-300' },
   expired:  { label: 'Expired',         color: 'text-red-700',    bg: 'bg-red-100 border-red-300' },
 };

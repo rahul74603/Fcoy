@@ -17,7 +17,7 @@ interface SubscriptionContextType {
 }
 
 const INITIAL_STATE: SubscriptionState = {
-  status: 'none', daysLeft: 0, totalDays: 0, usedPct: 0, graceDaysLeft: 0,
+  status: 'none', daysLeft: 0, totalDays: 0, usedPct: 0,
 };
 
 // Company deployments me subscription ENFORCEMENT (banner/gate/admin route)

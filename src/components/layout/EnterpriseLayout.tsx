@@ -218,7 +218,7 @@ export const EnterpriseLayout: React.FC<EnterpriseLayoutProps> = ({ children }) 
         {/* 🧪 Practice Mode Banner (sirf dev account ko) */}
         <div className="app-banner"><PracticeBanner /></div>
 
-        {/* 🆕 Subscription Expiry / Grace / Expired Warning */}
+        {/* 🆕 Subscription Expiry / Expired Warning */}
         <div className="app-banner"><SubscriptionBanner /></div>
 
         {/* Scrollable Page Content */}

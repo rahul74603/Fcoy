@@ -8,7 +8,7 @@ import { PAYMENT_MODES, formatINR } from '../types/subscription.types';
 import { fetchPlans } from '../api/subscription.api';
 
 interface Props {
-  /** Default selected months (grace/lock me 1 mahina sensible hai) */
+  /** Default selected months (lock me 1 mahina sensible hai) */
   defaultMonths?: number;
   onSuccess?: (endDate: string) => void;
 }
