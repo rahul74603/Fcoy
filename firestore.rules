@@ -50,6 +50,18 @@ service cloud.firestore {
     // 🧪 Dev/practice account — sandbox testing (data tagged isDevData)
     function isDev() { return isActiveUser() && profile().isDeveloper == true; }
 
+    // ⚡ MASTER→COMPANY SYNC BRIDGE
+    // Deploy-time pe har company app me ek special sync user banta hai
+    // (owner-sync.<code>@fcoy-erp.internal). Master app isi se sign-in
+    // karke subscription push karta hai. Iske paas users profile NAHI
+    // hoti — isliye alag se pehchana jata hai. Scope: SIRF subscription
+    // collections likh sakta hai + monitor summary padh sakta hai.
+    function isSyncBridge() {
+      return signedIn()
+        && request.auth.token.email != null
+        && request.auth.token.email.matches('owner-sync\\..*@fcoy-erp\\.internal');
+    }
+
     function isStaff() { return isCC() || isClerk() || isQM() || isUstad() || isDev(); }
 
     // Domain groups
@@ -111,17 +123,21 @@ service cloud.firestore {
       allow write: if isCC();
     }
 
+    // ⚡ Sync bridge (master app) in teen subscription collections ko
+    // likh sakta hai — yahi uska PURA scope hai (baaki sab collections
+    // me wo kisi aur rule se match nahi hota → denied).
     match /subscription/{docId} {
       allow read: if signedIn();
-      allow write: if isCC();
+      allow write: if isCC() || isSyncBridge();
     }
     match /subscriptionPlans/{docId} {
       allow read: if signedIn();
       // seeded during first-run (before profile exists) or managed by CC
-      allow write: if isCC() || (signedIn() && !firstRunDone());
+      allow write: if isCC() || isSyncBridge() || (signedIn() && !firstRunDone());
     }
     match /subscriptionHistory/{docId} {
-      allow read, write: if isCC();
+      allow read: if isCC();
+      allow write: if isCC() || isSyncBridge();
     }
     match /customerSubscriptions/{docId} {
       allow read: if signedIn();
@@ -147,7 +163,7 @@ service cloud.firestore {
     // (dev accounts may manage isDevData-tagged sandbox batches)
     // ═════════════════════════════════════════════════════════
     match /batches/{batchId} {
-      allow read: if isStaff();
+      allow read: if isStaff() || isSyncBridge(); // bridge: monitor summary
       allow create: if isCC()
         || (isDev() && request.resource.data.isDevData == true);
       // Clerk may only maintain the trainee counter during registration
@@ -162,7 +178,7 @@ service cloud.firestore {
     // TRAINEES — Clerk administers; QM/Ustad get scoped access
     // ═════════════════════════════════════════════════════════
     match /trainees/{traineeId} {
-      allow read: if isStaff();
+      allow read: if isStaff() || isSyncBridge(); // bridge: monitor count
       allow create: if traineeAdmin();
       // QM may ONLY touch kit/recovery-related fields — never
       // personal data (name, aadhaar, address, documents, ...)
@@ -202,7 +218,7 @@ service cloud.firestore {
 
     // ── Training / examination records ──
     match /training_tests/{id} {
-      allow read: if isStaff();
+      allow read: if isStaff() || isSyncBridge(); // bridge: monitor summary
       allow write: if traineeAdmin();
     }
     match /weeklyTestRecords/{id} {
@@ -224,7 +240,7 @@ service cloud.firestore {
 
     // ── Staff (Ustad/instructor) administration ──
     match /staff/{id} {
-      allow read: if isStaff();
+      allow read: if isStaff() || isSyncBridge(); // bridge: monitor count
       allow write: if traineeAdmin();
     }
     match /subject_master/{id} {
@@ -240,11 +256,11 @@ service cloud.firestore {
       allow write: if traineeAdmin();
     }
     match /staff_duty/{id} {
-      allow read: if isStaff();
+      allow read: if isStaff() || isSyncBridge(); // bridge: monitor summary
       allow write: if traineeAdmin();
     }
     match /staff_leave/{id} {
-      allow read: if isStaff();
+      allow read: if isStaff() || isSyncBridge(); // bridge: monitor summary
       allow create: if isStaff();          // Ustad may apply for leave
       allow update, delete: if traineeAdmin(); // approval is admin-side
     }
