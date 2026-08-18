@@ -416,7 +416,9 @@ export const Sidebar = () => {
                   color="border-blue-500"
                   bgColor="bg-blue-900/30"
                 />
-                {user?.role === 'Ustad' && <NavItem title="My Dashboard" icon={Target} path="/ustad" />}
+                {/* Ustad ke liye "My Dashboard", CC ke liye "Ustad Dashboard" —
+                    dono ke liye link dikhna chahiye (route CC ko allowed hai) */}
+                <NavItem title={user?.role === 'Ustad' ? 'My Dashboard' : 'Ustad Dashboard'} icon={Target} path="/ustad" />
                 <NavGroup
                   title="Instructor Profiles"
                   icon={UserCog}
