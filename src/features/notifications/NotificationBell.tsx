@@ -7,9 +7,22 @@ import { useNavigate } from 'react-router-dom';
 import { Bell, X, Check, CheckCheck, RefreshCw, Loader2 } from 'lucide-react';
 import { useNotifications } from './useNotifications';
 import { NOTIFICATION_CONFIG } from './notification.types';
+import { useAuth } from '../../contexts/AuthContext';
+
+// Kuch notification links admin-only routes par jate hain (CC+Clerk).
+// Ustad ke liye unhe uske ALLOWED route par redirect karo —
+// warna click karte hi ACCESS DENIED page dikhta hai.
+const USTAD_LINK_REDIRECT: Record<string, string> = {
+  '/duty-management': '/ustad',
+  '/deputation': '/ustad',
+  '/staff-attendance': '/ustad',
+  '/subjects': '/staff',
+  '/subject-assignment': '/staff',
+};
 
 const NotificationBell: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const {
     notifications,
     unreadCount,
@@ -37,7 +50,8 @@ const NotificationBell: React.FC = () => {
   const handleNotificationClick = (notifId: string, link?: string) => {
     markAsRead(notifId);
     if (link) {
-      navigate(link);
+      const target = user?.role === 'Ustad' ? (USTAD_LINK_REDIRECT[link] ?? link) : link;
+      navigate(target);
       setIsOpen(false);
     }
   };

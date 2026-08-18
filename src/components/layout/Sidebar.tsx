@@ -426,8 +426,14 @@ export const Sidebar = () => {
                   badge={<NewBadge />}
                 >
                   <SubItem title="Staff List" path="/staff" dot="bg-blue-400" />
-                  <SubItem title="Subject Master" path="/subjects" dot="bg-purple-400" />
-                  <SubItem title="Subject Assignment" path="/subject-assignment" dot="bg-indigo-400" />
+                  {/* Subject Master/Assignment = CC+Clerk manage karte hain —
+                      Ustad ko link dikhana matlab ACCESS DENIED page. Hide. */}
+                  {user?.role !== 'Ustad' && (
+                    <>
+                      <SubItem title="Subject Master" path="/subjects" dot="bg-purple-400" />
+                      <SubItem title="Subject Assignment" path="/subject-assignment" dot="bg-indigo-400" />
+                    </>
+                  )}
                 </NavGroup>
                 <NavGroup
                   title="Daily Operations"
@@ -436,10 +442,16 @@ export const Sidebar = () => {
                 >
                   <SubItem title="📊 Batch Progress" path="/batch-progress" dot="bg-purple-500" />
                   <SubItem title="Training Schedule" path="/training-schedule" dot="bg-blue-400" />
-                  <SubItem title="Mark Attendance" path="/staff-attendance" dot="bg-green-400" />
                   <SubItem title="Leave Management" path="/staff-leave" dot="bg-yellow-400" />
-                  <SubItem title="Duty Management" path="/duty-management" dot="bg-amber-400" />
-                  <SubItem title="Deputation Register" path="/deputation" dot="bg-purple-500" />
+                  {/* Attendance/Duty/Deputation admin-side (CC+Clerk) hai —
+                      Ustad ke liye ye routes denied hain, isliye links hidden */}
+                  {user?.role !== 'Ustad' && (
+                    <>
+                      <SubItem title="Mark Attendance" path="/staff-attendance" dot="bg-green-400" />
+                      <SubItem title="Duty Management" path="/duty-management" dot="bg-amber-400" />
+                      <SubItem title="Deputation Register" path="/deputation" dot="bg-purple-500" />
+                    </>
+                  )}
                 </NavGroup>
                 <div className="mx-4 my-2 h-px bg-military-800" />
               </>

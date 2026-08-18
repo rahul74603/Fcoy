@@ -19,7 +19,9 @@ const access: Record<string, { name: string; path: string }[]> = {
   // pehle yahan 'attendance'/'absent_records'/'test_records' jaise galat naam
   // the jo kabhi kuch return nahi karte the.
   Clerk: [{ name: 'trainees', path: '/profile' }, { name: 'staff', path: '/staff' }, { name: 'batches', path: '/batches' }, { name: 'subject_master', path: '/subjects' }, { name: 'staff_subjects', path: '/subject-assignment' }, { name: 'staff_attendance', path: '/staff-attendance' }, { name: 'absentRecords', path: '/absent-management' }],
-  Ustad: [{ name: 'trainees', path: '/ustad' }, { name: 'staff', path: '/staff' }, { name: 'subject_master', path: '/subjects' }, { name: 'staff_subjects', path: '/subject-assignment' }, { name: 'staff_attendance', path: '/staff-attendance' }, { name: 'training_tests', path: '/test-records' }, { name: 'training_schedule', path: '/training-schedule' }],
+  // Ustad ke results sirf UN routes par le jate hain jahan Ustad ALLOWED hai
+  // (/subjects, /subject-assignment, /staff-attendance, /test-records = CC+Clerk only → yahan nahi)
+  Ustad: [{ name: 'trainees', path: '/ustad' }, { name: 'staff', path: '/staff' }, { name: 'subject_master', path: '/staff' }, { name: 'staff_subjects', path: '/staff' }, { name: 'training_schedule', path: '/training-schedule' }],
 };
 const stringify = (v: any) => typeof v === 'string' || typeof v === 'number' ? String(v) : '';
 
