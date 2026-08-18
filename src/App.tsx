@@ -46,6 +46,7 @@ import { VendorPaymentScreen }    from './features/finance/vendors/VendorPayment
 
 // --- Clerk / Operations ---
 import { TraineeProfileScreen }       from './features/students/TraineeProfileScreen';
+import { TraineeListScreen }          from './features/students/TraineeListScreen';
 import { DocumentVerificationScreen } from './features/students/DocumentVerificationScreen';
 import { WelfareDemographicsScreen }  from './features/welfare/WelfareDemographicsScreen';
 import { WeeklyProgramScreen }        from './features/weekly/WeeklyProgramScreen';
@@ -271,6 +272,14 @@ function App() {
                 element={
                   <ProtectedRoute allowedRoles={CLERK_ROLES}>
                     <EnterpriseLayout><TraineeProfileScreen /></EnterpriseLayout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/trainees"
+                element={
+                  <ProtectedRoute allowedRoles={CLERK_ROLES}>
+                    <EnterpriseLayout><TraineeListScreen /></EnterpriseLayout>
                   </ProtectedRoute>
                 }
               />

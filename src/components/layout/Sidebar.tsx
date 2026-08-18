@@ -486,6 +486,7 @@ export const Sidebar = () => {
                   icon={Users}
                   menuKey="clerkTrainee"
                 >
+                  <SubItem title="📋 Trainee List (Full Batch)" path="/trainees" dot="bg-green-400" />
                   <SubItem title="Trainee Details / Profile" path="/profile" dot="bg-blue-400" />
                   <SubItem title="Document Cell" path="/documents" dot="bg-purple-400" />
                   <SubItem title="MI Room & Medical" path="/medical-register" dot="bg-red-400" />
