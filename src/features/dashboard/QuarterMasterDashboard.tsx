@@ -171,6 +171,8 @@ export const QuarterMasterDashboard: React.FC = () => {
   const [totalIssueRecords, setTotalIssueRecords] = useState(0);
   const [kitDoneCount, setKitDoneCount] = useState(0);      // kitne trainees ko kit mil chuki
   const [todayIssueCount, setTodayIssueCount] = useState(0); // aaj kitne issue hue
+  const [fullStock, setFullStock] = useState<Array<{ name: string; emoji: string; category: string; purchased: number; issued: number; current: number; requirement: number; shortage: number; status: 'OUT' | 'CRITICAL' | 'LOW' | 'HEALTHY' }>>([]);
+  const [todayMoney, setTodayMoney] = useState({ collection: 0, expense: 0, receipts: 0 }); // aaj ka paisa + stock receipts
 
   // Computed
   const grandCollection = funds.reduce((s, f) => s + f.totalCollection, 0);
@@ -233,6 +235,10 @@ export const QuarterMasterDashboard: React.FC = () => {
         } : null,
       });
 
+      // Aaj ke din ka paisa track karne ke liye (executive strip)
+      const todayISOAll = new Date().toISOString().split('T')[0];
+      let _todayCol = 0, _todayExp = 0;
+
       // ── HELPER: Build fund summary ──
       const buildFund = async (
         key: string, label: string, emoji: string,
@@ -254,6 +260,7 @@ export const QuarterMasterDashboard: React.FC = () => {
           if (!belongsToBatch(d.data())) return;
           totalCollection += Number(d.data().amount ?? 0);
           entries++;
+          if (String(d.data().date ?? '').startsWith(todayISOAll)) _todayCol += Number(d.data().amount ?? 0);
         });
 
         expSnap.forEach(d => {
@@ -261,6 +268,7 @@ export const QuarterMasterDashboard: React.FC = () => {
           if (!belongsToBatch(data)) return;
           entries++;
           if ((data.billStatus ?? '') === 'Pending') pendingBills++;
+          if (String(data.date ?? '').startsWith(todayISOAll)) _todayExp += Number(data.amount ?? 0);
           expList.push({
             amount: Number(data.amount ?? 0),
             vendorId: data.vendorId ?? data.linkedVendorId ?? '',
@@ -410,22 +418,45 @@ export const QuarterMasterDashboard: React.FC = () => {
       });
 
       const alerts: StockAlert[] = [];
+      // LIVE STOCK POSITION — har purchased item ka poora hisaab:
+      // current = purchased - issued; requirement = batch trainees jinhe
+      // abhi ye item NAHI mila (pending demand); shortage = requirement - current.
+      const stockRows: Array<{ name: string; emoji: string; category: string; purchased: number; issued: number; current: number; requirement: number; shortage: number; status: 'OUT' | 'CRITICAL' | 'LOW' | 'HEALTHY' }> = [];
+      const batchStrength = batchTrainees.length;
       Object.entries(purchasedMap).forEach(([key, p]) => {
         const issued = issuedItemMap[key] || 0;
         const current = Math.max(0, p.qty - issued);
+        // Kitne trainees ke paas ye item abhi NAHI hai = pending requirement
+        const holders = batchTrainees.filter(d => {
+          const items: any[] = (d.data() as any).issuedKitItems ?? [];
+          return items.some((i: any) => normalizeName(i.itemName ?? '') === key);
+        }).length;
+        const requirement = Math.max(0, batchStrength - holders);
+        const shortage = Math.max(0, requirement - current);
+        const status: 'OUT' | 'CRITICAL' | 'LOW' | 'HEALTHY' =
+          current === 0 && requirement > 0 ? 'OUT'
+          : shortage > 0 ? 'CRITICAL'
+          : current <= 5 && requirement > 0 ? 'LOW'
+          : 'HEALTHY';
+        stockRows.push({ name: p.name, emoji: p.emoji, category: p.category, purchased: p.qty, issued, current, requirement, shortage, status });
         if (current <= 5) {
-          alerts.push({
-            itemName: p.name,
-            emoji: p.emoji,
-            currentStock: current,
-            totalPurchased: p.qty,
-            totalIssued: issued,
-            category: p.category,
-          });
+          alerts.push({ itemName: p.name, emoji: p.emoji, currentStock: current, totalPurchased: p.qty, totalIssued: issued, category: p.category });
         }
       });
+      const statusRank = { OUT: 0, CRITICAL: 1, LOW: 2, HEALTHY: 3 } as const;
+      stockRows.sort((a, b) => statusRank[a.status] - statusRank[b.status] || b.shortage - a.shortage);
+      setFullStock(stockRows);
       alerts.sort((a, b) => a.currentStock - b.currentStock);
       setStockAlerts(alerts);
+
+      // Aaj ke stock receipts (training purchases with today's date)
+      let _receiptsToday = 0;
+      trainingExpSnap.forEach(d => {
+        const data = d.data();
+        if (!belongsToBatch(data)) return;
+        if (String(data.date ?? '').startsWith(todayISOAll)) _receiptsToday += Number(data.quantity ?? 0);
+      });
+      setTodayMoney({ collection: _todayCol, expense: _todayExp, receipts: _receiptsToday });
 
       // ── SALARY ──
       const salarySnap = await getDocs(collection(db, 'mess_boy_salaries'));
@@ -641,10 +672,13 @@ export const QuarterMasterDashboard: React.FC = () => {
         const negFunds = funds.filter(f => f.balance < 0);
         if (negFunds.length > 0) qAlerts.push({ level: 'CRITICAL', text: `Fund NEGATIVE balance me: ${negFunds.map(f => f.label).join(', ')}`, count: String(negFunds.length), action: 'Funds Dashboard', route: ROUTES.fundsDashboard });
         if (totalVendorDue > 0) qAlerts.push({ level: 'CRITICAL', text: `Vendor payments due — ${vendorDues.length} vendor(s) ka paisa baaki`, count: fmtShort(totalVendorDue), action: 'Pay Vendors', route: ROUTES.vendorPayments });
-        const zeroStock = stockAlerts.filter(a => a.currentStock === 0);
-        if (zeroStock.length > 0) qAlerts.push({ level: 'CRITICAL', text: `Items OUT OF STOCK: ${zeroStock.slice(0, 3).map(a => a.itemName).join(', ')}${zeroStock.length > 3 ? '...' : ''}`, count: String(zeroStock.length), action: 'Restock', route: ROUTES.trainingFund });
-        const lowStock = stockAlerts.filter(a => a.currentStock > 0);
-        if (lowStock.length > 0) qAlerts.push({ level: 'TODAY', text: `Items LOW stock me (≤5 bache) — jaldi order karo`, count: String(lowStock.length), action: 'View Stock', route: ROUTES.trainingFund });
+        const shortItems = fullStock.filter(r => r.shortage > 0);
+        if (shortItems.length > 0) {
+          const totalShort = shortItems.reduce((sum, r) => sum + r.shortage, 0);
+          qAlerts.push({ level: 'CRITICAL', text: `Stock SHORTAGE — ${shortItems.slice(0, 3).map(r => `${r.name} (−${r.shortage})`).join(', ')}${shortItems.length > 3 ? ` +${shortItems.length - 3} more` : ''} — total ${totalShort} units aur chahiye`, count: String(shortItems.length), action: 'Restock', route: ROUTES.trainingFund });
+        }
+        const lowOnly = fullStock.filter(r => r.status === 'LOW');
+        if (lowOnly.length > 0) qAlerts.push({ level: 'TODAY', text: `Items LOW stock me (≤5 bache) — jaldi order karo`, count: String(lowOnly.length), action: 'View Stock', route: ROUTES.trainingFund });
         if (totalPendingBills > 0) qAlerts.push({ level: 'TODAY', text: 'Bills verify hone baaki hain', count: String(totalPendingBills), action: 'Verify Bills', route: ROUTES.bills });
         const kitPendingCount = Math.max(0, traineeCount - kitDoneCount);
         if (kitPendingCount > 0) qAlerts.push({ level: 'PENDING', text: 'Trainees ko abhi tak KOI kit item issue nahi hua', count: String(kitPendingCount), action: 'Issue Kit', route: ROUTES.issueKit });
@@ -733,6 +767,100 @@ export const QuarterMasterDashboard: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ══════════ TODAY'S LOGISTICS & MONEY STRIP ══════════ */}
+      {!loading && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="bg-white border border-green-200 rounded-xl p-3 text-center">
+            <p className="text-[9px] font-black text-green-600 uppercase">Today's Collection</p>
+            <p className="text-xl font-black text-green-700">{fmtShort(todayMoney.collection)}</p>
+          </div>
+          <div className="bg-white border border-red-200 rounded-xl p-3 text-center">
+            <p className="text-[9px] font-black text-red-500 uppercase">Today's Expense</p>
+            <p className="text-xl font-black text-red-600">{fmtShort(todayMoney.expense)}</p>
+          </div>
+          <div className="bg-white border border-blue-200 rounded-xl p-3 text-center">
+            <p className="text-[9px] font-black text-blue-500 uppercase">Stock Received Today</p>
+            <p className="text-xl font-black text-blue-700">{todayMoney.receipts} <span className="text-[10px] text-slate-400">units</span></p>
+          </div>
+          <div className="bg-white border border-indigo-200 rounded-xl p-3 text-center cursor-pointer hover:shadow-md transition-all" onClick={() => go(ROUTES.issueKit)}>
+            <p className="text-[9px] font-black text-indigo-500 uppercase">Issues Today</p>
+            <p className="text-xl font-black text-indigo-700">{todayIssueCount} <span className="text-[10px] text-slate-400">records</span></p>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════ LIVE STOCK POSITION ══════════ */}
+      {!loading && fullStock.length > 0 && (() => {
+        const outCount = fullStock.filter(r => r.status === 'OUT').length;
+        const critCount = fullStock.filter(r => r.status === 'CRITICAL').length;
+        const lowCount = fullStock.filter(r => r.status === 'LOW').length;
+        const healthy = fullStock.filter(r => r.status === 'HEALTHY').length;
+        const healthPct = fullStock.length ? Math.round((healthy / fullStock.length) * 100) : 0;
+        const badge = (st: string) =>
+          st === 'OUT' ? 'bg-red-600 text-white'
+          : st === 'CRITICAL' ? 'bg-red-100 text-red-700 border border-red-300'
+          : st === 'LOW' ? 'bg-amber-100 text-amber-700 border border-amber-300'
+          : 'bg-green-100 text-green-700 border border-green-300';
+        const label = (st: string) => st === 'OUT' ? 'OUT OF STOCK' : st === 'LOW' ? 'LOW STOCK' : st;
+        return (
+          <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+            <div className="px-4 py-3 bg-slate-900 flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2.5">
+                <BarChart3 size={15} className="text-white" />
+                <div>
+                  <h2 className="text-xs font-black text-white uppercase tracking-widest">Live Stock Position</h2>
+                  <p className="text-[9.5px] text-slate-400">
+                    Purchased − Issued = Current · Requirement = trainees jinhe item milna baaki · Shortage = kitna aur chahiye
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`text-[10px] font-black px-2.5 py-1 rounded ${healthPct >= 80 ? 'bg-green-600 text-white' : healthPct >= 50 ? 'bg-amber-500 text-white' : 'bg-red-600 text-white'}`}>
+                  HEALTH {healthPct}%
+                </span>
+                <span className="text-[9px] font-bold text-slate-300">{fullStock.length} SKUs · {outCount} out · {critCount} critical · {lowCount} low</span>
+              </div>
+            </div>
+            <div className="overflow-x-auto max-h-80 overflow-y-auto">
+              <table className="w-full text-left text-sm whitespace-nowrap">
+                <thead className="bg-slate-50 border-b border-slate-200 sticky top-0">
+                  <tr>
+                    <th className="px-4 py-2 text-[9.5px] font-black text-slate-500 uppercase">Item</th>
+                    <th className="px-3 py-2 text-[9.5px] font-black text-slate-500 uppercase text-right">Purchased</th>
+                    <th className="px-3 py-2 text-[9.5px] font-black text-slate-500 uppercase text-right">Issued</th>
+                    <th className="px-3 py-2 text-[9.5px] font-black text-slate-500 uppercase text-right">Available</th>
+                    <th className="px-3 py-2 text-[9.5px] font-black text-slate-500 uppercase text-right">Required</th>
+                    <th className="px-3 py-2 text-[9.5px] font-black text-slate-500 uppercase text-right">Shortage</th>
+                    <th className="px-3 py-2 text-[9.5px] font-black text-slate-500 uppercase">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fullStock.map((r, i) => (
+                    <tr key={i} className={`border-b border-slate-100 ${r.status === 'OUT' || r.status === 'CRITICAL' ? 'bg-red-50/50' : r.status === 'LOW' ? 'bg-amber-50/40' : ''}`}>
+                      <td className="px-4 py-2 font-bold text-slate-800"><span className="mr-1.5">{r.emoji}</span>{r.name} <span className="text-[9px] text-slate-400 font-semibold">({r.category})</span></td>
+                      <td className="px-3 py-2 text-right font-mono text-xs text-slate-600">{r.purchased}</td>
+                      <td className="px-3 py-2 text-right font-mono text-xs text-slate-600">{r.issued}</td>
+                      <td className={`px-3 py-2 text-right font-mono text-sm font-black ${r.current === 0 ? 'text-red-700' : r.current <= 5 ? 'text-amber-700' : 'text-slate-900'}`}>{r.current}</td>
+                      <td className="px-3 py-2 text-right font-mono text-xs text-slate-600">{r.requirement}</td>
+                      <td className={`px-3 py-2 text-right font-mono text-sm font-black ${r.shortage > 0 ? 'text-red-700' : 'text-green-600'}`}>{r.shortage > 0 ? `−${r.shortage}` : '✓'}</td>
+                      <td className="px-3 py-2"><span className={`text-[8.5px] font-black px-2 py-0.5 rounded ${badge(r.status)}`}>{label(r.status)}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="border-t border-slate-200 grid grid-cols-2 divide-x divide-slate-200">
+              <button onClick={() => go(ROUTES.trainingFund)} className="py-2.5 text-[10px] font-black uppercase text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-1.5">
+                Receive / Purchase Stock <ChevronRight size={11} />
+              </button>
+              <button onClick={() => go(ROUTES.issueKit)} className="py-2.5 text-[10px] font-black uppercase text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-1.5">
+                Issue Kit <ChevronRight size={11} />
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ══════════ 4 FUND CARDS ══════════ */}
       {!loading && (
