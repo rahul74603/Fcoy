@@ -10,6 +10,7 @@ import {
   FileText, Building2, BoxSelect, UserCheck, Calendar, Layers,
   Star, Zap, ArrowRight, Crosshair, Award, HeartPulse, LayoutDashboard,
   PackageMinus, IndianRupee, Search, ArrowRightLeft, ArrowDownToLine, ArrowUpFromLine,
+  TrendingUp,
 } from 'lucide-react';
 import {
   collection, getDocs, query, where
@@ -1556,9 +1557,17 @@ const [staffLoading, setStaffLoading] = useState(false);
   };
 
   const getDashboardAttnCode = (trainee: TraineeInfo): 'P' | 'A' | 'S' | 'H' | 'L' | 'R' | 'M' => {
+    // ✅ FIX: attn = single source of truth for PRESENT.
+    // Har return flow (Absent Mgmt / Medical markFit) attn='P' set karta hai —
+    // isliye attn 'P' ho to trainee PRESENT hai, chahe koi purana medical
+    // record 'Active' reh gaya ho. (Pehle stale Active medical record
+    // trainee ko hamesha 'away' dikhata tha — return update nahi hota tha.)
+    const baseCode = getTraineeAttnCode(trainee.attn);
+    if (baseCode === 'P') return 'P';
+    // Away hai — active medical record se code refine karo (H/R/M/S)
     const activeMed = allMedical.find((m: any) => m.traineeId === trainee.id && m.status === 'Active');
     if (activeMed) return getMedicalAttnCode(activeMed.category);
-    return getTraineeAttnCode(trainee.attn);
+    return baseCode;
   };
 
   const totalTrainees = trainees.length;
@@ -1878,135 +1887,46 @@ const [staffLoading, setStaffLoading] = useState(false);
             </div>
           </div>
 
-          {/* ═══════════════════════════════════════════════
-              📊 COMPANY READINESS — executive metric, transparent formulas
-          ═══════════════════════════════════════════════ */}
-          {(() => {
-            const pct = (n: number, d: number) => d > 0 ? Math.round((n / d) * 100) : null;
-            const manpower = pct(presentToday, totalTrainees);
-            // Training = FPT-passed share among trainees who attempted (null if no tests yet)
-            const fptAttempted = Object.keys(fptTraineeMap).length;
-            const fptPassedCount = Object.values(fptTraineeMap).filter((d: any) => d.passed).length;
-            const training = pct(fptPassedCount, fptAttempted);
-            const docsR = pct(docsCompleteCount, totalTrainees);
-            const medicalR = pct(totalTrainees - hospitalCount - sickCount - medApptCount, totalTrainees);
-            const logistics = pct(kitFullCount, totalTrainees);
-            // Finance = paise positive balance + koi vendor due nahi to 100
-            const financeR = funds.length > 0
-              ? Math.max(0, Math.min(100, 100 - (totalFundBalance < 0 ? 40 : 0) - (totalVendorDue > 0 ? 25 : 0) - (pendingRecoveries.length > 0 ? 15 : 0)))
-              : null;
-            const dims = [
-              { label: 'Manpower', v: manpower, hint: `${presentToday}/${totalTrainees} available` },
-              { label: 'Training', v: training, hint: fptAttempted ? `${fptPassedCount}/${fptAttempted} FPT passed` : 'No FPT data yet' },
-              { label: 'Documents', v: docsR, hint: `${docsCompleteCount}/${totalTrainees} complete` },
-              { label: 'Medical', v: medicalR, hint: `${hospitalCount + sickCount + medApptCount} under medical` },
-              { label: 'Logistics', v: logistics, hint: `${kitFullCount}/${totalTrainees} fully kitted` },
-              { label: 'Finance', v: financeR, hint: totalVendorDue > 0 ? `${fmtCurrency(totalVendorDue)} vendor due` : 'Dues clear' },
-            ];
-            const known = dims.filter(d => d.v !== null) as { label: string; v: number; hint: string }[];
-            const overall = known.length ? Math.round(known.reduce((s, d) => s + d.v, 0) / known.length) : null;
-            const tone = (v: number | null) => v === null ? 'text-slate-300' : v >= 90 ? 'text-green-600' : v >= 75 ? 'text-amber-600' : 'text-red-600';
-            const bar = (v: number | null) => v === null ? 'bg-slate-200' : v >= 90 ? 'bg-green-500' : v >= 75 ? 'bg-amber-500' : 'bg-red-500';
-            return (
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-16 h-16 rounded-full border-4 flex flex-col items-center justify-center ${overall === null ? 'border-slate-200' : overall >= 90 ? 'border-green-400 bg-green-50' : overall >= 75 ? 'border-amber-400 bg-amber-50' : 'border-red-400 bg-red-50'}`}>
-                      <span className={`text-xl font-black ${tone(overall)}`}>{overall === null ? '—' : `${overall}%`}</span>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-black uppercase tracking-widest text-military-700">Company Readiness</p>
-                      <p className="text-[10px] text-slate-500 font-semibold">Manpower · Training · Documents · Medical · Logistics · Finance</p>
-                    </div>
-                  </div>
-                  <button onClick={() => go(ROUTES.reports)} className="rounded-lg bg-military-800 px-3 py-2 text-[10px] font-black uppercase text-white hover:bg-military-700">Readiness Details →</button>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                  {dims.map(d => (
-                    <div key={d.label} className="border border-slate-200 rounded-xl px-3 py-2">
-                      <div className="flex justify-between items-baseline">
-                        <p className="text-[9px] font-black text-slate-500 uppercase">{d.label}</p>
-                        <p className={`text-sm font-black ${tone(d.v)}`}>{d.v === null ? 'N/A' : `${d.v}%`}</p>
-                      </div>
-                      <div className="h-1.5 bg-slate-100 rounded-full mt-1.5 overflow-hidden">
-                        <div className={`h-full rounded-full ${bar(d.v)}`} style={{ width: `${d.v ?? 0}%` }} />
-                      </div>
-                      <p className="text-[8.5px] text-slate-400 font-semibold mt-1 truncate">{d.v === null ? 'Data not yet available' : d.hint}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })()}
+          <CollapsibleSection
+            title="Company Information Board"
+            subtitle="State · Religion · Language · Zone demographics + filters"
+            icon={<Users size={14} />}
+            accentColor="border-l-emerald-500"
+          >
+            <CommanderInformationBoard />
+          </CollapsibleSection>
 
-          {/* ═══════════════════════════════════════════════
-              🎖️ COMMAND DECISIONS — senior review items (dynamic)
-          ═══════════════════════════════════════════════ */}
-          {(() => {
-            type Decision = { text: string; owner: string; impact: string; count: string; route: string; critical: boolean };
-            const decisions: Decision[] = [];
-            if (hospitalCount > 0) decisions.push({ text: `${hospitalCount} active hospital case(s) require review`, owner: 'Clerk', impact: 'Manpower availability', count: String(hospitalCount), route: ROUTES.medicalRegister, critical: true });
-            if (kitPendingCount > 0) decisions.push({ text: `${kitPendingCount} trainees have incomplete kit`, owner: 'Quarter Master', impact: 'Training readiness', count: String(kitPendingCount), route: ROUTES.issueKit, critical: kitPendingCount > totalTrainees / 4 });
-            const recoveryDue = pendingRecoveries.reduce((sum: number, r: any) => sum + Number(r.dueAmount ?? 0), 0);
-            if (recoveryDue > 0) decisions.push({ text: `${fmtCurrency(recoveryDue)} recovery remains pending (${pendingRecoveries.length} records)`, owner: 'Quarter Master', impact: 'Fund position', count: fmtCurrency(recoveryDue), route: ROUTES.trainingFund, critical: recoveryDue > 10000 });
-            if (docsPendingCount > 0) decisions.push({ text: `${docsPendingCount} trainees have pending/incomplete documents`, owner: 'Clerk', impact: 'Administrative readiness', count: String(docsPendingCount), route: ROUTES.documents, critical: false });
-            if (totalVendorDue > 0) decisions.push({ text: `${fmtCurrency(totalVendorDue)} vendor dues outstanding (${vendorDues.length} vendors)`, owner: 'Quarter Master', impact: 'Financial standing', count: fmtCurrency(totalVendorDue), route: ROUTES.vendorPayment, critical: totalVendorDue > 25000 });
-            if (totalFundBalance < 0) decisions.push({ text: `Net fund balance NEGATIVE — ${fmtCurrency(Math.abs(totalFundBalance))} overdrawn`, owner: 'Quarter Master', impact: 'Financial critical', count: fmtCurrency(Math.abs(totalFundBalance)), route: ROUTES.fundsDashboard, critical: true });
-            if (!activeProgram) decisions.push({ text: 'Weekly training program not configured for current week', owner: 'Clerk', impact: 'Training schedule', count: '1', route: ROUTES.weeklyProgram, critical: false });
-            if (fptNeverPassed.length > 0) decisions.push({ text: `${fptNeverPassed.length} trainees have never passed FPT`, owner: 'Ustad / Clerk', impact: 'Training standard', count: String(fptNeverPassed.length), route: ROUTES.fptTracker, critical: fptNeverPassed.length > totalTrainees / 5 });
-            if (decisions.length === 0) return null;
-            return (
-              <div className="overflow-hidden rounded-2xl border-2 border-amber-500 bg-white shadow-md">
-                <div className="bg-slate-900 px-5 py-3 flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <Star size={15} className="text-amber-400" />
-                    <div>
-                      <h2 className="text-xs font-black text-white uppercase tracking-widest">Command Decisions</h2>
-                      <p className="text-[9.5px] text-slate-400">Items requiring Commander-level review</p>
-                    </div>
-                  </div>
-                  <span className="bg-amber-500 text-slate-900 text-[10px] font-black px-2.5 py-1 rounded-full">{decisions.length}</span>
-                </div>
-                <div className="divide-y divide-slate-100">
-                  {decisions.map((d, i) => (
-                    <div key={i} className={`px-5 py-3 flex items-center gap-3 flex-wrap ${d.critical ? 'bg-red-50/60 border-l-4 border-l-red-600' : 'border-l-4 border-l-amber-400'}`}>
-                      <span className={`text-[8.5px] font-black px-2 py-0.5 uppercase rounded flex-shrink-0 ${d.critical ? 'bg-red-600 text-white' : 'bg-amber-100 text-amber-800 border border-amber-300'}`}>
-                        {d.critical ? 'CRITICAL' : 'REVIEW'}
-                      </span>
-                      <div className="flex-1 min-w-[200px]">
-                        <p className="text-xs font-bold text-slate-800">{d.text}</p>
-                        <p className="text-[9.5px] text-slate-500 font-semibold">Owner: <b>{d.owner}</b> · Impact: {d.impact}</p>
-                      </div>
-                      <button onClick={() => go(d.route)}
-                        className="bg-slate-800 text-white px-3 py-1.5 text-[9.5px] font-black uppercase rounded hover:bg-slate-700 flex-shrink-0">
-                        Review →
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })()}
+          <CollapsibleSection
+            title="Batch Progress Overview"
+            subtitle="Training week progress"
+            icon={<TrendingUp size={14} />}
+            defaultOpen={false}
+            accentColor="border-l-blue-500"
+          >
+            <BatchProgressOverview />
+          </CollapsibleSection>
 
-          <CommanderInformationBoard />
-
-          <BatchProgressOverview />
-
-          {/* ═══ STRENGTH & AWAY DETAIL — moved UP ═══ */}
-          {/* ═══ AWAY / ATTENTION ROSTER — intentionally kept prominent ═══ */}
-          <div className="overflow-hidden rounded-2xl border-2 border-red-200 bg-white shadow-md">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-red-100 bg-gradient-to-r from-red-50 to-amber-50 px-5 py-4">
-              <div><p className="text-[10px] font-black uppercase tracking-widest text-red-700">Live attention roster</p><h2 className="mt-1 text-sm font-black uppercase text-slate-800">Trainees Not On Field ({awayTrainees.length}) — Full Details</h2><p className="mt-1 text-[10px] text-slate-500">Who is away, why, and expected return</p></div>
-              <button type="button" onClick={() => go(ROUTES.absentMgmt)} className="rounded-lg bg-red-600 px-3 py-2 text-[10px] font-black uppercase text-white hover:bg-red-700">Manage Absences →</button>
-            </div>
-            {awayTrainees.length === 0 ? <div className="p-8 text-center text-sm font-bold text-emerald-700">✓ All trainees are on field.</div> : <div className="overflow-x-auto"><table className="w-full text-xs"><thead className="bg-slate-900 text-white"><tr>{['#','Chest','Name','Platoon','Status','Reason / Permission','From','Expected Return','Days','Remarks'].map(h => <th key={h} className="px-3 py-3 text-left text-[9px] font-black uppercase whitespace-nowrap">{h}</th>)}</tr></thead><tbody className="divide-y divide-red-100">{awayTrainees.map((t, idx) => { const code = getDashboardAttnCode(t); const info = getAbsentTypeInfo(code); const recs = absentRecordsByTrainee[t.id] || []; const rec = recs.find(r => r.status === 'Active') || recs[0]; const medical = activeMedicalByTrainee[t.id]; const reason = rec?.reason || medical?.diagnosis || medical?.category || 'Not recorded'; const rowColor = code === 'H' ? 'bg-purple-50/80 border-l-4 border-l-purple-500' : code === 'A' ? 'bg-red-50/80 border-l-4 border-l-red-500' : 'bg-amber-50/80 border-l-4 border-l-amber-500'; return <tr key={t.id} className={`${rowColor} hover:brightness-95`}><td className="px-3 py-3 font-black text-slate-400">{idx + 1}</td><td className="px-3 py-3 font-mono font-black">{t.chestNo || '—'}</td><td className="px-3 py-3 font-black text-slate-800 whitespace-nowrap">{t.rank || 'RCT'} {t.name}</td><td className="px-3 py-3">{t.platoon || '—'}</td><td className="px-3 py-3"><span className={`rounded-lg px-2 py-1 text-[9px] font-black ${info.bgColor} ${info.color}`}>{info.icon} {info.shortLabel}</span></td><td className="max-w-[180px] px-3 py-3 font-bold text-slate-700">{reason}</td><td className="px-3 py-3 font-mono text-[10px]">{rec?.fromDate || medical?.date || '—'}</td><td className="px-3 py-3 font-mono text-[10px] text-blue-700">{rec?.toDate || '—'}</td><td className="px-3 py-3 font-black text-red-600">{rec?.totalDays ? `${rec.totalDays}d` : '—'}</td><td className="max-w-[140px] px-3 py-3 text-[10px] text-slate-600">{rec?.remarks || '—'}</td></tr>; })}</tbody></table></div>}
-          </div>
+          {/* ═══ AWAY / ATTENTION ROSTER — collapsible, 7 rows visible then scroll ═══ */}
+          <CollapsibleSection
+            title={`Trainees Not On Field (${awayTrainees.length})`}
+            subtitle="Who is away, why, and expected return · attn = source of truth (return karte hi list se hatta hai)"
+            icon={<AlertTriangle size={14} />}
+            urgentCount={awayTrainees.length}
+            accentColor="border-l-red-500"
+            action={{ label: 'Manage Absences', onClick: () => go(ROUTES.absentMgmt) }}
+          >
+            {awayTrainees.length === 0 ? <div className="p-6 text-center text-sm font-bold text-emerald-700">✓ All trainees are on field.</div> : <div className="overflow-x-auto max-h-[340px] overflow-y-auto border border-red-100 rounded-lg"><table className="w-full text-xs"><thead className="bg-slate-900 text-white sticky top-0 z-10"><tr>{['#','Chest','Name','Platoon','Status','Reason / Permission','From','Expected Return','Days','Remarks'].map(h => <th key={h} className="px-3 py-3 text-left text-[9px] font-black uppercase whitespace-nowrap">{h}</th>)}</tr></thead><tbody className="divide-y divide-red-100">{awayTrainees.map((t, idx) => { const code = getDashboardAttnCode(t); const info = getAbsentTypeInfo(code); const recs = absentRecordsByTrainee[t.id] || []; const rec = recs.find(r => r.status === 'Active') || recs[0]; const medical = activeMedicalByTrainee[t.id]; const reason = rec?.reason || medical?.diagnosis || medical?.category || 'Not recorded'; const rowColor = code === 'H' ? 'bg-purple-50/80 border-l-4 border-l-purple-500' : code === 'A' ? 'bg-red-50/80 border-l-4 border-l-red-500' : 'bg-amber-50/80 border-l-4 border-l-amber-500'; return <tr key={t.id} className={`${rowColor} hover:brightness-95`}><td className="px-3 py-3 font-black text-slate-400">{idx + 1}</td><td className="px-3 py-3 font-mono font-black">{t.chestNo || '—'}</td><td className="px-3 py-3 font-black text-slate-800 whitespace-nowrap">{t.rank || 'RCT'} {t.name}</td><td className="px-3 py-3">{t.platoon || '—'}</td><td className="px-3 py-3"><span className={`rounded-lg px-2 py-1 text-[9px] font-black ${info.bgColor} ${info.color}`}>{info.icon} {info.shortLabel}</span></td><td className="max-w-[180px] px-3 py-3 font-bold text-slate-700">{reason}</td><td className="px-3 py-3 font-mono text-[10px]">{rec?.fromDate || medical?.date || '—'}</td><td className="px-3 py-3 font-mono text-[10px] text-blue-700">{rec?.toDate || '—'}</td><td className="px-3 py-3 font-black text-red-600">{rec?.totalDays ? `${rec.totalDays}d` : '—'}</td><td className="max-w-[140px] px-3 py-3 text-[10px] text-slate-600">{rec?.remarks || '—'}</td></tr>; })}</tbody></table></div>}
+          </CollapsibleSection>
 
           {/* ═══ CLEAN ROSTER BOARD ═══ */}
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><div><p className="text-[10px] font-black uppercase tracking-widest text-military-600">Roster command board</p><h2 className="mt-1 text-sm font-black uppercase text-slate-800">Platoon-wise live strength</h2></div><button onClick={() => focusRoster('ALL')} className="rounded-lg bg-military-800 px-3 py-2 text-[10px] font-black uppercase text-white hover:bg-military-700">Open full roster →</button></div>
+          <CollapsibleSection
+            title="Platoon-wise Live Strength"
+            subtitle="Roster command board"
+            icon={<Layers size={14} />}
+            action={{ label: 'Open Full Roster', onClick: () => focusRoster('ALL') }}
+          >
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">{platoons.filter(p => p !== 'ALL').map(p => { const members = trainees.filter(t => t.platoon === p); const presentCount = members.filter(t => getDashboardAttnCode(t) === 'P').length; const pct = members.length ? Math.round(presentCount / members.length * 100) : 0; return <button key={p} onClick={() => focusRoster(p)} className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:-translate-y-0.5 hover:border-military-400 hover:bg-white hover:shadow-md"><div className="flex items-center justify-between"><span className="text-xs font-black text-slate-800">{p}</span><span className={`rounded-full px-2 py-1 text-[9px] font-black ${pct >= 90 ? 'bg-green-100 text-green-700' : pct >= 75 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>{pct}%</span></div><div className="mt-3 h-2 rounded-full bg-slate-200"><div className={`h-full rounded-full ${pct >= 90 ? 'bg-green-500' : pct >= 75 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${pct}%` }} /></div><div className="mt-3 flex justify-between text-[10px] font-bold"><span className="text-slate-600">{members.length} total</span><span className="text-green-700">{presentCount} present</span><span className="text-red-600">{members.length - presentCount} away</span></div></button>; })}</div>
-          </div>
+          </CollapsibleSection>
 
           {/* ═══ TRAINEE ROSTER — moved UP ═══ */}
           <div ref={rosterSectionRef}>
