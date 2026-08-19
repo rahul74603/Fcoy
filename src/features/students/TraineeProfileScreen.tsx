@@ -138,10 +138,19 @@ const PhotoUpload: React.FC<PhotoUploadProps> = ({
       let savedURL = base64;
       let savedPath = `base64_${traineeId}`;
       try {
+        // ⏱️ 8s TIMEOUT — agar Storage bucket set up nahi hai / CORS fail ho,
+        // Firebase SDK 2 minute tak retry karta rehta hai aur upload 50% pe
+        // ATKA dikhta hai. Timeout ke baad turant base64 fallback (photo
+        // Firestore me save hoti hai — kabhi fail nahi hoti).
+        const withTimeout = <T,>(p: Promise<T>, ms: number): Promise<T> =>
+          Promise.race([
+            p,
+            new Promise<T>((_, rej) => setTimeout(() => rej(new Error('storage-timeout')), ms)),
+          ]);
         const photoPath = `trainee-photos/${traineeId}/photo.jpg`;
         const photoRef = ref(getStorage(), photoPath);
-        await uploadString(photoRef, base64, 'data_url');
-        savedURL = await getDownloadURL(photoRef);
+        await withTimeout(uploadString(photoRef, base64, 'data_url'), 8000);
+        savedURL = await withTimeout(getDownloadURL(photoRef), 5000);
         savedPath = photoPath;
       } catch (storageErr) {
         console.warn('Storage photo upload failed — falling back to base64:', storageErr);
