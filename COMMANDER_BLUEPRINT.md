@@ -1,75 +1,65 @@
-# COMPANY COMMANDER BLUEPRINT
+# COMPANY COMMANDER BLUEPRINT (Updated — August 2026)
 
 ## Role
 
-Company Commander is the highest authority.
-
-Commander can access all modules.
-
----
-
-## Commander Dashboard
-
-Total Trainees
-
-Documents Completed
-
-Documents Pending
-
-Inventory Status
-
-Fund Status
-
-Recovery Status
-
-Low Stock Alerts
-
-Hospital Cases
-
-Leave Cases
-
-Training Status
+Company Commander = highest operational authority. Sab modules ka access
+(DB-rules level par bhi). Catch-all rule ke through legacy collections
+bhi sirf CC ko milte hain.
 
 ---
 
-## Permissions
+## Exclusive Rights (sirf CC)
 
-View All Trainees
-
-View All Documents
-
-View Inventory
-
-View Recoveries
-
-View Funds
-
-View Expenses
-
-View Training
-
-View Reports
-
-Create Users
-
-Disable Users
-
-Manage Access
+* **Batch create / activate / complete** — transaction-safe (duplicate
+  batch number concurrency me bhi impossible), numbering `max(seq)+1`
+* User Management (`/users`):
+  - Staff create (secondary auth session — CC ka login safe rehta hai)
+  - **Change Password** (in-app, current password se — no Console)
+  - **Full Delete** (Auth account + profile दोनों — no orphans)
+  - **Repair Login** ("Profile missing" orphan accounts ka in-app fix)
+  - Activate/Deactivate (normal lifecycle — delete rare)
+* Settings (`/settings`), unitConfig/letterhead
+* AI Agent (`/ai-agent`)
+* Owner Admin Panel (`/dev-practice` — sirf isDeveloper accounts):
+  Customers, Subscriptions sync, Company Monitor, Test Batch, Practice
 
 ---
 
-## Reports
+## Commander Dashboard (`/commander`) — F COY COMMAND CENTER
 
-Inventory Report
+Sab sections **collapsible** (header click → hide/show, space control):
 
-Recovery Report
+1. **Company Strength Strip**: Total / Available(% bar) / Hospital /
+   Leave / Light Duty / Absent / Attention count — har cell clickable →
+   filtered roster
+2. Company Information Board (full Welfare Demographics explorer —
+   State/Religion/Language/Zone + filters + festival planner + roster)
+3. Batch Progress Overview (default collapsed)
+4. **Trainees Not On Field** — ~7 rows visible phir scroll, sticky
+   header; `attn` = presence ka source of truth (return karte hi list
+   se hat jata hai)
+5. Platoon-wise Live Strength (per-platoon % bars)
+6. Full Trainee Roster (filters: platoon/status/kit/docs/FPT/recovery,
+   search, health score, profile modal)
+7. Funds & Financial Overview (4 funds + transfers + detail modal)
+8. Training Schedule (today + tomorrow, instructors)
+9. Commander Attention Board (FPT fails, test fails, docs, kit,
+   recovery, vendor dues panels)
+10. Staff Management stats · Today's Instructors · All Modules access
 
-Expense Report
+---
 
-Fund Report
+## Permissions (DB-enforced)
 
-Training Report
+View + manage: trainees, batches, documents, medical, weekly programme,
+inventory, issues, all 4 funds, vendors, bills, recoveries, salary,
+staff module, subjects, schedule, tests, reports, users, settings,
+subscription (master).
 
-Document Report
+---
 
-Company Summary Report
+## Reports (`/reports`)
+
+CC ko saari categories: Trainee Management, Inventory/QM,
+Finance (4 funds), Training Performance, Staff Management.
+Print signature block: Prepared By / Checked-Verified By / Approved By (CC).

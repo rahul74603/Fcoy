@@ -1,723 +1,106 @@
-# QUARTER MASTER MODULE BLUEPRINT
+# QUARTER MASTER MODULE BLUEPRINT (Updated — August 2026)
 
-## BSF TRAINING COMMAND ERP
+## Role Purpose
 
----
+QM = inventory, kit issue, 4 funds, vendors, bills, recoveries, salary.
 
-# ROLE PURPOSE
+⚠️ QM trainee records VIEW kar sakta hai; personal information EDIT
+nahi — DB rule `onlyKeys` sirf kit fields allow karta hai:
+`issuedKitItems, lastKitIssueDate, kitIssued, issuedItems,
+pendingRecoveryAmount, shoeSize, dressSize, updatedAt`.
 
-Quarter Master (QM) is responsible for:
-
-1. Inventory Management
-2. Item Master Management
-3. Kit Issue System
-4. Recovery Collection
-5. Fund Management
-6. Expense Management
-7. Bill Management
-8. Logistics Monitoring
-
-Quarter Master can VIEW trainee records but cannot edit trainee personal information.
+QM ke paas nahi: user management, settings, batch create, documents,
+trainee personal edit.
 
 ---
 
-# QM DASHBOARD
+## Item Master (dynamic — koi hardcoding nahi)
 
-## Summary Cards
-
-Show:
-
-* Total Trainees
-* Total Inventory Items
-* Low Stock Alerts
-* Total Collection
-* Total Expense
-* Total Due
-* Current Balance
-* Pending Bills
+Single source of truth: `src/features/quartermaster/qmCatalog.ts`
+(14 base kit items + sizes) **+** `training_custom_items` collection
+(runtime custom items). Inventory Issue screen aur Trainee Profile
+दोनों YAHI master use karte hain — drift impossible.
+Item names/IDs kabhi mat badlo — purane issue_records inhi se match hote hain.
 
 ---
 
-## Current Balance Formula
+## Stock Calculation (authoritative)
 
-Current Balance
+```
+Current Stock = Purchased (training_fund_expenses quantities)
+              − Issued (issue_records TRAINING_ESSENTIALS items)
+```
 
-=
-
-Total Collection
-
-*
-
-Total Expense
+Dashboard ka Live Stock Position isi se derive hota hai. Koi doosra
+parallel stock system nahi banana.
 
 ---
 
-# MODULE 1
+## Kit Issue Flow (atomic)
 
-# ITEM MASTER
-
-Purpose:
-
-Create inventory items dynamically.
-
-No hardcoded items allowed.
-
-Examples:
-
-* PT Shoes
-* DM Shoes
-* Ground Sheet
-* Mess Tin
-* Tent
-* Drill Dress
-* Kemo Dress
-* Mosquito Net
-* Training Equipment
-* Raw Material
-* Any Future Item
+Search chest/reg → trainee load → items+size select → Issue →
+**ek writeBatch me**: trainee.issuedKitItems update + issue_record
+create (traineeId, chestNo, items, qty, value, issuedBy, batchId,
+serverTimestamp). Beech me fail = दोनों rollback.
 
 ---
 
-## Item Fields
+## Fund System — 4 Funds
 
-Item Name
+Mess Fund · Training Fund · Company Assets · General Fund
+(+ fund_transfers between funds)
 
-Category
+### Balance Formula (authoritative — collections me implemented)
+```
+Balance = Total Collection − Actually Paid − Transferred Out
+Actually Paid = vendor entries ka paidAmount + non-vendor ka amount
+Vendor Due   = sum(dueAmount)
+```
+(Purane doc me galat '*' symbol tha — multiplication kabhi nahi tha.)
 
-Description
+### Recovery (training_fund_recoveries)
+Expected / Paid / Due per trainee, partial payments supported,
+trainee.pendingRecoveryAmount increment/decrement se sync.
+Categories dynamic — koi hardcoded list nahi.
 
-Unit Price
+### Mess Cutting
+Rate configuration screen-level hai; per-head collection entries
+mess_fund_collections me. Hardcoded ₹-figures business docs me sirf
+examples hain — actual entries dynamic.
 
-Supplier Name
+### Bills
+Expense create karte waqt bill OPTIONAL (baad me upload ho sakta hai).
+Bill files → Cloudinary. Statuses: Pending / Uploaded / Verified.
 
-Supplier Contact
-
-Size Required
-
-Financial Type
-
-Minimum Stock Alert
-
-Active Status
-
-Created Date
-
----
-
-## Financial Types
-
-* Company Asset
-* Mess Fund
-* Per Head Recovery
-* Direct Expense
-* Other
+### Mess Boy Salary
+mess_boys + mess_boy_salaries; monthly records, fund se linked.
 
 ---
 
-# MODULE 2
+## QM Dashboard (`/quartermaster`) — Command Center
 
-# INVENTORY MANAGEMENT
+Hierarchy: STOCK → ISSUE → RECOVERY → MONEY → BILLS → RISK → ACTION
 
-Purpose:
-
-Maintain complete stock ledger.
-
-Track:
-
-Opening Stock
-
-Received Quantity
-
-Issued Quantity
-
-Damaged Quantity
-
-Current Stock
-
----
-
-## Formula
-
-Current Stock
-
-=
-
-Opening Stock
-
-*
-
-Received Quantity
-
-*
-
-Issued Quantity
-
-*
-
-Damaged Quantity
+1. Header: greeting + QM name + batch + date
+2. Grand Totals: Collection / Orders / Actually Paid / Net Balance /
+   Vendor Dues / Pending Bills
+3. **Needs Your Attention**: CRITICAL (negative fund, vendor dues,
+   out-of-stock with shortage counts), ACTION SOON (low stock ≤5,
+   pending bills), PENDING (un-kitted trainees, recoveries) — har
+   alert par action button; All Clear state
+4. **Kit Issue Coverage**: X/N trainees kitted (%), Issues Today,
+   Kit Pending → Issue Kit
+5. Today's strip: Collection / Expense / Stock received / Issues
+6. **Live Stock Position** (dynamic table): har item ka
+   Purchased / Issued / Available / **Required** (jinhe abhi nahi mila)
+   / **Shortage** (kitna aur chahiye) / Status
+   (OUT OF STOCK / CRITICAL / LOW / HEALTHY) + Inventory Health %
+7. 4 Fund cards → Quick stats → Vendor Dues + Stock Alerts + Recovery
+8. Modules · Recent Activity (15) · Balance Formula card · Salary card
 
 ---
 
-## Features
+## Reports (QM-visible categories)
 
-Add Stock
-
-Receive Stock
-
-Damage Entry
-
-Stock History
-
-Low Stock Alerts
-
-Inventory Value
-
-Supplier History
-
----
-
-# MODULE 3
-
-# KIT ISSUE SYSTEM
-
-Purpose:
-
-Issue items to trainees.
-
----
-
-## Workflow
-
-Search Chest Number
-
-↓
-
-Load Trainee Profile
-
-↓
-
-Select Items
-
-↓
-
-Select Size (if required)
-
-↓
-
-Issue Item
-
----
-
-## System Actions
-
-Reduce Inventory Stock
-
-Create Issue Record
-
-Update Trainee Profile
-
-Create Issue History
-
----
-
-## Fields
-
-Chest Number
-
-Trainee Name
-
-Item Name
-
-Quantity
-
-Size
-
-Issue Date
-
-Issued By
-
-Remarks
-
----
-
-## Issue Status
-
-Show:
-
-Issued Items
-
-Pending Items
-
-Missing Items
-
-Example:
-
-PT Shoes = Issued
-
-DM Shoes = Pending
-
-Ground Sheet = Pending
-
-Mess Tin = Issued
-
----
-
-# MODULE 4
-
-# RECOVERY MANAGEMENT
-
-Purpose:
-
-Track money recoverable from trainees.
-
----
-
-## Recovery Types
-
-Current:
-
-Mess Cutting
-
-Future:
-
-Uniform Recovery
-
-Equipment Recovery
-
-Other Recovery
-
----
-
-## Recovery Fields
-
-Chest Number
-
-Recovery Type
-
-Expected Amount
-
-Paid Amount
-
-Due Amount
-
-Status
-
----
-
-## Status Values
-
-Paid
-
-Partial
-
-Pending
-
----
-
-# MESS CUTTING SYSTEM
-
-Current Rule:
-
-₹4650 Per Head Per Month
-
----
-
-## Example
-
-180 Trainees
-
-×
-
-₹4650
-
-=
-
-₹8,37,000
-
-Expected Collection
-
-System should calculate automatically.
-
----
-
-## Trainee Payment Example
-
-Expected:
-
-₹4650
-
-Paid:
-
-₹3000
-
-Due:
-
-₹1650
-
-Status:
-
-Partial
-
-Partial payment must be supported.
-
----
-
-# MODULE 5
-
-# COLLECTION MANAGEMENT
-
-Purpose:
-
-Track all incoming money.
-
----
-
-## Collection Types
-
-Mess Cutting
-
-Other Recovery
-
-Future Collections
-
----
-
-## Fields
-
-Date
-
-Amount
-
-Source
-
-Received By
-
-Remarks
-
----
-
-# MODULE 6
-
-# EXPENSE MANAGEMENT
-
-Purpose:
-
-Track all outgoing money.
-
----
-
-## Expense Categories
-
-Milk
-
-Vegetables
-
-Atta
-
-Ration
-
-Gas
-
-Mess Boy Salary
-
-Equipment Purchase
-
-Training Material
-
-Miscellaneous
-
----
-
-## Fields
-
-Date
-
-Expense Type
-
-Amount
-
-Vendor
-
-Remarks
-
-Bill Status
-
----
-
-# MODULE 7
-
-# MESS BOY SALARY SYSTEM
-
-Government Cook salary is NOT included.
-
-Only Mess Boys.
-
----
-
-## Default Rule
-
-Daily Wage
-
-₹350
-
----
-
-## Example
-
-7 Mess Boys
-
-×
-
-30 Days
-
-×
-
-₹350
-
-=
-
-₹73,500
-
-Salary Expense
-
----
-
-System should automatically calculate salary expense.
-
-Salary should appear automatically in Expense Ledger.
-
----
-
-# MODULE 8
-
-# BILL MANAGEMENT
-
-Bills are optional.
-
-Expense entry must not stop if bill is unavailable.
-
----
-
-## Supported Formats
-
-PDF
-
-JPG
-
-JPEG
-
-PNG
-
-WEBP
-
----
-
-## Bill Status
-
-Pending
-
-Uploaded
-
-Verified
-
----
-
-Users must be able to upload bills later.
-
----
-
-# MODULE 9
-
-# FUND MANAGEMENT
-
-Purpose:
-
-Monitor company fund status.
-
----
-
-## Show
-
-Total Collection
-
-Total Expense
-
-Total Due
-
-Current Balance
-
----
-
-## Formula
-
-Current Balance
-
-=
-
-Collection
-
-*
-
-Expense
-
----
-
-# MODULE 10
-
-# LOW STOCK ALERTS
-
-Each inventory item contains:
-
-Minimum Stock Alert
-
-Example:
-
-PT Shoes
-
-Alert Level:
-
-10
-
-If Current Stock ≤ 10
-
-Show:
-
-LOW STOCK
-
----
-
-# MODULE 11
-
-# REPORTS
-
-Inventory Report
-
-Stock Report
-
-Issue Report
-
-Recovery Report
-
-Expense Report
-
-Collection Report
-
-Fund Summary Report
-
-Pending Bills Report
-
-Low Stock Report
-
----
-
-## Export Formats
-
-PDF
-
-Excel
-
----
-
-# MODULE 12
-
-# PERMISSIONS
-
-Quarter Master CAN:
-
-✓ View Trainees
-
-✓ Manage Item Master
-
-✓ Manage Inventory
-
-✓ Manage Issue System
-
-✓ Manage Recoveries
-
-✓ Manage Collections
-
-✓ Manage Expenses
-
-✓ Manage Bills
-
-✓ Generate Reports
-
----
-
-Quarter Master CANNOT:
-
-✗ Edit Trainee Personal Information
-
-✗ Edit Documents
-
-✗ Create Users
-
-✗ Access System Settings
-
----
-
-# DATABASE COLLECTIONS
-
-item_master
-
-inventory_transactions
-
-issue_records
-
-recoveries
-
-collections
-
-expenses
-
-fund_summary
-
----
-
-# FINAL QM WORKFLOW
-
-Clerk Creates Trainee
-
-↓
-
-Quarter Master Views Trainee
-
-↓
-
-Quarter Master Issues Kit
-
-↓
-
-Stock Reduced
-
-↓
-
-Issue Record Created
-
-↓
-
-Recovery Generated
-
-↓
-
-Mess Cutting Collected
-
-↓
-
-Collection Added
-
-↓
-
-Expenses Recorded
-
-↓
-
-Balance Updated
-
-↓
-
-Company Commander Monitors Everything
-
----
-
-END OF QM BLUEPRINT
+Trainee Management (kit ke liye), Inventory/QM, Finance — 4 Funds.
+Clerk/Ustad in finance reports ko dekh hi nahi sakte (UI + DB दोनों).

@@ -124,6 +124,17 @@ VITE_FIREBASE_MESSAGING_SENDER_ID
 VITE_FIREBASE_APP_ID
 ```
 
+### ☁️ Cloudinary ke liye (photos + documents uploads — ZAROORI)
+
+```
+VITE_CLOUDINARY_CLOUD_NAME
+VITE_CLOUDINARY_UPLOAD_PRESET
+```
+
+(Firebase Storage use NAHI hota — uploads Cloudinary par jaate hain.
+Preset UNSIGNED hona chahiye. Ye secrets miss hue to photos base64
+fallback me jayengi aur documents upload fail hoga.)
+
 ### AI Agent ke liye
 
 ```

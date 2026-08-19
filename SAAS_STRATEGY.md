@@ -4,37 +4,21 @@ BSF Training Command ERP ko yearly subscription product banane ka plan.
 
 ---
 
-# ⚠️ PEHLE — RUKO
+# ✅ SECURITY STATUS (Updated — August 2026)
 
-## Sabse Badi Baat: Security Rules Hain Hi Nahi
+## Rules AB HAIN — production-hardened
 
-Repo me `firestore.rules` file **hai hi nahi**. Matlab abhi database
-**default mode** me chal raha hai.
+Purana warning ("firestore.rules hai hi nahi") ab OBSOLETE hai. Aaj:
 
-**Iska matlab kya hai:**
+* `firestore.rules` — 54+ collections ke explicit role-based rules,
+  global authenticated fallback removed, catch-all CC-only
+* Role trusted `users/{uid}` doc se; inactive users denied
+* Emulator test suite `npm run test:rules` — 47/47 security checks pass
+* Sync-bridge identity strictly scoped (sirf subscription push)
+* File uploads Cloudinary par (Firebase Storage bucket use nahi hota)
 
-Aapki Firebase config `dist/assets/index-*.js` me plain text me hai —
-koi bhi browser me F12 dabakar dekh sakta hai.
-
-Us config se koi bhi banda apna script likh kar:
-
-Saare trainees ka personal data (Aadhaar, mobile, address) padh sakta hai
-
-Mess fund, vendor payments — poora financial record dekh sakta hai
-
-Kuch bhi delete kar sakta hai
-
-**Login ki zaroorat bhi nahi.**
-
----
-
-**Ye abhi bhi problem hai — subscription ka intezaar mat karo.**
-
-Paid product banane se pehle to bilkul zaroori hai. Government/defence
-client ko bechne me ye single issue poora deal kharab kar dega.
-Security audit me pehli cheez yahi check hoti hai.
-
-Iska fix Phase 0 me hai (neeche).
+Deploy karne se pehle har rules-change par `npm run test:rules` chalana
+zaroori hai.
 
 ---
 
@@ -340,7 +324,7 @@ Aur jo unit "alag database" par ade ho, unko **Option A premium tier**
 /tenants/{tenantId}/meta/license
 {
   plan: 'company' | 'centre' | 'zone',
-  status: 'active' | 'grace' | 'expired' | 'suspended',
+  status: 'active' | 'expired',  // (grace/suspended REMOVED — binary lock)
   issuedAt: '2026-04-01',
   expiresAt: '2027-03-31',
   maxUsers: 5,
@@ -363,7 +347,7 @@ Client-side check bypass ho jaata hai. **Security rules me lagana hoga:**
 function licenseValid() {
   let lic = get(/databases/$(database)/documents/tenants/$(tid)/meta/license).data;
   return lic.status == 'active'
-      || (lic.status == 'grace' && request.method == 'get');
+      ; // grace read-access REMOVED — expired = no access
 }
 
 match /tenants/{tid}/trainees/{id} {
@@ -374,7 +358,11 @@ match /tenants/{tid}/trainees/{id} {
 
 ---
 
-### Grace Period — Zaroori Hai
+### Grace Period — ❌ REJECTED (owner ka final decision)
+
+> **IMPLEMENTED REALITY:** Koi grace period NAHI hai. Subscription
+> active → app chalegi; none/expired → turant FULL LOCK. Neeche ka
+> purana grace-planning sirf historical reference ke liye hai.
 
 Government payment **hamesha late** aati hai. Expiry par turant band
 karna rishta kharab kar dega.
@@ -382,9 +370,9 @@ karna rishta kharab kar dega.
 ```
 Expiry se 90 din pehle  →  Renewal reminder (budget planning ke liye)
 Expiry se 30 din pehle  →  Banner: "License X din me khatam"
-Expiry ke baad          →  30 din GRACE — READ-ONLY
+Expiry ke baad          →  TURANT FULL LOCK (NO grace — implemented)
                            (data dikhega, export hoga, naya entry nahi)
-Grace ke baad           →  Suspended (data safe rahega, access band)
+(Data safe rehta hai — renew karte hi turant wapas)
 ```
 
 **Data kabhi delete mat karna.** Government client ka data delete
@@ -544,7 +532,7 @@ Government me word-of-mouth sabse strong channel hai.
 |---|---|---|
 | 0. Security rules | 42 collections + testing | 3-5 din |
 | 1. Multi-tenancy | Migration + saare queries | 2-3 hafte |
-| 2. License system | Doc + rules + UI + grace | 1 hafta |
+| 2. License system | Doc + rules + UI (NO grace) | ✅ DONE |
 | 3. Owner console | Naya module | 1-2 hafte |
 | 4. Audit + backup | Logging + export | 1 hafta |
 

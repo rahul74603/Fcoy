@@ -99,7 +99,14 @@ cd C:\Users\Rahul\Fcoy
 powershell -ExecutionPolicy Bypass -File deploy\Deploy-Company.ps1 -Code bcoy
 ```
 Script karegi: keys se `.env` → build → `https://fcoy-erp-bcoy.web.app` live.
-(Master `.env` ka backup apne aap hota hai aur restore bhi — master app safe.)
+(Master `.env` ka backup apne aap hota hai aur restore bhi — master app safe.
+Cloudinary keys master `.env` se company build me apne aap carry hoti hain.)
+
+⚠️ **Security rules bhi deploy karo** (naye role-based rules ke bina
+company app kaam nahi karegi):
+```powershell
+firebase deploy --only firestore:rules --project <company-project-id>
+```
 
 </details>
 

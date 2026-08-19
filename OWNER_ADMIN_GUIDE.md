@@ -65,13 +65,15 @@ Kal kisi unit ko app dena ho:
 - **Cancel** — turant band (data delete nahi hota)
 - **Record** — har customer ka poora payment history date-wise
 
-**Expiry ka system apne aap chalta hai:**
+**Expiry ka system apne aap chalta hai (⚠️ NO GRACE — binary lock):**
 | Din bache | Kya hota hai |
 |---|---|
 | 30 din se zyada | Sab normal (green) |
-| ≤ 30 din | Har screen pe amber warning banner |
-| Expire | 30 din **grace** — data dikhta hai, naya entry nahi |
-| Grace ke baad | Access band — data safe rehta hai, renew karte hi wapas |
+| ≤ 30 din | Company app me amber warning banner (access full) |
+| Expire | **TURANT FULL LOCK** — koi grace period nahi. Data safe rehta hai, renew karte hi wapas |
+
+⚠️ MASTER app par kabhi koi lock/banner nahi — CC/QM/Clerk/Ustad sab
+accounts hamesha free. Lock sirf COMPANY apps me enforce hota hai.
 
 ---
 

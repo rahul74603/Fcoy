@@ -1,425 +1,145 @@
-# PROJECT_STATUS.md
+# PROJECT STATUS — BSF TRAINING COMMAND ERP (F COY)
 
-# BSF TRAINING COMMAND ERP
+Last Updated: August 2026
 
-Last Updated: 2026
+Current Phase: **PRODUCTION-HARDENED — READY FOR STAGING/INTERNAL USE**
 
----
-
-# PROJECT STATUS
-
-Current Phase:
-
-Phase 1
-
-Core System Development
-
-Status:
-
-IN PROGRESS
+(Purana "v0.1 Alpha / Not Production Ready" status obsolete hai.)
 
 ---
 
-# PROJECT OVERVIEW
+# COMPLETED ✅
 
-Company Type:
-
-Single Company Deployment
-
-Example:
-
-F Coy
-
-Architecture:
-
-Each Company Independent
-
-No Data Sharing Between Companies
-
-Technology:
-
-React
-
-TypeScript
-
-Tailwind CSS
-
-Firebase
-
-Firestore
-
-Firebase Authentication
-
-Firebase Storage
-
----
-
-# COMPLETED
-
-## Project Planning
-
-✔ ERP Architecture Defined
-
-✔ User Roles Defined
-
-✔ Firebase Selected
-
-✔ Single Company Model Finalized
-
-✔ Dynamic Inventory Model Finalized
-
-✔ Dynamic Recovery Model Finalized
-
-✔ Dynamic Expense Model Finalized
-
----
-
-## Firebase
-
-✔ Firebase Project Created
-
-✔ Firebase Authentication Setup
-
-✔ Firestore Connected
-
-✔ Environment Variables Configured
-
----
-
-## Authentication
-
-✔ Login System
-
-✔ Role Based Access Design
-
-✔ User Structure Finalized
-
-Roles:
-
-Company Commander
-
-Quarter Master
-
-Clerk
-
-Ustad
-
----
-
-## UI
-
-✔ Main Layout
-
-✔ Sidebar
-
-✔ Dashboard UI
-
-✔ Commander Dashboard UI
-
-✔ Quarter Master Dashboard UI
-
-✔ Clerk Dashboard UI
-
-✔ Ustad Dashboard UI
-
-✔ Inventory Screens UI
-
-✔ Finance Screens UI
-
-✔ Settings UI
-
----
-
-# CURRENTLY IN DEVELOPMENT
+## Security Hardening
+- Role-based `firestore.rules` — 54+ collections explicit, global
+  authenticated fallback removed, catch-all CC-only
+- QM trainee updates `onlyKeys` (kit fields only); finance collections
+  Clerk/Ustad ke liye read tak denied
+- Batch create/activate CC-only (context + DB दोनों level par)
+- Sync-bridge identity (`owner-sync.*@fcoy-erp.internal`) strictly scoped
+- Emulator security suite: `npm run test:rules` — 47/47 passing
+- Inactive-user lockout, role self-escalation blocked
 
 ## Clerk Module
-
-Status:
-
-IN PROGRESS
-
-Pending:
-
-Batch Creation
-
-Trainee CRUD
-
-Document Verification
-
-Weekly Program
-
-Hospital Records
-
-Leave Records
-
-Detailed Ustad Records
-
----
+- Trainee Registration (chest OPTIONAL, regNo duplicate-check,
+  sensitive fields bina default ke — "— Select —")
+- **Trainee List** (`/trainees`): full batch ek saath, naam/partial
+  search, photo column, Chest Pending/Assigned tabs, inline chest
+  assign (uniqueness + audit), row-level Full Report
+- Trainee Profile: search + deep-link (`/profile?search=`), edit,
+  photo (Cloudinary + legacy base64), **Full Dossier report** (10
+  sections: personal→kit→medical→absent→FPT→tests→recovery→documents)
+- Document Cell: Cloudinary uploads, audit trail (uploadedBy/verifiedBy/
+  rejectedBy/rejectionReason), no fake-success on failure
+- Medical Register: Void/Corrected (no hard delete), atomic status sync
+- Absent/Leave management, Weekly Programme, Welfare Demographics
+- **Clerk Dashboard**: Operational Command Center (strength strip,
+  Needs Attention hero, today's program, document control, medical &
+  availability, pending work, recent activity, quick search)
 
 ## Quarter Master Module
-
-Status:
-
-IN PROGRESS
-
-Completed:
-
-Item Master Basic
-
-Inventory List Basic
-
-Pending:
-
-Inventory Transactions
-
-Issue Records
-
-Recovery System
-
-Expense System
-
-Fund System
-
-Bill Upload System
-
-Reports
-
----
+- Inventory + Kit Issue (atomic writeBatch), centralized item master
+  (`qmCatalog.ts` + dynamic custom items)
+- 4 Funds (Mess/Training/Assets/General), transfers, vendors, bills,
+  recoveries, mess boy salary
+- **QM Dashboard**: Command Center — Needs Attention (negative funds/
+  vendor dues/shortage forecast), Kit Coverage panel, **Live Stock
+  Position** (Purchased/Issued/Available/Required/Shortage per item),
+  today's money strip, grand totals, fund cards, recent activity
 
 ## Commander Module
+- **CC Dashboard**: Command Center — Company Strength Strip (clickable),
+  collapsible sections everywhere, Not-On-Field roster (7-row scroll,
+  attn = source of truth), platoon board, full roster w/ filters,
+  funds, training schedule, attention board, staff stats
+- Company Information Board = full Welfare Demographics explorer
+- User Management: create staff, **Change Password / Full Delete /
+  Repair Login** — sab in-app (Firebase Console ki zaroorat nahi)
+- Batch Management: CC-only, transaction-safe, max+1 numbering,
+  isDevData-only dev-batch deletion (name-based deletion REMOVED)
 
-Status:
+## Ustad Module
+- **Ustad Dashboard** (`/ustad`): Today's Training Command Center —
+  status cards, NOW/NEXT session highlight, today's schedule,
+  attention items, strength bars, upcoming days, quick actions
+- Staff/Leave/Schedule/Tests/Batch Progress screens
+- Sidebar/search/notifications role-aligned (no ACCESS DENIED links)
 
-PARTIAL
+## Reports
+- Role-scoped categories (Clerk/Ustad ko finance nahi — UI + DB)
+- Per-type verifier label (QM sirf inventory/finance reports par)
+- Trainee Full Dossier printable report
 
-Completed:
+## Storage / Uploads
+- **Cloudinary** (`src/services/cloudinary.ts`) — photos + documents.
+  Free, no card. Fallback: photo base64. Firebase Storage NOT used.
 
-Dashboard UI
+## Subscription (FINAL)
+- **No grace period** — active ya locked, bas
+- Master app: never locks (all roles free)
+- Company apps: lock enforced; renew via master sync bridge
 
-Pending:
-
-Reports
-
-User Management
-
-Monitoring Screens
-
-Analytics
-
----
-
-# NEXT PRIORITY
-
-Priority 1
-
-Complete Clerk Module
-
-Reason:
-
-All other modules depend on trainee data.
-
----
-
-Priority 2
-
-Complete Inventory Issue System
-
-Reason:
-
-Links Trainees and Inventory.
+## Infra / Tooling
+- GitHub Actions: typecheck → build → deploy (main push)
+- `deploy/` scripts: Deploy-Company, New-CompanyApp, Update-AllApps,
+  **Reset-Password** (owner tool)
+- npm scripts: `typecheck`, `lint`, `test:rules`
 
 ---
 
-Priority 3
+# KNOWN REMAINING ITEMS 🔶
 
-Complete Recovery System
-
-Reason:
-
-Links Trainees and Finance.
-
----
-
-Priority 4
-
-Complete Expense System
-
-Reason:
-
-Creates Actual Fund Management.
+1. Storage rules deployed nahi (bucket hi nahi — Cloudinary use hota
+   hai). Cloudinary file DELETE client se possible nahi (unsigned) —
+   sirf Firestore reference hatta hai.
+2. AI Agent keys (Groq/Gemini) client bundle me hain — quota risk,
+   proxy recommended (future).
+3. Chest uniqueness DB-rules level par nahi (app-level check) —
+   current trust model me acceptable.
+4. First-run wizard trust boundary client-side (rules firstRun ke baad
+   self-provisioning band kar deti hain).
+5. Weekly Programme subjects/areas constants hardcoded (working —
+   dynamic masters future me agar business ko chahiye).
 
 ---
 
-# DATABASE COLLECTIONS
+# DATABASE COLLECTIONS (ACTUAL — sab implemented)
 
-Current Collections
-
-users
-
-trainees
-
-item_master
-
----
-
-Planned Collections
-
-issue_records
-
-inventory_transactions
-
-recoveries
-
-collections
-
-expenses
-
-fund_summary
-
-weekly_programs
-
-ustad_details
-
-document_verification
-
-activity_logs
+users, batches, trainees, config, unitConfig,
+weeklyPrograms, medicalRecords, absentRecords, udhariRecords,
+fptRecords, weeklyTestRecords, training_tests,
+issue_records, item_master, training_custom_items,
+mess_fund_collections/expenses, training_fund_collections/expenses/
+recoveries, company_assets_collections/expenses/custom_items,
+general_fund_collections/expenses, fund_transfers,
+vendors, vendor_entries, vendor_payments, bills,
+mess_boys, mess_boy_salaries, mess_custom_categories,
+staff, staff_subjects, staff_attendance, staff_duty, staff_leave,
+leave_types, duty_types, deputation_records, staff_activity_logs,
+subject_master, training_schedule, batch_progress,
+subscription, subscriptionPlans, subscriptionHistory,
+customers, customerSubscriptions, devTools, activity_logs
+(+ legacy: collections, expenses, recoveries)
 
 ---
 
-# IMPORTANT BUSINESS RULES
+# IMPORTANT BUSINESS RULES (LOCKED)
 
-Rule 1
-
-Chest Number is the primary identity.
-
-Every module must connect through Chest Number.
-
----
-
-Rule 2
-
-No hardcoded items.
-
-All inventory items must be dynamic.
-
----
-
-Rule 3
-
-No hardcoded recoveries.
-
-All recoveries must be dynamic.
-
----
-
-Rule 4
-
-No hardcoded expenses.
-
-All expenses must be dynamic.
-
----
-
-Rule 5
-
-Commander is highest authority.
-
-Commander can access all modules.
-
----
-
-Rule 6
-
-Quarter Master manages:
-
-Inventory
-
-Issue System
-
-Recoveries
-
-Expenses
-
-Funds
-
----
-
-Rule 7
-
-Clerk manages:
-
-Trainees
-
-Documents
-
-Weekly Program
-
-Hospital Records
-
-Leave Records
-
----
-
-Rule 8
-
-Ustad manages:
-
-Training Information Only
-
----
-
-# CURRENT BOTTLENECK
-
-Main Development Blocker:
-
-Quarter Master Finance Workflow
-
-Pending Decisions:
-
-Recovery Flow
-
-Fund Flow
-
-Expense Flow
-
-Balance Calculation Flow
-
----
-
-# IMMEDIATE NEXT TASK
-
-Complete Clerk Module First
-
-Then:
-
-Inventory Issue System
-
-Then:
-
-Recovery System
-
-Then:
-
-Expense System
-
-Then:
-
-Commander Monitoring
+1. Chest Number = operational identity; registration me OPTIONAL,
+   baad me assign (unique per batch + audited)
+2. Registration Number = permanent admin ID (duplicate-checked)
+3. Batch create/activate = SIRF Company Commander
+4. Clerk ↛ finance/inventory (DB-enforced)
+5. QM ↛ trainee personal data (kit fields only)
+6. Ustad = training info only
+7. Koi hardcoded items/categories nahi — dynamic masters
+8. Medical history kabhi delete nahi — Void/Corrected
+9. Subscription: master free hamesha; company apps binary lock (no grace)
+10. Har company = alag Firebase project, data isolation total
 
 ---
 
 # VERSION
 
-Project Version:
-
-v0.1 Alpha
-
-Status:
-
-Internal Development
-
-Not Production Ready
-
----
-
-END OF FILE
+Production-hardened build · August 2026
+Branch of record: see git history (arena/* working branches → main)

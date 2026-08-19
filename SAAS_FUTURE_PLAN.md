@@ -74,7 +74,7 @@ Customer app pehli baar kholte hi code maangegi → verify → apna
 
 ### Option C — Central License Server (jab 10+ companies ho)
 Ek chhota Cloud Function master project me; har customer app login pe
-usse apna status poochhe (cached 7 din offline grace). Auto-expiry,
+usse apna status poochhe. Auto-expiry (NO grace — expire = turant lock),
 auto-suspend — bilkul professional SaaS jaise.
 *Bada kaam; tabhi jab customer count justify kare.*
 
