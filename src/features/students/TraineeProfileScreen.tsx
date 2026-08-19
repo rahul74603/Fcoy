@@ -13,7 +13,7 @@ import {
   onSnapshot, writeBatch, increment
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
-import { getStorage, ref, uploadString, getDownloadURL, deleteObject } from 'firebase/storage';
+import { uploadToCloudinary } from '../../services/cloudinary';
 
 import { useTraineeSearch } from '../../hooks/useTraineeSearch';
 import type { TraineeSearchResult } from '../../hooks/useTraineeSearch';
@@ -98,7 +98,7 @@ interface PhotoUploadProps {
 }
 
 const PhotoUpload: React.FC<PhotoUploadProps> = ({
-  traineeId, traineeName, currentPhotoURL, currentPhotoPath,
+  traineeId, traineeName, currentPhotoURL,
   onUploadComplete, onDeleteComplete, compact = false,
 }) => {
   const fileInputRef              = useRef<HTMLInputElement>(null);
@@ -138,22 +138,14 @@ const PhotoUpload: React.FC<PhotoUploadProps> = ({
       let savedURL = base64;
       let savedPath = `base64_${traineeId}`;
       try {
-        // ⏱️ 8s TIMEOUT — agar Storage bucket set up nahi hai / CORS fail ho,
-        // Firebase SDK 2 minute tak retry karta rehta hai aur upload 50% pe
-        // ATKA dikhta hai. Timeout ke baad turant base64 fallback (photo
-        // Firestore me save hoti hai — kabhi fail nahi hoti).
-        const withTimeout = <T,>(p: Promise<T>, ms: number): Promise<T> =>
-          Promise.race([
-            p,
-            new Promise<T>((_, rej) => setTimeout(() => rej(new Error('storage-timeout')), ms)),
-          ]);
-        const photoPath = `trainee-photos/${traineeId}/photo.jpg`;
-        const photoRef = ref(getStorage(), photoPath);
-        await withTimeout(uploadString(photoRef, base64, 'data_url'), 8000);
-        savedURL = await withTimeout(getDownloadURL(photoRef), 5000);
-        savedPath = photoPath;
-      } catch (storageErr) {
-        console.warn('Storage photo upload failed — falling back to base64:', storageErr);
+        // ☁️ CLOUDINARY (free, no card) — Firebase Storage Blaze mangta hai
+        // isliye photos Cloudinary par jaati hain. Fail ho to base64
+        // fallback (Firestore me save — kabhi fail nahi hota).
+        const up = await uploadToCloudinary(base64, 'trainee-photos', 15000);
+        savedURL = up.url;
+        savedPath = up.publicId;
+      } catch (cloudErr) {
+        console.warn('Cloudinary photo upload failed — falling back to base64:', cloudErr);
       }
 
       setProgress(75);
@@ -178,11 +170,9 @@ const PhotoUpload: React.FC<PhotoUploadProps> = ({
     if (!preview || !window.confirm('Photo delete karna hai?')) return;
     setDeleting(true); setError('');
     try {
-      // Best-effort Storage cleanup (legacy base64_ paths me koi file nahi hoti)
-      if (currentPhotoPath && currentPhotoPath.startsWith('trainee-photos/')) {
-        try { await deleteObject(ref(getStorage(), currentPhotoPath)); }
-        catch { /* file already gone — Firestore cleanup is what matters */ }
-      }
+      // NOTE: Cloudinary file delete unsigned client se possible nahi
+      // (signed API chahiye) — Firestore reference hatana hi kaafi hai;
+      // photo app me kahin nahi dikhegi. Cloudinary cleanup console se.
       await updateDoc(doc(db, 'trainees', traineeId), {
         photoURL: '', photoPath: '', updatedAt: new Date().toISOString(),
       });

@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
-import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { uploadToCloudinary } from '../../services/cloudinary';
 
 // ✅ HOOK IMPORT
 import { useTraineeSearch } from '../../hooks/useTraineeSearch';
@@ -214,16 +214,15 @@ export const DocumentVerificationScreen = () => {
     for (const file of filesArray) {
       const fileSizeKB = Math.round(file.size / 1024);
       try {
-        const storage    = getStorage();
-        const storageRef = ref(
-          storage,
-          `documents/${searchedTrainee?.regNo}/${currentUploadKey}_${Date.now()}_${file.name}`
+        // ☁️ CLOUDINARY (free, no card) — Firebase Storage bucket ke liye
+        // Blaze/card chahiye tha, isliye documents Cloudinary par jaate hain.
+        const up = await uploadToCloudinary(
+          file,
+          `documents/${searchedTrainee?.regNo || 'unknown'}`,
         );
-        await uploadBytes(storageRef, file);
-        const downloadUrl = await getDownloadURL(storageRef);
         newFiles.push({
           fileName:   file.name,
-          fileUrl:    downloadUrl,
+          fileUrl:    up.url,
           fileSize:   `${fileSizeKB}KB`,
           fileType:   file.type,
           uploadedAt: new Date().toISOString(),
