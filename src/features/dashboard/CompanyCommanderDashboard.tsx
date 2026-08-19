@@ -1831,6 +1831,163 @@ const [staffLoading, setStaffLoading] = useState(false);
         </div>
       ) : hasBatch && (
         <>
+          {/* ═══════════════════════════════════════════════
+              ⭐ COMPANY STRENGTH STRIP — sabse pehla operational read
+              (5-second rule: strength → available% → exceptions → alerts)
+          ═══════════════════════════════════════════════ */}
+          <div className="overflow-hidden rounded-2xl border-2 border-slate-800 bg-white shadow-md">
+            <div className="grid grid-cols-3 md:grid-cols-7 divide-x divide-slate-200">
+              <div className="px-4 py-3">
+                <p className="text-[9px] font-black text-slate-500 uppercase">Total Strength</p>
+                <p className="text-3xl font-black text-slate-900 leading-tight">{totalTrainees}</p>
+                <p className="text-[9px] text-slate-400 font-bold">Trainees</p>
+              </div>
+              <div className="px-4 py-3 bg-green-50/70 cursor-pointer hover:bg-green-50" onClick={() => focusRoster('PRESENT')}>
+                <p className="text-[9px] font-black text-green-700 uppercase">Available</p>
+                <p className="text-3xl font-black text-green-700 leading-tight">{presentToday}<span className="text-sm text-slate-400 font-bold"> / {totalTrainees}</span></p>
+                <div className="h-1.5 bg-slate-200 rounded-full mt-1 overflow-hidden">
+                  <div className="h-full bg-green-500 rounded-full" style={{ width: `${totalTrainees ? (presentToday / totalTrainees) * 100 : 0}%` }} />
+                </div>
+                <p className="text-[9px] text-green-700 font-black mt-0.5">{totalTrainees ? Math.round((presentToday / totalTrainees) * 1000) / 10 : 0}% available</p>
+              </div>
+              <div className="px-4 py-3 cursor-pointer hover:bg-purple-50" onClick={() => focusRoster('SICK')}>
+                <p className="text-[9px] font-black text-purple-700 uppercase">Hospital</p>
+                <p className={`text-3xl font-black leading-tight ${hospitalCount ? 'text-purple-700' : 'text-slate-300'}`}>{hospitalCount}</p>
+                <p className="text-[9px] text-slate-400 font-bold">{sickCount > 0 ? `+${sickCount} sick/MI` : 'Sick: 0'}</p>
+              </div>
+              <div className="px-4 py-3 cursor-pointer hover:bg-amber-50" onClick={() => focusRoster('LEAVE')}>
+                <p className="text-[9px] font-black text-amber-700 uppercase">Leave</p>
+                <p className={`text-3xl font-black leading-tight ${leaveCount ? 'text-amber-700' : 'text-slate-300'}`}>{leaveCount}</p>
+                <p className="text-[9px] text-slate-400 font-bold">On sanctioned leave</p>
+              </div>
+              <div className="px-4 py-3 cursor-pointer hover:bg-blue-50" onClick={() => focusRoster('REST')}>
+                <p className="text-[9px] font-black text-blue-700 uppercase">Light Duty</p>
+                <p className={`text-3xl font-black leading-tight ${restCount ? 'text-blue-700' : 'text-slate-300'}`}>{restCount}</p>
+                <p className="text-[9px] text-slate-400 font-bold">Rest / excused</p>
+              </div>
+              <div className="px-4 py-3 cursor-pointer hover:bg-red-50" onClick={() => focusRoster('ABSENT')}>
+                <p className="text-[9px] font-black text-red-700 uppercase">Absent</p>
+                <p className={`text-3xl font-black leading-tight ${absentCount ? 'text-red-700' : 'text-slate-300'}`}>{absentCount}</p>
+                <p className="text-[9px] text-slate-400 font-bold">Unauthorized</p>
+              </div>
+              <div className={`px-4 py-3 ${totalAlerts > 0 ? 'bg-red-600' : 'bg-green-600'}`}>
+                <p className="text-[9px] font-black text-white/80 uppercase">Attention Items</p>
+                <p className="text-3xl font-black text-white leading-tight">{totalAlerts + (totalVendorDue > 0 ? 1 : 0)}</p>
+                <p className="text-[9px] text-white/70 font-bold">{totalAlerts > 0 ? 'Review below' : 'All clear'}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* ═══════════════════════════════════════════════
+              📊 COMPANY READINESS — executive metric, transparent formulas
+          ═══════════════════════════════════════════════ */}
+          {(() => {
+            const pct = (n: number, d: number) => d > 0 ? Math.round((n / d) * 100) : null;
+            const manpower = pct(presentToday, totalTrainees);
+            // Training = FPT-passed share among trainees who attempted (null if no tests yet)
+            const fptAttempted = Object.keys(fptTraineeMap).length;
+            const fptPassedCount = Object.values(fptTraineeMap).filter((d: any) => d.passed).length;
+            const training = pct(fptPassedCount, fptAttempted);
+            const docsR = pct(docsCompleteCount, totalTrainees);
+            const medicalR = pct(totalTrainees - hospitalCount - sickCount - medApptCount, totalTrainees);
+            const logistics = pct(kitFullCount, totalTrainees);
+            // Finance = paise positive balance + koi vendor due nahi to 100
+            const financeR = funds.length > 0
+              ? Math.max(0, Math.min(100, 100 - (totalFundBalance < 0 ? 40 : 0) - (totalVendorDue > 0 ? 25 : 0) - (pendingRecoveries.length > 0 ? 15 : 0)))
+              : null;
+            const dims = [
+              { label: 'Manpower', v: manpower, hint: `${presentToday}/${totalTrainees} available` },
+              { label: 'Training', v: training, hint: fptAttempted ? `${fptPassedCount}/${fptAttempted} FPT passed` : 'No FPT data yet' },
+              { label: 'Documents', v: docsR, hint: `${docsCompleteCount}/${totalTrainees} complete` },
+              { label: 'Medical', v: medicalR, hint: `${hospitalCount + sickCount + medApptCount} under medical` },
+              { label: 'Logistics', v: logistics, hint: `${kitFullCount}/${totalTrainees} fully kitted` },
+              { label: 'Finance', v: financeR, hint: totalVendorDue > 0 ? `${fmtCurrency(totalVendorDue)} vendor due` : 'Dues clear' },
+            ];
+            const known = dims.filter(d => d.v !== null) as { label: string; v: number; hint: string }[];
+            const overall = known.length ? Math.round(known.reduce((s, d) => s + d.v, 0) / known.length) : null;
+            const tone = (v: number | null) => v === null ? 'text-slate-300' : v >= 90 ? 'text-green-600' : v >= 75 ? 'text-amber-600' : 'text-red-600';
+            const bar = (v: number | null) => v === null ? 'bg-slate-200' : v >= 90 ? 'bg-green-500' : v >= 75 ? 'bg-amber-500' : 'bg-red-500';
+            return (
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-16 h-16 rounded-full border-4 flex flex-col items-center justify-center ${overall === null ? 'border-slate-200' : overall >= 90 ? 'border-green-400 bg-green-50' : overall >= 75 ? 'border-amber-400 bg-amber-50' : 'border-red-400 bg-red-50'}`}>
+                      <span className={`text-xl font-black ${tone(overall)}`}>{overall === null ? '—' : `${overall}%`}</span>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-military-700">Company Readiness</p>
+                      <p className="text-[10px] text-slate-500 font-semibold">Manpower · Training · Documents · Medical · Logistics · Finance</p>
+                    </div>
+                  </div>
+                  <button onClick={() => go(ROUTES.reports)} className="rounded-lg bg-military-800 px-3 py-2 text-[10px] font-black uppercase text-white hover:bg-military-700">Readiness Details →</button>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                  {dims.map(d => (
+                    <div key={d.label} className="border border-slate-200 rounded-xl px-3 py-2">
+                      <div className="flex justify-between items-baseline">
+                        <p className="text-[9px] font-black text-slate-500 uppercase">{d.label}</p>
+                        <p className={`text-sm font-black ${tone(d.v)}`}>{d.v === null ? 'N/A' : `${d.v}%`}</p>
+                      </div>
+                      <div className="h-1.5 bg-slate-100 rounded-full mt-1.5 overflow-hidden">
+                        <div className={`h-full rounded-full ${bar(d.v)}`} style={{ width: `${d.v ?? 0}%` }} />
+                      </div>
+                      <p className="text-[8.5px] text-slate-400 font-semibold mt-1 truncate">{d.v === null ? 'Data not yet available' : d.hint}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ═══════════════════════════════════════════════
+              🎖️ COMMAND DECISIONS — senior review items (dynamic)
+          ═══════════════════════════════════════════════ */}
+          {(() => {
+            type Decision = { text: string; owner: string; impact: string; count: string; route: string; critical: boolean };
+            const decisions: Decision[] = [];
+            if (hospitalCount > 0) decisions.push({ text: `${hospitalCount} active hospital case(s) require review`, owner: 'Clerk', impact: 'Manpower availability', count: String(hospitalCount), route: ROUTES.medicalRegister, critical: true });
+            if (kitPendingCount > 0) decisions.push({ text: `${kitPendingCount} trainees have incomplete kit`, owner: 'Quarter Master', impact: 'Training readiness', count: String(kitPendingCount), route: ROUTES.issueKit, critical: kitPendingCount > totalTrainees / 4 });
+            const recoveryDue = pendingRecoveries.reduce((sum: number, r: any) => sum + Number(r.dueAmount ?? 0), 0);
+            if (recoveryDue > 0) decisions.push({ text: `${fmtCurrency(recoveryDue)} recovery remains pending (${pendingRecoveries.length} records)`, owner: 'Quarter Master', impact: 'Fund position', count: fmtCurrency(recoveryDue), route: ROUTES.trainingFund, critical: recoveryDue > 10000 });
+            if (docsPendingCount > 0) decisions.push({ text: `${docsPendingCount} trainees have pending/incomplete documents`, owner: 'Clerk', impact: 'Administrative readiness', count: String(docsPendingCount), route: ROUTES.documents, critical: false });
+            if (totalVendorDue > 0) decisions.push({ text: `${fmtCurrency(totalVendorDue)} vendor dues outstanding (${vendorDues.length} vendors)`, owner: 'Quarter Master', impact: 'Financial standing', count: fmtCurrency(totalVendorDue), route: ROUTES.vendorPayment, critical: totalVendorDue > 25000 });
+            if (totalFundBalance < 0) decisions.push({ text: `Net fund balance NEGATIVE — ${fmtCurrency(Math.abs(totalFundBalance))} overdrawn`, owner: 'Quarter Master', impact: 'Financial critical', count: fmtCurrency(Math.abs(totalFundBalance)), route: ROUTES.fundsDashboard, critical: true });
+            if (!activeProgram) decisions.push({ text: 'Weekly training program not configured for current week', owner: 'Clerk', impact: 'Training schedule', count: '1', route: ROUTES.weeklyProgram, critical: false });
+            if (fptNeverPassed.length > 0) decisions.push({ text: `${fptNeverPassed.length} trainees have never passed FPT`, owner: 'Ustad / Clerk', impact: 'Training standard', count: String(fptNeverPassed.length), route: ROUTES.fptTracker, critical: fptNeverPassed.length > totalTrainees / 5 });
+            if (decisions.length === 0) return null;
+            return (
+              <div className="overflow-hidden rounded-2xl border-2 border-amber-500 bg-white shadow-md">
+                <div className="bg-slate-900 px-5 py-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <Star size={15} className="text-amber-400" />
+                    <div>
+                      <h2 className="text-xs font-black text-white uppercase tracking-widest">Command Decisions</h2>
+                      <p className="text-[9.5px] text-slate-400">Items requiring Commander-level review</p>
+                    </div>
+                  </div>
+                  <span className="bg-amber-500 text-slate-900 text-[10px] font-black px-2.5 py-1 rounded-full">{decisions.length}</span>
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {decisions.map((d, i) => (
+                    <div key={i} className={`px-5 py-3 flex items-center gap-3 flex-wrap ${d.critical ? 'bg-red-50/60 border-l-4 border-l-red-600' : 'border-l-4 border-l-amber-400'}`}>
+                      <span className={`text-[8.5px] font-black px-2 py-0.5 uppercase rounded flex-shrink-0 ${d.critical ? 'bg-red-600 text-white' : 'bg-amber-100 text-amber-800 border border-amber-300'}`}>
+                        {d.critical ? 'CRITICAL' : 'REVIEW'}
+                      </span>
+                      <div className="flex-1 min-w-[200px]">
+                        <p className="text-xs font-bold text-slate-800">{d.text}</p>
+                        <p className="text-[9.5px] text-slate-500 font-semibold">Owner: <b>{d.owner}</b> · Impact: {d.impact}</p>
+                      </div>
+                      <button onClick={() => go(d.route)}
+                        className="bg-slate-800 text-white px-3 py-1.5 text-[9.5px] font-black uppercase rounded hover:bg-slate-700 flex-shrink-0">
+                        Review →
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
           <CommanderInformationBoard />
 
           <BatchProgressOverview />
