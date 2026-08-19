@@ -1,18 +1,38 @@
-// D:\ALL PROJECTS\BSF COYs\frontend\src\features\dashboard\ClerkDashboard.tsx
+// src/features/dashboard/ClerkDashboard.tsx
+// ═══════════════════════════════════════════════════════════
+// 🗂️ CLERK DASHBOARD — OPERATIONAL COMMAND CENTER
+//
+// 5-second rule: Clerk login karte hi jaan le —
+//   Company me abhi kya chal raha hai? Kitne available? Kaun hospital/
+//   leave/light duty par? Documents me kya problem? Aaj ka program kya?
+//   Mera pending kaam kya hai? Recently kya badla?
+//
+// DATA (sab EXISTING collections — batch-scoped queries):
+//   trainees        → strength, attn (P/A/L/S/H/R), documents, chest
+//   weeklyPrograms  → aaj ka program + ustad assignments
+//   medicalRecords  → active hospital/sick cases (since dates)
+//   absentRecords   → active leave + aaj wapas aane wale
+//
+// HIERARCHY: Header → Strength → NEEDS ATTENTION → Today's Program
+//   → Document Control + Medical/Availability → Pending Work
+//   → Recent Activity → Quick Actions
+// Finance/Inventory ka yahan KUCH NAHI (Clerk boundary).
+// ═══════════════════════════════════════════════════════════
 
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
-  Users, UserX, FileText, Shield, Clock,
-  X, MapPin, Target,
-  CheckCircle2, Activity, Layers,
-  Loader2, RefreshCw, Calendar,
-  Award, Crosshair, AlertCircle, Eye
+  Users, UserX, FileText, Shield, X, CheckCircle2,
+  Activity, Layers, Loader2, RefreshCw, Calendar, AlertCircle,
+  AlertTriangle, Search, ArrowRight, HeartPulse, BedDouble,
+  UserPlus, ClipboardList, Stethoscope, Target, MapPin,
+  FilePlus2, CalendarClock, History,
 } from 'lucide-react';
 import {
-  collection, getDocs, query, where, orderBy
+  collection, getDocs, query, where, orderBy,
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { useBatch } from '../../contexts/BatchContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { ReportButton } from '../../components/common/ReportButton';
 
@@ -28,20 +48,21 @@ interface TraineeBasic {
   section?: string;
   attn?: string;
   medStat?: string;
-  fptResult?: string;
-  fptScore?: string;
-  weeklyExamResult?: string;
-  weeklyExamMarks?: string;
+  mobileNo?: string;
   documents?: Record<string, any>;
   docsComplete?: boolean;
+  docsRequiredTotal?: number;
+  docsRequiredDone?: number;
+  docsUpdatedDate?: string;
+  lastMedicalUpdate?: string;
+  chestAssignedAt?: string;
+  createdAt?: string;
   batchId?: string;
   remarks?: string;
   rank?: string;
   photoURL?: string;
-  bloodGroup?: string;
   [key: string]: any;
 }
-
 
 interface TodaySession {
   id: string;
@@ -52,19 +73,9 @@ interface TodaySession {
   location: string;
   assignedPersons?: { id: string; rank: string; name: string }[];
   ustadName?: string;
-  ustadNames?: string[];
-  lectureDetails?: {
-    topic?: string;
-    description?: string;
-    duration?: string;
-    materials?: string;
-  };
 }
 
-interface DaySchedule {
-  day: string;
-  sessions: TodaySession[];
-}
+interface DaySchedule { day: string; sessions: TodaySession[]; }
 
 interface WeeklyProgram {
   id: string;
@@ -75,57 +86,103 @@ interface WeeklyProgram {
   schedule: DaySchedule[];
 }
 
+interface MedRecord {
+  id: string;
+  traineeId?: string;
+  chestNo?: string;
+  name?: string;
+  category?: string;
+  date?: string;
+  status?: string;
+  platoon?: string;
+}
+
+interface AbsRecord {
+  id: string;
+  traineeId?: string;
+  chestNo?: string;
+  traineeName?: string;
+  type?: string;
+  fromDate?: string;
+  toDate?: string;
+  status?: string;
+  reason?: string;
+}
+
 // ─────────────────────────────────────────────
 // CONSTANTS
 // ─────────────────────────────────────────────
 const DAYS_MAP: Record<number, string> = {
   1: 'Monday', 2: 'Tuesday', 3: 'Wednesday',
-  4: 'Thursday', 5: 'Friday', 6: 'Saturday', 0: 'Sunday'
+  4: 'Thursday', 5: 'Friday', 6: 'Saturday', 0: 'Sunday',
 };
-
-const ABSENT_TYPES = ['A', 'L', 'S', 'H', 'R'];
 
 const ABSENT_LABELS: Record<string, string> = {
-  'A': 'Absent',
-  'L': 'On Leave',
-  'S': 'Sick / MI Room',
-  'H': 'Hospitalized',
-  'R': 'Rest / Excused'
+  A: 'Absent', L: 'On Leave', S: 'Sick / MI Room', H: 'Hospital', R: 'Light Duty / Rest',
 };
-
 const ABSENT_COLORS: Record<string, string> = {
-  'A': 'bg-red-100 text-red-800 border-red-300',
-  'L': 'bg-amber-100 text-amber-800 border-amber-300',
-  'S': 'bg-orange-100 text-orange-800 border-orange-300',
-  'H': 'bg-purple-100 text-purple-800 border-purple-300',
-  'R': 'bg-blue-100 text-blue-800 border-blue-300'
+  A: 'bg-red-100 text-red-800 border-red-300',
+  L: 'bg-amber-100 text-amber-800 border-amber-300',
+  S: 'bg-orange-100 text-orange-800 border-orange-300',
+  H: 'bg-purple-100 text-purple-800 border-purple-300',
+  R: 'bg-blue-100 text-blue-800 border-blue-300',
 };
 
+const sessionLabel = (s: TodaySession) =>
+  s.subject === 'Other' && s.customSubject ? s.customSubject : (s.subject || '—');
+const instructorLabel = (s: TodaySession) => {
+  if (s.assignedPersons?.length) {
+    const filled = s.assignedPersons.filter(p => p.name);
+    if (filled.length) return filled.map(p => `${p.rank ? p.rank + ' ' : ''}${p.name}`).join(', ');
+  }
+  return s.ustadName || '—';
+};
+const docLabel = (key: string) =>
+  key.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase()).trim();
+
 // ─────────────────────────────────────────────
-// LIST MODAL COMPONENT
+// SMALL UI PARTS
 // ─────────────────────────────────────────────
+const SectionHead: React.FC<{ icon: React.ReactNode; title: string; sub?: string; right?: React.ReactNode }> =
+  ({ icon, title, sub, right }) => (
+    <div className="bg-military-900 px-4 py-2.5 flex items-center justify-between gap-2">
+      <div className="flex items-center gap-2.5 min-w-0">
+        <span className="text-white flex-shrink-0">{icon}</span>
+        <div className="min-w-0">
+          <h2 className="text-xs font-black text-white uppercase tracking-widest truncate">{title}</h2>
+          {sub && <p className="text-[9.5px] text-military-300 truncate">{sub}</p>}
+        </div>
+      </div>
+      {right}
+    </div>
+  );
+
+const EmptyLine: React.FC<{ icon?: React.ReactNode; text: string; action?: { label: string; onClick: () => void } }> =
+  ({ icon, text, action }) => (
+    <div className="p-6 text-center">
+      <div className="text-slate-300 mx-auto mb-2 flex justify-center">{icon ?? <CheckCircle2 size={30} className="text-green-400" />}</div>
+      <p className="text-[11px] font-bold text-slate-500 uppercase">{text}</p>
+      {action && (
+        <button onClick={action.onClick}
+          className="mt-3 bg-military-800 text-white px-4 py-1.5 text-[10px] font-black uppercase hover:bg-military-900">
+          {action.label}
+        </button>
+      )}
+    </div>
+  );
+
+// List modal (existing pattern preserved)
 interface ListModalProps {
-  open: boolean;
-  onClose: () => void;
-  title: string;
-  icon: React.ReactNode;
-  headerColor: string;
-  trainees: TraineeBasic[];
+  open: boolean; onClose: () => void; title: string; icon: React.ReactNode;
+  headerColor: string; trainees: TraineeBasic[];
   columns: { label: string; render: (t: TraineeBasic) => React.ReactNode }[];
   emptyMessage?: string;
 }
-
-const ListModal: React.FC<ListModalProps> = ({
-  open, onClose, title, icon, headerColor, trainees, columns, emptyMessage
-}) => {
+const ListModal: React.FC<ListModalProps> = ({ open, onClose, title, icon, headerColor, trainees, columns, emptyMessage }) => {
   if (!open) return null;
-
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
-      onClick={onClose}>
-      <div className="bg-white w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl border border-slate-300"
-        onClick={e => e.stopPropagation()}>
-
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl border border-slate-300" onClick={e => e.stopPropagation()}>
         <div className={`${headerColor} px-4 py-3 flex items-center justify-between flex-shrink-0`}>
           <div className="flex items-center gap-2">
             {icon}
@@ -134,305 +191,217 @@ const ListModal: React.FC<ListModalProps> = ({
               <p className="text-[10px] text-white/70">{trainees.length} Records</p>
             </div>
           </div>
-          <button onClick={onClose} className="text-white/80 hover:text-white transition-colors">
-            <X size={20} />
-          </button>
+          <button onClick={onClose} className="text-white/80 hover:text-white"><X size={20} /></button>
         </div>
-
         <div className="flex-1 overflow-y-auto">
           {trainees.length === 0 ? (
-            <div className="p-8 text-center">
-              <CheckCircle2 size={40} className="text-green-400 mx-auto mb-3" />
-              <p className="text-sm font-bold text-slate-500 uppercase">
-                {emptyMessage || 'Koi record nahi hai — All Clear!'}
-              </p>
-            </div>
+            <EmptyLine text={emptyMessage || 'Koi record nahi'} />
           ) : (
-            <table className="w-full text-xs">
-              <thead className="bg-slate-100 sticky top-0">
-                <tr>
-                  <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-500 uppercase">S.No</th>
-                  {columns.map((col, i) => (
-                    <th key={i} className="px-3 py-2 text-left text-[10px] font-bold text-slate-500 uppercase">
-                      {col.label}
-                    </th>
-                  ))}
-                </tr>
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-50 border-b border-slate-200 sticky top-0">
+                <tr>{columns.map(c => <th key={c.label} className="px-4 py-2 text-[10px] font-black text-slate-500 uppercase">{c.label}</th>)}</tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {trainees.map((t, idx) => (
-                  <tr key={t.id} className="hover:bg-slate-50">
-                    <td className="px-3 py-2 text-slate-400 font-mono">{idx + 1}</td>
-                    {columns.map((col, i) => (
-                      <td key={i} className="px-3 py-2">{col.render(t)}</td>
-                    ))}
+              <tbody>
+                {trainees.map(t => (
+                  <tr key={t.id} className="border-b border-slate-100 hover:bg-slate-50">
+                    {columns.map(c => <td key={c.label} className="px-4 py-2">{c.render(t)}</td>)}
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
         </div>
-
-        <div className="border-t border-slate-200 bg-slate-50 px-4 py-2 flex justify-between items-center flex-shrink-0">
-          <span className="text-[10px] text-slate-500 font-bold uppercase">
-            Total: {trainees.length} Records
-          </span>
-          <button onClick={onClose}
-            className="bg-slate-700 text-white px-4 py-1.5 text-[10px] font-bold uppercase hover:bg-slate-800">
-            Close
-          </button>
-        </div>
       </div>
     </div>
   );
 };
 
-// ─────────────────────────────────────────────
-// STAT CARD COMPONENT
-// ─────────────────────────────────────────────
-interface StatCardProps {
-  title: string;
-  value: string | number;
-  subtitle?: string;
-  icon: React.ReactNode;
-  color: string;
-  borderColor: string;
-  onClick?: () => void;
-  clickable?: boolean;
-  badge?: string;
-  badgeColor?: string;
-}
-
-const StatCard: React.FC<StatCardProps> = ({
-  title, value, subtitle, icon, color, borderColor,
-  onClick, clickable = false, badge, badgeColor
-}) => (
-  <div
-    onClick={clickable ? onClick : undefined}
-    className={`bg-white border border-slate-300 shadow-flat p-4 border-t-3 ${borderColor}
-      ${clickable ? 'cursor-pointer hover:shadow-md hover:border-slate-400 transition-all group' : ''}
-      relative`}
-  >
-    {clickable && (
-      <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-        <Eye size={14} className="text-slate-400" />
-      </div>
-    )}
-    <div className="flex items-start justify-between">
-      <div className="flex-1">
-        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{title}</p>
-        <p className={`text-3xl font-black mt-1 ${color}`}>{value}</p>
-        {subtitle && (
-          <p className="text-[10px] text-slate-400 mt-0.5 font-semibold">{subtitle}</p>
-        )}
-        {badge && (
-          <span className={`inline-block mt-1.5 text-[9px] font-bold uppercase px-2 py-0.5 ${badgeColor || 'bg-slate-100 text-slate-600'}`}>
-            {badge}
-          </span>
-        )}
-      </div>
-      <div className="ml-3 flex-shrink-0">{icon}</div>
-    </div>
-    {clickable && (
-      <p className="text-[8px] text-blue-500 font-bold mt-2 uppercase opacity-0 group-hover:opacity-100 transition-opacity">
-        Click to view details →
-      </p>
-    )}
-  </div>
-);
-
 // ═══════════════════════════════════════════════════════════
-// MAIN DASHBOARD COMPONENT
+// MAIN
 // ═══════════════════════════════════════════════════════════
-export const ClerkDashboard: React.FC = () => {
+export const ClerkDashboard = () => {
   const { activeBatch } = useBatch();
+  const { user } = useAuth();
   const hasBatch = !!activeBatch;
+  const navigate = useNavigate();
 
-  // ── Data States ──
-  const [trainees, setTrainees]             = useState<TraineeBasic[]>([]);
-  const [todaySessions, setTodaySessions]   = useState<TodaySession[]>([]);
-  const [weeklyProgram, setWeeklyProgram]   = useState<WeeklyProgram | null>(null);
-  const [loading, setLoading]               = useState(true);
-  const [lastRefresh, setLastRefresh]       = useState<string>('');
+  const [trainees, setTrainees] = useState<TraineeBasic[]>([]);
+  const [weeklyProgram, setWeeklyProgram] = useState<WeeklyProgram | null>(null);
+  const [todaySessions, setTodaySessions] = useState<TodaySession[]>([]);
+  const [medActive, setMedActive] = useState<MedRecord[]>([]);
+  const [absActive, setAbsActive] = useState<AbsRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [lastRefresh, setLastRefresh] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
 
-  // ── Modal States ──
-  const [absentModal, setAbsentModal]       = useState(false);
-  const [failedExamModal, setFailedExamModal] = useState(false);
-  const [fptModal, setFptModal]             = useState(false);
-  const [incDocsModal, setIncDocsModal]     = useState(false);
-  const [chestPendingModal, setChestPendingModal] = useState(false);
-const navigate = useNavigate();
-  // ── Today info ──
+  const [modal, setModal] = useState<'' | 'unavail' | 'hospital' | 'leave' | 'light' | 'docs' | 'chest'>('');
+
   const todayDayName = DAYS_MAP[new Date().getDay()] || 'Sunday';
-  const todayDate    = new Date().toISOString().split('T')[0];
-  const todayFormatted = new Date().toLocaleDateString('en-IN', {
-    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
-  });
+  const todayDate = new Date().toISOString().split('T')[0];
+  const todayFormatted = new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
 
-  // ── Fetch All Data ──
+  // ── FETCH (batch-scoped only) ──
   const fetchDashboardData = async () => {
     if (!activeBatch) { setLoading(false); return; }
-    setLoading(true);
-
+    setLoading(true); setError('');
     try {
-      // 1. Fetch trainees of active batch
-      const tq = query(
-        collection(db, 'trainees'),
-        where('batchId', '==', activeBatch.id)
-      );
-      const tSnap = await getDocs(tq);
+      const [tSnap, wpSnap, medSnap, absSnap] = await Promise.all([
+        getDocs(query(collection(db, 'trainees'), where('batchId', '==', activeBatch.id))),
+        getDocs(query(collection(db, 'weeklyPrograms'), where('batchId', '==', activeBatch.id), orderBy('fromDate', 'desc'))),
+        getDocs(query(collection(db, 'medicalRecords'), where('batchId', '==', activeBatch.id), where('status', '==', 'Active'))),
+        getDocs(query(collection(db, 'absentRecords'), where('batchId', '==', activeBatch.id), where('status', '==', 'Active'))),
+      ]);
+
       const tList: TraineeBasic[] = [];
       tSnap.forEach(d => tList.push({ id: d.id, ...d.data() } as TraineeBasic));
       setTrainees(tList);
 
-      // 2. Fetch weekly programs — find current week's program
-      const wpq = query(
-        collection(db, 'weeklyPrograms'),
-        where('batchId', '==', activeBatch.id),
-        orderBy('fromDate', 'desc')
-      );
-      const wpSnap = await getDocs(wpq);
+      const mList: MedRecord[] = [];
+      medSnap.forEach(d => mList.push({ id: d.id, ...d.data() } as MedRecord));
+      setMedActive(mList);
 
-      let foundProgram: WeeklyProgram | null = null;
-      let foundSessions: TodaySession[] = [];
+      const aList: AbsRecord[] = [];
+      absSnap.forEach(d => aList.push({ id: d.id, ...d.data() } as AbsRecord));
+      setAbsActive(aList);
 
+      // Today's program
+      let found: WeeklyProgram | null = null;
       wpSnap.forEach(d => {
-        if (foundProgram) return; // pehla match le lo
-
+        if (found) return;
         const raw = d.data();
-        const prog: WeeklyProgram = {
-          id:       d.id,
-          weekName: raw.weekName || '',
-          fromDate: raw.fromDate || '',
-          toDate:   raw.toDate   || '',
-          remarks:  raw.remarks  || '',
+        const p: WeeklyProgram = {
+          id: d.id, weekName: raw.weekName || '', fromDate: raw.fromDate || '',
+          toDate: raw.toDate || '', remarks: raw.remarks || '',
           schedule: (raw.schedule || []) as DaySchedule[],
         };
-
-        // Check if today falls in this program's range
-        if (todayDate >= prog.fromDate && todayDate <= prog.toDate) {
-          foundProgram = prog;
-        }
+        if (todayDate >= p.fromDate && todayDate <= p.toDate) found = p;
       });
-
-      // Agar exact match nahi mila, latest le lo
-      if (!foundProgram && !wpSnap.empty) {
-        const firstDoc = wpSnap.docs[0];
-        const raw = firstDoc.data();
-        foundProgram = {
-          id:       firstDoc.id,
-          weekName: raw.weekName || '',
-          fromDate: raw.fromDate || '',
-          toDate:   raw.toDate   || '',
-          remarks:  raw.remarks  || '',
-          schedule: (raw.schedule || []) as DaySchedule[],
-        };
-      }
-
-      if (foundProgram) {
-        setWeeklyProgram(foundProgram);
-        // Find today's day sessions
-        const todaySchedule = foundProgram.schedule.find(
-          (s: DaySchedule) => s.day === todayDayName
-        );
-        if (todaySchedule) {
-          foundSessions = todaySchedule.sessions || [];
-        }
-      }
-      setTodaySessions(foundSessions);
-
+      setWeeklyProgram(found);
+      const day = found ? (found as WeeklyProgram).schedule.find(s => s.day === todayDayName) : undefined;
+      setTodaySessions(day?.sessions || []);
 
       setLastRefresh(new Date().toLocaleTimeString('en-IN'));
     } catch (err) {
-      console.error('Dashboard fetch error:', err);
+      console.error('Clerk dashboard fetch error:', err);
+      setError('Dashboard data load nahi hua — Retry karein.');
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchDashboardData();
-  }, [activeBatch]);
+  useEffect(() => { fetchDashboardData(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [activeBatch?.id]);
 
-  // ── Computed Data ──
-  const totalTrainees   = trainees.length;
-  const presentTrainees = trainees.filter(t => t.attn === 'P' || !t.attn);
-  const absentTrainees  = trainees.filter(t => t.attn && ABSENT_TYPES.includes(t.attn));
+  // ── STRENGTH ──
+  const total = trainees.length;
+  const byAttn = (k: string) => trainees.filter(t => t.attn === k);
+  const hospital = byAttn('H');
+  const leave = byAttn('L');
+  const lightDuty = byAttn('R');
+  const sick = byAttn('S');
+  const absent = byAttn('A');
+  const unavailable = trainees.filter(t => t.attn && t.attn !== 'P');
+  const active = total - unavailable.length;
 
-  // Chest Number lifecycle — registration ke time chest optional hai,
-  // arrival ke baad Clerk assign karta hai. Ye list = assignment pending.
-  const chestPendingTrainees = trainees.filter(t => !String(t.chestNo ?? '').trim());
-  const chestAssignedCount   = totalTrainees - chestPendingTrainees.length;
+  const chestPending = trainees.filter(t => !String(t.chestNo ?? '').trim());
 
-  const failedExam      = trainees.filter(t => t.weeklyExamResult === 'Fail');
-  const fptFailed       = trainees.filter(t => t.fptResult === 'Fail');
-  const fptPassed       = trainees.filter(t => t.fptResult === 'Pass');
+  // ── DOCUMENTS (dynamic — required docs across all trainees) ──
+  const docStats = useMemo(() => {
+    let required = 0, verified = 0, uploaded = 0, pending = 0, rejected = 0;
+    const issues: { t: TraineeBasic; doc: string; status: string }[] = [];
+    trainees.forEach(t => {
+      const docs = t.documents || {};
+      Object.entries(docs).forEach(([key, v]: [string, any]) => {
+        if (!v || v.isRequired === false) return;
+        required++;
+        const st = v.status || 'Pending';
+        if (st === 'Verified') verified++;
+        else if (st === 'Uploaded') uploaded++;
+        else if (st === 'Rejected') { rejected++; issues.push({ t, doc: docLabel(key), status: 'Rejected' }); }
+        else { pending++; issues.push({ t, doc: docLabel(key), status: 'Pending' }); }
+      });
+    });
+    // Rejected pehle, phir pending — max 8 rows dashboard par
+    issues.sort((a, b) => (a.status === 'Rejected' ? -1 : 1) - (b.status === 'Rejected' ? -1 : 1));
+    const pct = required > 0 ? Math.round(((verified + uploaded) / required) * 100) : 0;
+    const noDocsYet = trainees.filter(t => !t.documents || Object.keys(t.documents).length === 0);
+    return { required, verified, uploaded, pending, rejected, pct, issues, noDocsYet };
+  }, [trainees]);
 
-  const incompleteDocTrainees = trainees.filter(t => {
+  const docIncompleteTrainees = trainees.filter(t => {
     if (t.docsComplete === true) return false;
-    if (t.docsComplete === false) return true;
-    if (!t.documents) return true;
-    const entries = Object.entries(t.documents);
-    if (entries.length === 0) return true;
-    const required = entries.filter(([, v]: any) => v?.isRequired);
-    const pending  = required.filter(([, v]: any) =>
-      v?.status === 'Pending' || v?.status === 'Rejected'
-    );
-    return pending.length > 0;
+    if (!t.documents || Object.keys(t.documents).length === 0) return true;
+    return Object.values(t.documents).some((v: any) => v?.isRequired !== false && (v?.status === 'Pending' || v?.status === 'Rejected'));
   });
 
+  // ── LEAVE RETURNS ──
+  const returningToday = absActive.filter(a => a.type === 'L' && a.toDate === todayDate);
+  const returningSoon = absActive.filter(a => a.type === 'L' && a.toDate && a.toDate > todayDate)
+    .sort((a, b) => String(a.toDate).localeCompare(String(b.toDate))).slice(0, 4);
 
-  // ── Display Helpers ──
-  const getDisplaySubject = (session: TodaySession) => {
-    if (session.subject === 'Other (Manual)' && session.customSubject) {
-      return session.customSubject;
-    }
-    return session.subject;
+  // ── ATTENTION ITEMS (real, prioritized) ──
+  type Alert = { level: 'CRITICAL' | 'TODAY' | 'PENDING'; text: string; count: number; action: string; onClick: () => void };
+  const alerts: Alert[] = [];
+  if (docStats.rejected > 0) alerts.push({ level: 'CRITICAL', text: 'Documents REJECTED — dobara verify/correct karo', count: docStats.rejected, action: 'Review Documents', onClick: () => navigate('/documents') });
+  if (hospital.length > 0) alerts.push({ level: 'CRITICAL', text: 'Trainees hospital me — status review karo', count: hospital.length, action: 'Hospital Records', onClick: () => setModal('hospital') });
+  if (returningToday.length > 0) alerts.push({ level: 'TODAY', text: 'Trainees AAJ leave se wapas expected', count: returningToday.length, action: 'Leave Records', onClick: () => navigate('/absent-management') });
+  if (!weeklyProgram) alerts.push({ level: 'TODAY', text: 'Is hafte ka Weekly Program nahi bana', count: 1, action: 'Create Program', onClick: () => navigate('/weekly-program') });
+  if (chestPending.length > 0) alerts.push({ level: 'PENDING', text: 'Trainees ko Chest Number assign karna baaki', count: chestPending.length, action: 'Assign Chest', onClick: () => navigate('/trainees') });
+  if (docStats.pending > 0) alerts.push({ level: 'PENDING', text: 'Required documents abhi pending/upload baaki', count: docStats.pending, action: 'Document Cell', onClick: () => navigate('/documents') });
+  if (docStats.noDocsYet.length > 0) alerts.push({ level: 'PENDING', text: 'Trainees ka document record shuru hi nahi hua', count: docStats.noDocsYet.length, action: 'Start Verification', onClick: () => navigate('/documents') });
+
+  const levelStyle: Record<Alert['level'], { chip: string; border: string }> = {
+    CRITICAL: { chip: 'bg-red-600 text-white', border: 'border-l-red-600 bg-red-50/60' },
+    TODAY: { chip: 'bg-amber-500 text-white', border: 'border-l-amber-500 bg-amber-50/60' },
+    PENDING: { chip: 'bg-slate-400 text-white', border: 'border-l-slate-400 bg-slate-50' },
   };
 
-  const renderPersons = (session: TodaySession) => {
-    if (session.assignedPersons && Array.isArray(session.assignedPersons)) {
-      const filled = session.assignedPersons.filter(p => p.name?.trim());
-      if (filled.length === 0) return <span className="text-slate-400">—</span>;
-      return (
-        <div className="flex flex-wrap gap-1">
-          {filled.map(p => (
-            <span key={p.id} className="inline-flex items-center gap-0.5 text-[9px] font-bold bg-blue-50 text-blue-800 border border-blue-200 px-1.5 py-0.5">
-              <Shield size={7} className="text-military-600" />
-              {p.rank && <span className="text-military-700">{p.rank}</span>}
-              <span>{p.name}</span>
-            </span>
-          ))}
-        </div>
-      );
-    }
-    if (session.ustadName) {
-      return <span className="font-bold text-blue-800 text-[10px]">{session.ustadName}</span>;
-    }
-    if (session.ustadNames && Array.isArray(session.ustadNames)) {
-      return (
-        <div className="flex flex-wrap gap-1">
-          {session.ustadNames.filter(u => u.trim()).map((u, i) => (
-            <span key={i} className="text-[9px] font-bold bg-blue-50 text-blue-800 border border-blue-200 px-1.5 py-0.5">
-              {u}
-            </span>
-          ))}
-        </div>
-      );
-    }
-    return <span className="text-slate-400">—</span>;
+  // ── SEARCH (loaded batch data par instant) ──
+  const searchResults = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    if (q.length < 2) return [];
+    return trainees.filter(t =>
+      [t.chestNo, t.name, t.regNo, t.mobileNo, t.platoon].filter(Boolean).join(' ').toLowerCase().includes(q)
+    ).slice(0, 6);
+  }, [searchTerm, trainees]);
+
+  // ── RECENT ACTIVITY (real trainee timestamps se derived — koi fake log nahi) ──
+  const recentActivity = useMemo(() => {
+    const ev: { at: string; icon: React.ReactNode; text: string; who: string }[] = [];
+    trainees.forEach(t => {
+      const who = `${t.chestNo ? 'Chest ' + t.chestNo : (t.regNo ? 'Reg ' + t.regNo : '')} • ${t.name || ''}`;
+      if (t.createdAt) ev.push({ at: t.createdAt, icon: <UserPlus size={12} className="text-green-600" />, text: 'New trainee registered', who });
+      if (t.chestAssignedAt) ev.push({ at: t.chestAssignedAt, icon: <Target size={12} className="text-indigo-600" />, text: 'Chest number assigned', who });
+      if (t.docsUpdatedDate) ev.push({ at: t.docsUpdatedDate, icon: <FileText size={12} className="text-blue-600" />, text: 'Documents updated', who });
+      if (t.lastMedicalUpdate) ev.push({ at: t.lastMedicalUpdate, icon: <HeartPulse size={12} className="text-red-600" />, text: 'Medical status updated', who });
+    });
+    ev.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+    return ev.slice(0, 8);
+  }, [trainees]);
+
+  const fmtWhen = (iso: string) => {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    const isToday = d.toISOString().split('T')[0] === todayDate;
+    return isToday
+      ? d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+      : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
   };
 
-  // ═══════════════════════════════════════════
-  // RENDER
-  // ═══════════════════════════════════════════
+  const medSince = (traineeId?: string) => {
+    const rec = medActive.find(m => m.traineeId === traineeId);
+    return rec?.date || '—';
+  };
 
+  // ═══════════ RENDER ═══════════
   if (loading) {
     return (
       <div className="w-full h-64 flex items-center justify-center">
         <div className="text-center">
           <Loader2 size={32} className="text-military-600 animate-spin mx-auto mb-3" />
-          <p className="text-xs text-slate-500 uppercase tracking-wider font-bold">Loading Dashboard...</p>
+          <p className="text-xs text-slate-500 uppercase tracking-wider font-bold">Loading Command Center...</p>
         </div>
       </div>
     );
@@ -441,507 +410,538 @@ const navigate = useNavigate();
   return (
     <div className="w-full flex flex-col space-y-4 pb-8">
 
-      {/* ── NO BATCH WARNING ── */}
-      {!hasBatch && (
-        <div className="bg-red-900 border border-red-600 px-4 py-3 flex items-center gap-3">
-          <AlertCircle size={16} className="text-red-300 flex-shrink-0 animate-pulse" />
-          <span className="text-[11px] font-black text-red-200 uppercase tracking-wide">
-            Koi Active Batch Nahi! Pehle Batch Management mein batch activate karo.
-          </span>
-        </div>
-      )}
-
-      {/* ── DASHBOARD HEADER ── */}
+      {/* ══════════ 1 · HEADER ══════════ */}
       <div className="bg-military-900 px-4 py-4 shadow-flat">
-        <div className="flex items-center justify-between">
+        <div className="flex items-start justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
-            <Activity size={22} className="text-white" />
+            <Activity size={24} className="text-white" />
             <div>
-              <h1 className="text-sm font-black text-white uppercase tracking-widest">
-                Clerk Dashboard — Daily Overview
+              <h1 className="text-base font-black text-white uppercase tracking-widest">
+                {greeting}, {user?.name || 'Clerk'}
               </h1>
               <p className="text-[10px] text-military-300 uppercase tracking-wider mt-0.5">
-                {todayFormatted}
+                F Coy {activeBatch ? `• ${activeBatch.batchNumber}` : ''} • {todayFormatted}
               </p>
+              <p className="text-[9.5px] text-military-400 mt-0.5">Aaj ki company administration ka poora overview.</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            {activeBatch && (
-              <span className="bg-green-800 border border-green-600 text-white text-[10px] font-black px-3 py-1 uppercase flex items-center gap-1.5">
-                <Layers size={12} /> {activeBatch.batchNumber} — {activeBatch.batchName}
+          <div className="flex items-center gap-2 flex-wrap">
+            {activeBatch ? (
+              <span className="bg-green-800 border border-green-600 text-white text-[10px] font-black px-3 py-1.5 uppercase flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                <Layers size={12} /> {activeBatch.batchNumber}
               </span>
+            ) : (
+              <span className="bg-red-800 border border-red-600 text-white text-[10px] font-black px-3 py-1.5 uppercase">No Active Batch</span>
             )}
             <button onClick={fetchDashboardData}
               className="bg-military-800 text-white px-3 py-1.5 text-[10px] font-bold uppercase hover:bg-military-700 flex items-center gap-1.5 border border-military-600">
               <RefreshCw size={12} /> Refresh
             </button>
-        <ReportButton />
+            <ReportButton />
           </div>
         </div>
-        {lastRefresh && (
-          <p className="text-[9px] text-military-400 mt-1 text-right">
-            Last refreshed: {lastRefresh}
-          </p>
-        )}
+        {lastRefresh && <p className="text-[9px] text-military-400 mt-1 text-right">Last updated: {lastRefresh}</p>}
       </div>
 
-      {/* ── STAT CARDS ROW ── */}
-      {hasBatch && (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-
-          <StatCard
-            title="Total Strength"
-            value={totalTrainees}
-            subtitle={`${presentTrainees.length} Present`}
-            icon={<Users size={28} className="text-military-400" />}
-            color="text-military-900"
-            borderColor="border-t-military-700"
-          />
-
-          <StatCard
-            title="Chest Pending"
-            value={chestPendingTrainees.length}
-            subtitle={`${chestAssignedCount} Assigned`}
-            icon={<Target size={28} className="text-indigo-400" />}
-            color={chestPendingTrainees.length > 0 ? 'text-indigo-700' : 'text-green-700'}
-            borderColor="border-t-indigo-500"
-            clickable
-            onClick={() => setChestPendingModal(true)}
-            badge={chestPendingTrainees.length > 0 ? `${chestPendingTrainees.length} Pending` : undefined}
-            badgeColor="bg-indigo-100 text-indigo-700"
-          />
-
-          <StatCard
-  title="Absent / Away"
-  value={absentTrainees.length}
-  subtitle={absentTrainees.length === 0 ? 'All Present ✓' : 'Click to manage'}
-  icon={<UserX size={28} className="text-red-400" />}
-  color={absentTrainees.length > 0 ? 'text-red-700' : 'text-green-700'}
-  borderColor="border-t-red-500"
-  clickable
-  onClick={() => navigate('/absent-management')}
-  badge={absentTrainees.length > 0 ? `${absentTrainees.length} Away` : undefined}
-  badgeColor="bg-red-100 text-red-700"
-/>
-
-          <StatCard
-  title="Weekly Test Failed"
-  value={failedExam.length}
-  subtitle={failedExam.length === 0 ? 'All Passed ✓' : 'Click to manage'}
-  icon={<Award size={28} className="text-amber-400" />}
-  color={failedExam.length > 0 ? 'text-amber-700' : 'text-green-700'}
-  borderColor="border-t-amber-500"
-  clickable
-  onClick={() => navigate('/test-records')}
-/>
-
-         {/* 4. FPT Failed — Navigate to FPTTracker */}
-<StatCard
-  title="FPT Failed"
-  value={fptFailed.length}
-  subtitle={`${fptPassed.length} Pass / ${fptFailed.length} Fail`}
-  icon={<Crosshair size={28} className="text-orange-400" />}
-  color={fptFailed.length > 0 ? 'text-orange-700' : 'text-green-700'}
-  borderColor="border-t-orange-500"
-  clickable
-  onClick={() => navigate('/test-records')}
-  badge={fptPassed.length > 0 ? `${fptPassed.length} Pass` : undefined}
-  badgeColor="bg-green-100 text-green-700"
-/>
-
-          <StatCard
-  title="Docs Incomplete"
-  value={incompleteDocTrainees.length}
-  subtitle={incompleteDocTrainees.length === 0 ? 'All Complete ✓' : 'Click to verify'}
-  icon={<FileText size={28} className="text-purple-400" />}
-  color={incompleteDocTrainees.length > 0 ? 'text-purple-700' : 'text-green-700'}
-  borderColor="border-t-purple-500"
-  clickable
-  onClick={() => navigate('/documents')}
-/>
-
+      {/* ── ERROR ── */}
+      {error && (
+        <div className="bg-red-50 border border-red-300 px-4 py-3 flex items-center justify-between gap-3">
+          <p className="text-xs font-bold text-red-700 flex items-center gap-2"><AlertCircle size={14} /> {error}</p>
+          <button onClick={fetchDashboardData} className="bg-red-700 text-white px-3 py-1.5 text-[10px] font-black uppercase">Retry</button>
         </div>
       )}
 
-      {/* ── TODAY'S PROGRAM SECTION ── */}
-      {hasBatch && (
+      {!hasBatch ? (
         <div className="bg-white border border-slate-300 shadow-flat">
-          <div className="bg-military-900 px-4 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Calendar size={18} className="text-white" />
-              <div>
-                <h2 className="text-xs font-black text-white uppercase tracking-widest">
-                  Today's Training Program — {todayDayName}
-                </h2>
-                {weeklyProgram && (
-                  <p className="text-[10px] text-military-300 mt-0.5">
-                    {weeklyProgram.weekName} ({weeklyProgram.fromDate} to {weeklyProgram.toDate})
+          <EmptyLine
+            icon={<Layers size={36} className="text-slate-300" />}
+            text="Koi active batch nahi — pehle Company Commander se batch activate karwao"
+            action={{ label: 'Batch Management', onClick: () => navigate('/batches') }}
+          />
+        </div>
+      ) : (
+        <>
+          {/* ══════════ 2 · COMPANY STRENGTH ══════════ */}
+          <div className="bg-white border border-slate-300 shadow-flat">
+            <div className="grid grid-cols-3 md:grid-cols-6 divide-x divide-slate-200">
+              <div className="px-4 py-3">
+                <p className="text-[9px] font-black text-slate-500 uppercase">Total</p>
+                <p className="text-3xl font-black text-military-900 leading-tight">{total}</p>
+                <p className="text-[9px] text-slate-400 font-bold">Trainees</p>
+              </div>
+              <div className="px-4 py-3 bg-green-50/60 cursor-pointer hover:bg-green-50" onClick={() => setModal('unavail')}>
+                <p className="text-[9px] font-black text-green-700 uppercase">Active</p>
+                <p className="text-3xl font-black text-green-700 leading-tight">{active}<span className="text-sm text-slate-400 font-bold"> / {total}</span></p>
+                <div className="h-1.5 bg-slate-200 rounded-full mt-1 overflow-hidden">
+                  <div className="h-full bg-green-500 rounded-full" style={{ width: `${total ? (active / total) * 100 : 0}%` }} />
+                </div>
+              </div>
+              <div className="px-4 py-3 cursor-pointer hover:bg-purple-50" onClick={() => setModal('hospital')}>
+                <p className="text-[9px] font-black text-purple-700 uppercase">Hospital</p>
+                <p className={`text-3xl font-black leading-tight ${hospital.length ? 'text-purple-700' : 'text-slate-300'}`}>{hospital.length}</p>
+                <p className="text-[9px] text-slate-400 font-bold">{sick.length > 0 ? `+ ${sick.length} Sick/MI` : 'Sick: 0'}</p>
+              </div>
+              <div className="px-4 py-3 cursor-pointer hover:bg-amber-50" onClick={() => setModal('leave')}>
+                <p className="text-[9px] font-black text-amber-700 uppercase">Leave</p>
+                <p className={`text-3xl font-black leading-tight ${leave.length ? 'text-amber-700' : 'text-slate-300'}`}>{leave.length}</p>
+                <p className="text-[9px] text-slate-400 font-bold">{returningToday.length > 0 ? `${returningToday.length} aaj wapas` : 'Return today: 0'}</p>
+              </div>
+              <div className="px-4 py-3 cursor-pointer hover:bg-blue-50" onClick={() => setModal('light')}>
+                <p className="text-[9px] font-black text-blue-700 uppercase">Light Duty</p>
+                <p className={`text-3xl font-black leading-tight ${lightDuty.length ? 'text-blue-700' : 'text-slate-300'}`}>{lightDuty.length}</p>
+                <p className="text-[9px] text-slate-400 font-bold">Rest / Excused</p>
+              </div>
+              <div className="px-4 py-3 cursor-pointer hover:bg-indigo-50" onClick={() => setModal('chest')}>
+                <p className="text-[9px] font-black text-indigo-700 uppercase">Chest Pending</p>
+                <p className={`text-3xl font-black leading-tight ${chestPending.length ? 'text-indigo-700' : 'text-slate-300'}`}>{chestPending.length}</p>
+                <p className="text-[9px] text-slate-400 font-bold">{total - chestPending.length} assigned</p>
+              </div>
+            </div>
+          </div>
+
+          {/* ══════════ 7 · FIND TRAINEE (top accessible) ══════════ */}
+          <div className="bg-white border border-slate-300 shadow-flat p-3 relative">
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="text-[10px] font-black text-military-900 uppercase tracking-wider flex items-center gap-1.5"><Search size={13} /> Find Trainee</span>
+              <div className="relative flex-1 min-w-[240px]">
+                <input
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                  placeholder="Chest Number, Name ya Mobile se dhoondo..."
+                  className="w-full text-xs px-3 py-2 border border-slate-300 focus:outline-none focus:border-military-700 font-semibold"
+                />
+                {searchTerm && (
+                  <button onClick={() => setSearchTerm('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-600"><X size={13} /></button>
+                )}
+              </div>
+              <button onClick={() => navigate('/trainees')}
+                className="bg-slate-100 border border-slate-300 text-military-800 px-3 py-2 text-[10px] font-black uppercase hover:bg-slate-200 flex items-center gap-1.5">
+                Full List <ArrowRight size={11} />
+              </button>
+            </div>
+            {searchResults.length > 0 && (
+              <div className="mt-2 border border-slate-200 divide-y divide-slate-100">
+                {searchResults.map(t => (
+                  <button key={t.id} onClick={() => navigate(`/profile?search=${encodeURIComponent(t.regNo || t.chestNo || '')}`)}
+                    className="w-full flex items-center gap-3 px-3 py-2 hover:bg-military-50 text-left">
+                    {t.photoURL
+                      ? <img src={t.photoURL} className="w-8 h-9 object-cover object-top border border-slate-200" alt="" />
+                      : <div className="w-8 h-9 bg-slate-100 border border-dashed border-slate-300" />}
+                    <span className="font-mono text-xs font-black text-military-800 w-14">{t.chestNo || '—'}</span>
+                    <span className="text-xs font-bold text-slate-800 flex-1 truncate">{t.name}</span>
+                    <span className="text-[9px] font-bold text-slate-400 hidden sm:block">{t.platoon || ''}</span>
+                    <span className={`text-[8.5px] font-black px-1.5 py-0.5 border ${t.docsComplete ? 'bg-green-50 text-green-700 border-green-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                      DOCS {t.docsComplete ? 'OK' : 'PENDING'}
+                    </span>
+                    <span className={`text-[8.5px] font-black px-1.5 py-0.5 border ${!t.attn || t.attn === 'P' ? 'bg-green-50 text-green-700 border-green-200' : ABSENT_COLORS[t.attn]}`}>
+                      {!t.attn || t.attn === 'P' ? 'ACTIVE' : ABSENT_LABELS[t.attn]}
+                    </span>
+                    <ArrowRight size={12} className="text-slate-400" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* ══════════ 3 · NEEDS YOUR ATTENTION (HERO) ══════════ */}
+          <div className="bg-white border-2 border-military-800 shadow-flat">
+            <SectionHead
+              icon={<AlertTriangle size={16} className="text-amber-400" />}
+              title="Needs Your Attention"
+              sub="Issues that require Clerk action"
+              right={alerts.length > 0 && (
+                <span className="bg-red-600 text-white text-[10px] font-black px-2.5 py-1 rounded-full">{alerts.length}</span>
+              )}
+            />
+            {alerts.length === 0 ? (
+              <div className="p-6 text-center">
+                <CheckCircle2 size={34} className="text-green-500 mx-auto mb-2" />
+                <p className="text-sm font-black text-green-700 uppercase">All Clear</p>
+                <p className="text-[10px] text-slate-400 font-bold mt-0.5">No urgent administrative action is currently required.</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {alerts.map((a, i) => (
+                  <div key={i} className={`px-4 py-3 border-l-4 flex items-center gap-3 flex-wrap ${levelStyle[a.level].border}`}>
+                    <span className={`text-[8.5px] font-black px-2 py-0.5 uppercase flex-shrink-0 ${levelStyle[a.level].chip}`}>
+                      {a.level === 'TODAY' ? 'ACTION TODAY' : a.level}
+                    </span>
+                    <span className="text-2xl font-black text-military-900 w-10 text-center flex-shrink-0">{a.count}</span>
+                    <span className="text-xs font-bold text-slate-700 flex-1 min-w-[180px]">{a.text}</span>
+                    <button onClick={a.onClick}
+                      className="bg-military-800 text-white px-3 py-1.5 text-[9.5px] font-black uppercase hover:bg-military-900 flex items-center gap-1.5 flex-shrink-0">
+                      {a.action} <ArrowRight size={10} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* ══════════ 4 · TODAY'S PROGRAM ══════════ */}
+          <div className="bg-white border border-slate-300 shadow-flat">
+            <SectionHead
+              icon={<Calendar size={16} />}
+              title={`Today's Program — ${todayDayName}`}
+              sub={weeklyProgram ? `${weeklyProgram.weekName} (${weeklyProgram.fromDate} → ${weeklyProgram.toDate})` : undefined}
+              right={
+                <div className="flex items-center gap-2">
+                  <span className={`text-[9px] font-black px-2.5 py-1 uppercase ${weeklyProgram ? 'bg-green-700 text-white' : 'bg-red-700 text-white'}`}>
+                    {weeklyProgram ? 'Active' : 'Not Available'}
+                  </span>
+                  <button onClick={() => navigate('/weekly-program')}
+                    className="bg-military-800 border border-military-600 text-white px-2.5 py-1 text-[9px] font-black uppercase hover:bg-military-700 hidden sm:block">
+                    Full Program
+                  </button>
+                </div>
+              }
+            />
+            {!weeklyProgram ? (
+              <EmptyLine
+                icon={<Calendar size={34} className="text-slate-300" />}
+                text="Is hafte ka program available nahi hai"
+                action={{ label: 'Create / Update Weekly Program', onClick: () => navigate('/weekly-program') }}
+              />
+            ) : todaySessions.length === 0 ? (
+              <EmptyLine
+                icon={<Calendar size={34} className="text-slate-300" />}
+                text={todayDayName === 'Sunday' ? 'Sunday — Off Day / Rest Day' : 'Aaj ke liye koi session set nahi hai'}
+                action={{ label: 'Open Weekly Program', onClick: () => navigate('/weekly-program') }}
+              />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm whitespace-nowrap">
+                  <thead className="bg-slate-50 border-b border-slate-200">
+                    <tr>
+                      <th className="px-4 py-2 text-[10px] font-black text-slate-500 uppercase">Time</th>
+                      <th className="px-4 py-2 text-[10px] font-black text-slate-500 uppercase">Training / Subject</th>
+                      <th className="px-4 py-2 text-[10px] font-black text-slate-500 uppercase">Platoon</th>
+                      <th className="px-4 py-2 text-[10px] font-black text-slate-500 uppercase">Ustad / Instructor</th>
+                      <th className="px-4 py-2 text-[10px] font-black text-slate-500 uppercase">Location</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {todaySessions.map((s, i) => (
+                      <tr key={s.id || i} className="border-b border-slate-100 hover:bg-slate-50">
+                        <td className="px-4 py-2.5 font-mono text-xs font-black text-military-900">{s.time || '—'}</td>
+                        <td className="px-4 py-2.5 font-bold text-slate-800">{sessionLabel(s)}</td>
+                        <td className="px-4 py-2.5"><span className="bg-slate-100 px-2 py-0.5 text-[10px] font-bold">{s.platoon || '—'}</span></td>
+                        <td className="px-4 py-2.5 text-xs font-bold text-blue-800">{instructorLabel(s)}</td>
+                        <td className="px-4 py-2.5 text-[11px] text-slate-500 font-semibold">{s.location ? <span className="flex items-center gap-1"><MapPin size={10} />{s.location}</span> : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {weeklyProgram.remarks && (
+                  <p className="px-4 py-2 text-[10px] font-bold text-amber-800 bg-amber-50 border-t border-amber-200">
+                    WEEK REMARKS: {weeklyProgram.remarks}
                   </p>
                 )}
               </div>
-            </div>
-            <span className="bg-military-800 text-white text-[10px] font-bold px-3 py-1 border border-military-600">
-              {todaySessions.length} Classes Today
-            </span>
+            )}
           </div>
 
-          {todaySessions.length === 0 ? (
-            <div className="p-8 text-center">
-              <Calendar size={40} className="text-slate-300 mx-auto mb-3" />
-              <p className="text-sm font-bold text-slate-500 uppercase">
-                {todayDayName === 'Sunday'
-                  ? 'Sunday — Off Day / Rest Day'
-                  : 'Aaj ka koi program set nahi hai'}
-              </p>
-              <p className="text-[10px] text-slate-400 mt-1">
-                Weekly Program Screen se schedule banayein
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead className="bg-slate-100">
-                  <tr>
-                    <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-500 uppercase w-8">S.No</th>
-                    <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-500 uppercase">
-                      <Clock size={10} className="inline mr-1" />Time
-                    </th>
-                    <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-500 uppercase">
-                      <Target size={10} className="inline mr-1" />Subject
-                    </th>
-                    <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-500 uppercase">
-                      <Users size={10} className="inline mr-1" />Platoon
-                    </th>
-                    <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-500 uppercase">
-                      <Shield size={10} className="inline mr-1" />Instructor(s)
-                    </th>
-                    <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-500 uppercase">
-                      <MapPin size={10} className="inline mr-1" />Location
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {todaySessions.map((session, idx) => (
-                    <tr key={session.id || idx} className="hover:bg-slate-50 align-top">
-                      <td className="px-3 py-2.5 text-slate-400 font-mono font-bold">{idx + 1}</td>
-                      <td className="px-3 py-2.5 font-mono font-bold text-military-700 whitespace-nowrap">
-                        {session.time}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <span className="font-bold text-slate-800">{getDisplaySubject(session)}</span>
-                        {session.lectureDetails && (session.lectureDetails.topic || session.lectureDetails.description) && (
-                          <div className="mt-1 bg-purple-50 border border-purple-200 p-1.5 rounded-sm">
-                            <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[9px]">
-                              {session.lectureDetails.topic && (
-                                <span><strong className="text-purple-700">Topic:</strong> {session.lectureDetails.topic}</span>
-                              )}
-                              {session.lectureDetails.duration && (
-                                <span><strong className="text-purple-700">Duration:</strong> {session.lectureDetails.duration}</span>
-                              )}
-                              {session.lectureDetails.description && (
-                                <span className="block w-full"><strong className="text-purple-700">Details:</strong> {session.lectureDetails.description}</span>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <span className="bg-slate-200 text-slate-700 px-1.5 py-0.5 text-[10px] font-bold">
-                          {session.platoon}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5">{renderPersons(session)}</td>
-                      <td className="px-3 py-2.5 text-slate-500 text-[10px]">{session.location || '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          {/* ══════════ 5+6 · DOCUMENT CONTROL + MEDICAL (2-col) ══════════ */}
+          <div className="grid lg:grid-cols-2 gap-4">
 
-          {weeklyProgram?.remarks && (
-            <div className="border-t border-slate-200 bg-amber-50 px-4 py-2">
-              <p className="text-[10px] text-amber-800">
-                <strong className="uppercase">Week Remarks:</strong> {weeklyProgram.remarks}
-              </p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── NO BATCH PLACEHOLDER ── */}
-      {!hasBatch && (
-        <div className="bg-slate-50 border border-slate-200 p-12 text-center">
-          <Shield size={48} className="text-slate-300 mx-auto mb-3" />
-          <p className="text-sm font-bold text-slate-500 uppercase">
-            Dashboard activate karne ke liye pehle Batch create karo
-          </p>
-          <p className="text-[10px] text-slate-400 mt-1">
-            Batch Management → Create New Batch
-          </p>
-        </div>
-      )}
-
-      {/* ═══════════════════════════════════════
-          MODALS
-          ═══════════════════════════════════════ */}
-
-      {/* 0. CHEST PENDING — assignment ke liye waiting */}
-      <ListModal
-        open={chestPendingModal}
-        onClose={() => setChestPendingModal(false)}
-        title="Chest Number Pending — Assignment Required"
-        icon={<Target size={18} className="text-white" />}
-        headerColor="bg-indigo-800"
-        trainees={chestPendingTrainees}
-        emptyMessage="Sab trainees ko Chest No assigned hai — All Clear!"
-        columns={[
-          {
-            label: 'Reg No',
-            render: t => <span className="font-mono font-bold text-military-800">{t.regNo || '—'}</span>
-          },
-          {
-            label: 'Rank & Name',
-            render: t => <span className="font-bold text-slate-800">{t.rank || 'RCT'} {t.name}</span>
-          },
-          {
-            label: 'Platoon',
-            render: t => <span className="bg-slate-100 px-2 py-0.5 text-[10px] font-bold">{t.platoon || '—'}</span>
-          },
-          {
-            label: 'Chest No',
-            render: () => (
-              <span className="px-2 py-0.5 text-[10px] font-bold border bg-indigo-100 text-indigo-800 border-indigo-300">
-                PENDING
-              </span>
-            )
-          },
-          {
-            label: 'Action',
-            render: t => (
-              <button
-                onClick={() => navigate(`/profile?search=${encodeURIComponent(t.regNo || '')}`)}
-                className="bg-military-800 text-white px-2 py-0.5 text-[9px] font-black uppercase hover:bg-military-900">
-                Assign
+            {/* DOCUMENT CONTROL */}
+            <div className="bg-white border border-slate-300 shadow-flat flex flex-col">
+              <SectionHead icon={<FileText size={15} />} title="Document Control"
+                right={
+                  <span className={`text-sm font-black ${docStats.pct >= 80 ? 'text-green-400' : docStats.pct >= 50 ? 'text-amber-400' : 'text-red-400'}`}>
+                    {docStats.pct}%
+                  </span>
+                } />
+              <div className="p-4 space-y-3 flex-1">
+                {docStats.required === 0 ? (
+                  <EmptyLine icon={<FileText size={30} className="text-slate-300" />}
+                    text="Abhi kisi trainee ka document record shuru nahi hua"
+                    action={{ label: 'Open Document Cell', onClick: () => navigate('/documents') }} />
+                ) : (
+                  <>
+                    <div>
+                      <div className="flex justify-between text-[10px] font-black uppercase mb-1">
+                        <span className="text-slate-500">Overall Completion ({docStats.verified + docStats.uploaded}/{docStats.required} required)</span>
+                        <span className="text-military-900">{docStats.pct}%</span>
+                      </div>
+                      <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
+                        <div className={`h-full rounded-full ${docStats.pct >= 80 ? 'bg-green-500' : docStats.pct >= 50 ? 'bg-amber-500' : 'bg-red-500'}`}
+                          style={{ width: `${docStats.pct}%` }} />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-4 gap-2 text-center">
+                      {[
+                        { label: 'Verified', v: docStats.verified, cls: 'text-green-700 bg-green-50 border-green-200' },
+                        { label: 'Uploaded', v: docStats.uploaded, cls: 'text-blue-700 bg-blue-50 border-blue-200' },
+                        { label: 'Pending', v: docStats.pending, cls: 'text-amber-700 bg-amber-50 border-amber-200' },
+                        { label: 'Rejected', v: docStats.rejected, cls: 'text-red-700 bg-red-50 border-red-200' },
+                      ].map(x => (
+                        <div key={x.label} className={`border px-1 py-1.5 ${x.cls}`}>
+                          <p className="text-lg font-black leading-tight">{x.v}</p>
+                          <p className="text-[8px] font-black uppercase">{x.label}</p>
+                        </div>
+                      ))}
+                    </div>
+                    {docStats.issues.length > 0 && (
+                      <div>
+                        <p className="text-[9.5px] font-black text-slate-500 uppercase mb-1">Immediate Document Issues</p>
+                        <div className="border border-slate-200 divide-y divide-slate-100 max-h-44 overflow-y-auto">
+                          {docStats.issues.slice(0, 8).map((iss, i) => (
+                            <button key={i} onClick={() => navigate(`/documents?search=${encodeURIComponent(iss.t.regNo || iss.t.chestNo || '')}`)}
+                              className="w-full flex items-center gap-2 px-2.5 py-1.5 hover:bg-slate-50 text-left">
+                              <span className="font-mono text-[10px] font-black text-military-800 w-10">{iss.t.chestNo || '—'}</span>
+                              <span className="text-[11px] font-bold text-slate-700 flex-1 truncate">{iss.t.name}</span>
+                              <span className="text-[10px] text-slate-500 truncate max-w-[110px]">{iss.doc}</span>
+                              <span className={`text-[8.5px] font-black px-1.5 py-0.5 ${iss.status === 'Rejected' ? 'bg-red-600 text-white' : 'bg-amber-100 text-amber-800 border border-amber-300'}`}>
+                                {iss.status.toUpperCase()}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+              <button onClick={() => navigate('/documents')}
+                className="border-t border-slate-200 py-2.5 text-[10px] font-black uppercase text-military-800 hover:bg-slate-50 flex items-center justify-center gap-1.5">
+                View All Document Issues <ArrowRight size={11} />
               </button>
-            )
-          },
-        ]}
-      />
+            </div>
 
-      {/* 1. ABSENT */}
-      <ListModal
-        open={absentModal}
-        onClose={() => setAbsentModal(false)}
-        title="Absent / Not Present Trainees"
-        icon={<UserX size={18} className="text-white" />}
-        headerColor="bg-red-800"
-        trainees={absentTrainees}
-        emptyMessage="Sab Present hain — All Clear!"
-        columns={[
-          {
-            label: 'Chest / Reg',
-            render: t => (
-              <div>
-                <span className="font-mono font-bold text-military-800">{t.chestNo || '—'}</span>
-                <span className="text-[9px] text-slate-400 ml-1">({t.regNo})</span>
-              </div>
-            )
-          },
-          {
-            label: 'Rank & Name',
-            render: t => <span className="font-bold text-slate-800">{t.rank || 'RCT'} {t.name}</span>
-          },
-          {
-            label: 'Platoon',
-            render: t => <span className="bg-slate-100 px-2 py-0.5 text-[10px] font-bold">{t.platoon || '—'}</span>
-          },
-          {
-            label: 'Status',
-            render: t => {
-              const attn = t.attn || 'A';
-              return (
-                <span className={`px-2 py-0.5 text-[10px] font-bold border ${ABSENT_COLORS[attn] || ABSENT_COLORS['A']}`}>
-                  {ABSENT_LABELS[attn] || attn}
-                </span>
-              );
-            }
-          },
-          {
-            label: 'Remarks',
-            render: t => <span className="text-[10px] text-slate-500">{t.remarks || '—'}</span>
-          },
-        ]}
-      />
+            {/* MEDICAL & AVAILABILITY */}
+            <div className="bg-white border border-slate-300 shadow-flat flex flex-col">
+              <SectionHead icon={<Stethoscope size={15} />} title="Medical & Availability Status" />
+              <div className="p-4 space-y-3 flex-1">
 
-      {/* 2. WEEKLY TEST FAILED */}
-      <ListModal
-        open={failedExamModal}
-        onClose={() => setFailedExamModal(false)}
-        title="Weekly Test — Failed Trainees"
-        icon={<Award size={18} className="text-white" />}
-        headerColor="bg-amber-800"
-        trainees={failedExam}
-        emptyMessage="Sabne Pass kiya — All Clear!"
-        columns={[
-          {
-            label: 'Chest / Reg',
-            render: t => (
-              <div>
-                <span className="font-mono font-bold text-military-800">{t.chestNo || '—'}</span>
-                <span className="text-[9px] text-slate-400 ml-1">({t.regNo})</span>
-              </div>
-            )
-          },
-          {
-            label: 'Name',
-            render: t => <span className="font-bold text-slate-800">{t.rank || 'RCT'} {t.name}</span>
-          },
-          {
-            label: 'Platoon',
-            render: t => <span className="bg-slate-100 px-2 py-0.5 text-[10px] font-bold">{t.platoon || '—'}</span>
-          },
-          {
-            label: 'Exam Marks',
-            render: t => <span className="font-mono font-bold text-red-700">{t.weeklyExamMarks || 'N/A'}</span>
-          },
-          {
-            label: 'FPT Status',
-            render: t => (
-              <span className={`px-2 py-0.5 text-[9px] font-bold ${
-                t.fptResult === 'Pass' ? 'bg-green-100 text-green-700' :
-                t.fptResult === 'Fail' ? 'bg-red-100 text-red-700' :
-                'bg-slate-100 text-slate-500'
-              }`}>
-                FPT: {t.fptResult || 'Not Done'}
-              </span>
-            )
-          },
-          {
-            label: 'Remarks',
-            render: t => <span className="text-[10px] text-slate-500">{t.remarks || '—'}</span>
-          },
-        ]}
-      />
-
-      {/* 3. FPT FAILED */}
-      <ListModal
-        open={fptModal}
-        onClose={() => setFptModal(false)}
-        title="FPT — Failed Trainees"
-        icon={<Crosshair size={18} className="text-white" />}
-        headerColor="bg-orange-800"
-        trainees={fptFailed}
-        emptyMessage="Sabne FPT pass kiya — All Clear!"
-        columns={[
-          {
-            label: 'Chest / Reg',
-            render: t => (
-              <div>
-                <span className="font-mono font-bold text-military-800">{t.chestNo || '—'}</span>
-                <span className="text-[9px] text-slate-400 ml-1">({t.regNo})</span>
-              </div>
-            )
-          },
-          {
-            label: 'Name',
-            render: t => <span className="font-bold text-slate-800">{t.rank || 'RCT'} {t.name}</span>
-          },
-          {
-            label: 'Platoon',
-            render: t => <span className="bg-slate-100 px-2 py-0.5 text-[10px] font-bold">{t.platoon || '—'}</span>
-          },
-          {
-            label: 'FPT Score',
-            render: t => <span className="font-mono font-bold text-red-700">{t.fptScore || 'N/A'}</span>
-          },
-          {
-            label: 'FPT Result',
-            render: () => (
-              <span className="bg-red-600 text-white px-2 py-0.5 text-[9px] font-bold uppercase">FAIL</span>
-            )
-          },
-          {
-            label: 'Weekly Exam',
-            render: t => (
-              <span className={`px-2 py-0.5 text-[9px] font-bold ${
-                t.weeklyExamResult === 'Pass' ? 'bg-green-100 text-green-700' :
-                t.weeklyExamResult === 'Fail' ? 'bg-red-100 text-red-700' :
-                'bg-slate-100 text-slate-500'
-              }`}>
-                {t.weeklyExamResult || 'Not Given'}
-              </span>
-            )
-          },
-        ]}
-      />
-
-      {/* 4. INCOMPLETE DOCUMENTS */}
-      <ListModal
-        open={incDocsModal}
-        onClose={() => setIncDocsModal(false)}
-        title="Incomplete Documents — Pending Trainees"
-        icon={<FileText size={18} className="text-white" />}
-        headerColor="bg-purple-800"
-        trainees={incompleteDocTrainees}
-        emptyMessage="Sabke documents complete hain — All Clear!"
-        columns={[
-          {
-            label: 'Chest / Reg',
-            render: t => (
-              <div>
-                <span className="font-mono font-bold text-military-800">{t.chestNo || '—'}</span>
-                <span className="text-[9px] text-slate-400 ml-1">({t.regNo})</span>
-              </div>
-            )
-          },
-          {
-            label: 'Name',
-            render: t => <span className="font-bold text-slate-800">{t.rank || 'RCT'} {t.name}</span>
-          },
-          {
-            label: 'Platoon',
-            render: t => <span className="bg-slate-100 px-2 py-0.5 text-[10px] font-bold">{t.platoon || '—'}</span>
-          },
-          {
-            label: 'Doc Status',
-            render: t => {
-              if (!t.documents) {
-                return <span className="bg-red-100 text-red-700 px-2 py-0.5 text-[9px] font-bold">NO DOCS</span>;
-              }
-              const entries  = Object.entries(t.documents);
-              const required = entries.filter(([, v]: any) => v?.isRequired);
-              const done     = required.filter(([, v]: any) =>
-                v?.status === 'Uploaded' || v?.status === 'Verified'
-              );
-              return (
-                <span className="text-[10px] font-bold text-purple-700">{done.length}/{required.length} Done</span>
-              );
-            }
-          },
-          {
-            label: 'Pending Docs',
-            render: t => {
-              if (!t.documents) return <span className="text-red-500 text-[9px]">All pending</span>;
-              const pending = Object.entries(t.documents)
-                .filter(([, v]: any) => v?.isRequired && (v?.status === 'Pending' || v?.status === 'Rejected'))
-                .map(([k]) => k.replace(/([A-Z])/g, ' $1').trim());
-              if (pending.length === 0) return <span className="text-slate-400 text-[9px]">—</span>;
-              return (
-                <div className="flex flex-wrap gap-1">
-                  {pending.slice(0, 3).map((d, i) => (
-                    <span key={i} className="text-[8px] bg-red-50 text-red-600 border border-red-200 px-1 py-0.5">{d}</span>
-                  ))}
-                  {pending.length > 3 && (
-                    <span className="text-[8px] text-red-500 font-bold">+{pending.length - 3} more</span>
+                {/* Hospital */}
+                <div className="border border-purple-200 bg-purple-50/40">
+                  <div className="flex items-center justify-between px-3 py-2 border-b border-purple-100">
+                    <span className="text-[10px] font-black text-purple-800 uppercase flex items-center gap-1.5"><BedDouble size={12} /> Hospital</span>
+                    <span className="text-xl font-black text-purple-800">{hospital.length}</span>
+                  </div>
+                  {hospital.length === 0 ? (
+                    <p className="px-3 py-2 text-[10px] font-bold text-slate-400">Koi trainee hospital me nahi hai.</p>
+                  ) : (
+                    <div className="divide-y divide-purple-100">
+                      {hospital.slice(0, 4).map(t => (
+                        <div key={t.id} className="flex items-center gap-2 px-3 py-1.5">
+                          <span className="font-mono text-[10px] font-black text-military-800 w-10">{t.chestNo || '—'}</span>
+                          <span className="text-[11px] font-bold text-slate-700 flex-1 truncate">{t.name}</span>
+                          <span className="text-[9px] text-slate-500 font-semibold">Since {medSince(t.id)}</span>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
-              );
-            }
-          },
-        ]}
-      />
 
+                {/* Leave */}
+                <div className="border border-amber-200 bg-amber-50/40">
+                  <div className="flex items-center justify-between px-3 py-2 border-b border-amber-100">
+                    <span className="text-[10px] font-black text-amber-800 uppercase flex items-center gap-1.5"><CalendarClock size={12} /> Leave</span>
+                    <span className="text-xl font-black text-amber-800">{leave.length}</span>
+                  </div>
+                  <div className="px-3 py-2 space-y-1">
+                    {returningToday.length > 0 ? (
+                      <p className="text-[10px] font-black text-green-700 bg-green-50 border border-green-200 px-2 py-1">
+                        ✓ {returningToday.length} trainee(s) AAJ wapas expected: {returningToday.map(r => r.traineeName || r.chestNo).filter(Boolean).slice(0, 3).join(', ')}
+                      </p>
+                    ) : (
+                      <p className="text-[10px] font-bold text-slate-400">Aaj koi return expected nahi.</p>
+                    )}
+                    {returningSoon.length > 0 && (
+                      <p className="text-[9.5px] text-slate-500 font-semibold">
+                        Jaldi wapas: {returningSoon.map(r => `${r.traineeName || r.chestNo} (${r.toDate})`).slice(0, 3).join(' · ')}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Light duty + Sick row */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="border border-blue-200 bg-blue-50/40 px-3 py-2 flex items-center justify-between">
+                    <span className="text-[10px] font-black text-blue-800 uppercase">Light Duty / Rest</span>
+                    <span className="text-xl font-black text-blue-800">{lightDuty.length}</span>
+                  </div>
+                  <div className="border border-orange-200 bg-orange-50/40 px-3 py-2 flex items-center justify-between">
+                    <span className="text-[10px] font-black text-orange-800 uppercase">Sick / MI Room</span>
+                    <span className="text-xl font-black text-orange-800">{sick.length}</span>
+                  </div>
+                </div>
+                {absent.length > 0 && (
+                  <div className="border border-red-200 bg-red-50/50 px-3 py-2 flex items-center justify-between">
+                    <span className="text-[10px] font-black text-red-800 uppercase flex items-center gap-1.5"><UserX size={12} /> Absent (unauthorized)</span>
+                    <span className="text-xl font-black text-red-800">{absent.length}</span>
+                  </div>
+                )}
+              </div>
+              <div className="border-t border-slate-200 grid grid-cols-2 divide-x divide-slate-200">
+                <button onClick={() => navigate('/medical-register')}
+                  className="py-2.5 text-[10px] font-black uppercase text-military-800 hover:bg-slate-50 flex items-center justify-center gap-1.5">
+                  Hospital / Medical <ArrowRight size={11} />
+                </button>
+                <button onClick={() => navigate('/absent-management')}
+                  className="py-2.5 text-[10px] font-black uppercase text-military-800 hover:bg-slate-50 flex items-center justify-center gap-1.5">
+                  Leave Records <ArrowRight size={11} />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* ══════════ 8 · PENDING WORK + 9 · RECENT ACTIVITY ══════════ */}
+          <div className="grid lg:grid-cols-2 gap-4">
+
+            {/* PENDING WORK */}
+            <div className="bg-white border border-slate-300 shadow-flat">
+              <SectionHead icon={<ClipboardList size={15} />} title="Your Pending Work" sub="Jo kaam abhi baaki hai" />
+              <div className="divide-y divide-slate-100">
+                {[
+                  { label: 'Rejected documents — correct & re-verify', count: docStats.rejected, to: '/documents', urgent: true },
+                  { label: 'Trainees with incomplete documents', count: docIncompleteTrainees.length, to: '/documents', urgent: false },
+                  { label: 'Chest numbers to assign', count: chestPending.length, to: '/trainees', urgent: false },
+                  { label: 'Hospital cases to review', count: hospital.length, to: '/medical-register', urgent: hospital.length > 0 },
+                  { label: 'Leave returns to process today', count: returningToday.length, to: '/absent-management', urgent: returningToday.length > 0 },
+                  { label: 'Weekly program', count: weeklyProgram ? 0 : 1, to: '/weekly-program', urgent: !weeklyProgram },
+                ].filter(w => w.count > 0).length === 0 ? (
+                  <EmptyLine text="Koi pending kaam nahi — sab up to date!" />
+                ) : (
+                  [
+                    { label: 'Rejected documents — correct & re-verify', count: docStats.rejected, to: '/documents', urgent: true },
+                    { label: 'Trainees with incomplete documents', count: docIncompleteTrainees.length, to: '/documents', urgent: false },
+                    { label: 'Chest numbers to assign', count: chestPending.length, to: '/trainees', urgent: false },
+                    { label: 'Hospital cases to review', count: hospital.length, to: '/medical-register', urgent: hospital.length > 0 },
+                    { label: 'Leave returns to process today', count: returningToday.length, to: '/absent-management', urgent: returningToday.length > 0 },
+                    { label: 'Weekly program not created', count: weeklyProgram ? 0 : 1, to: '/weekly-program', urgent: !weeklyProgram },
+                  ].filter(w => w.count > 0).map((w, i) => (
+                    <button key={i} onClick={() => navigate(w.to)}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 text-left">
+                      <span className={`text-lg font-black w-8 text-center ${w.urgent ? 'text-red-700' : 'text-military-900'}`}>{w.count}</span>
+                      <span className="text-xs font-bold text-slate-700 flex-1">{w.label}</span>
+                      <ArrowRight size={12} className="text-slate-400" />
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* RECENT ACTIVITY */}
+            <div className="bg-white border border-slate-300 shadow-flat flex flex-col">
+              <SectionHead icon={<History size={15} />} title="Recent Activity" sub="System me haal ke administrative badlav" />
+              <div className="flex-1">
+                {recentActivity.length === 0 ? (
+                  <EmptyLine icon={<History size={30} className="text-slate-300" />} text="Abhi koi recent activity nahi" />
+                ) : (
+                  <div className="divide-y divide-slate-100">
+                    {recentActivity.map((ev, i) => (
+                      <div key={i} className="flex items-center gap-3 px-4 py-2">
+                        <span className="flex-shrink-0">{ev.icon}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[11px] font-bold text-slate-700">{ev.text}</p>
+                          <p className="text-[9.5px] text-slate-400 font-semibold truncate">{ev.who}</p>
+                        </div>
+                        <span className="text-[9.5px] font-black text-slate-400 flex-shrink-0">{fmtWhen(ev.at)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* ══════════ 10 · QUICK ACTIONS ══════════ */}
+          <div className="bg-white border border-slate-300 shadow-flat p-4">
+            <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-3">Quick Actions</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+              {[
+                { label: 'Add Trainee', icon: UserPlus, to: '/profile' },
+                { label: 'Trainee List', icon: Users, to: '/trainees' },
+                { label: 'Verify Documents', icon: FilePlus2, to: '/documents' },
+                { label: 'Weekly Program', icon: Calendar, to: '/weekly-program' },
+                { label: 'Hospital Record', icon: HeartPulse, to: '/medical-register' },
+                { label: 'Manage Leave', icon: CalendarClock, to: '/absent-management' },
+              ].map(a => (
+                <button key={a.to + a.label} onClick={() => navigate(a.to)}
+                  className="border border-slate-300 bg-slate-50 hover:bg-military-800 hover:text-white text-slate-700 px-3 py-3 text-[10px] font-black uppercase flex items-center justify-center gap-2 transition-colors">
+                  <a.icon size={14} /> {a.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ══════════ MODALS ══════════ */}
+          <ListModal
+            open={modal === 'unavail'} onClose={() => setModal('')}
+            title="Unavailable Trainees" icon={<UserX size={18} className="text-white" />}
+            headerColor="bg-red-800" trainees={unavailable}
+            emptyMessage="Sab Present hain — All Clear!"
+            columns={[
+              { label: 'Chest / Reg', render: t => <span className="font-mono font-bold text-military-800">{t.chestNo || '—'} <span className="text-[9px] text-slate-400">({t.regNo})</span></span> },
+              { label: 'Name', render: t => <span className="font-bold text-slate-800">{t.rank || 'RCT'} {t.name}</span> },
+              { label: 'Platoon', render: t => <span className="bg-slate-100 px-2 py-0.5 text-[10px] font-bold">{t.platoon || '—'}</span> },
+              { label: 'Status', render: t => <span className={`px-2 py-0.5 text-[10px] font-bold border ${ABSENT_COLORS[t.attn || 'A']}`}>{ABSENT_LABELS[t.attn || 'A']}</span> },
+            ]}
+          />
+          <ListModal
+            open={modal === 'hospital'} onClose={() => setModal('')}
+            title="Hospital Cases" icon={<BedDouble size={18} className="text-white" />}
+            headerColor="bg-purple-800" trainees={hospital}
+            emptyMessage="Koi trainee hospital me nahi — All Clear!"
+            columns={[
+              { label: 'Chest / Reg', render: t => <span className="font-mono font-bold text-military-800">{t.chestNo || '—'} <span className="text-[9px] text-slate-400">({t.regNo})</span></span> },
+              { label: 'Name', render: t => <span className="font-bold text-slate-800">{t.name}</span> },
+              { label: 'Since', render: t => <span className="text-[10px] font-bold text-slate-600">{medSince(t.id)}</span> },
+              { label: 'Med Status', render: t => <span className="bg-purple-100 text-purple-800 border border-purple-300 px-2 py-0.5 text-[10px] font-bold">{t.medStat || '—'}</span> },
+            ]}
+          />
+          <ListModal
+            open={modal === 'leave'} onClose={() => setModal('')}
+            title="On Leave" icon={<CalendarClock size={18} className="text-white" />}
+            headerColor="bg-amber-700" trainees={leave}
+            emptyMessage="Koi trainee leave par nahi."
+            columns={[
+              { label: 'Chest / Reg', render: t => <span className="font-mono font-bold text-military-800">{t.chestNo || '—'} <span className="text-[9px] text-slate-400">({t.regNo})</span></span> },
+              { label: 'Name', render: t => <span className="font-bold text-slate-800">{t.name}</span> },
+              { label: 'Return Date', render: t => {
+                const rec = absActive.find(a => a.traineeId === t.id && a.type === 'L');
+                const isToday = rec?.toDate === todayDate;
+                return <span className={`text-[10px] font-black ${isToday ? 'text-green-700' : 'text-slate-600'}`}>{rec?.toDate || '—'}{isToday ? ' (AAJ)' : ''}</span>;
+              } },
+              { label: 'Reason', render: t => {
+                const rec = absActive.find(a => a.traineeId === t.id && a.type === 'L');
+                return <span className="text-[10px] text-slate-500">{rec?.reason || '—'}</span>;
+              } },
+            ]}
+          />
+          <ListModal
+            open={modal === 'light'} onClose={() => setModal('')}
+            title="Light Duty / Rest" icon={<Shield size={18} className="text-white" />}
+            headerColor="bg-blue-800" trainees={lightDuty}
+            emptyMessage="Koi trainee light duty par nahi."
+            columns={[
+              { label: 'Chest / Reg', render: t => <span className="font-mono font-bold text-military-800">{t.chestNo || '—'} <span className="text-[9px] text-slate-400">({t.regNo})</span></span> },
+              { label: 'Name', render: t => <span className="font-bold text-slate-800">{t.name}</span> },
+              { label: 'Med Status', render: t => <span className="bg-blue-100 text-blue-800 border border-blue-300 px-2 py-0.5 text-[10px] font-bold">{t.medStat || '—'}</span> },
+              { label: 'Remarks', render: t => <span className="text-[10px] text-slate-500">{t.medRemarks || t.remarks || '—'}</span> },
+            ]}
+          />
+          <ListModal
+            open={modal === 'chest'} onClose={() => setModal('')}
+            title="Chest Number Pending" icon={<Target size={18} className="text-white" />}
+            headerColor="bg-indigo-800" trainees={chestPending}
+            emptyMessage="Sab trainees ko Chest No assigned hai — All Clear!"
+            columns={[
+              { label: 'Reg No', render: t => <span className="font-mono font-bold text-military-800">{t.regNo || '—'}</span> },
+              { label: 'Name', render: t => <span className="font-bold text-slate-800">{t.rank || 'RCT'} {t.name}</span> },
+              { label: 'Platoon', render: t => <span className="bg-slate-100 px-2 py-0.5 text-[10px] font-bold">{t.platoon || '—'}</span> },
+              { label: 'Action', render: () => (
+                <button onClick={() => navigate(`/trainees`)}
+                  className="bg-indigo-600 text-white px-2.5 py-1 text-[9px] font-black uppercase hover:bg-indigo-700">Assign</button>
+              ) },
+            ]}
+          />
+        </>
+      )}
     </div>
   );
 };
