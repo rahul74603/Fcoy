@@ -18,6 +18,7 @@ import { showDoc } from '../../utils/devDataFilter';
 import { onAuthStateChanged } from 'firebase/auth';
 import { ReportButton } from '../../components/common/ReportButton';
 import { useBatch } from '../../contexts/BatchContext';
+import { useAuth } from '../../contexts/AuthContext';
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -148,6 +149,7 @@ const CardSkeleton = () => (
 export const QuarterMasterDashboard: React.FC = () => {
   const navigate = useNavigate();
   const go = (route: string) => navigate(route);
+  const { user } = useAuth();
   const { currentBatch: activeBatch } = useBatch(); // ⛓️ STRICT: selected batch follow
   const belongsToBatch = (data: any) => data.batchId ? data.batchId === activeBatch?.id : activeBatch?.status === 'active';
 
@@ -167,6 +169,8 @@ export const QuarterMasterDashboard: React.FC = () => {
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
   const [traineeCount, setTraineeCount] = useState(0);
   const [totalIssueRecords, setTotalIssueRecords] = useState(0);
+  const [kitDoneCount, setKitDoneCount] = useState(0);      // kitne trainees ko kit mil chuki
+  const [todayIssueCount, setTodayIssueCount] = useState(0); // aaj kitne issue hue
 
   // Computed
   const grandCollection = funds.reduce((s, f) => s + f.totalCollection, 0);
@@ -333,13 +337,24 @@ export const QuarterMasterDashboard: React.FC = () => {
 
       setVendorDues(Object.values(vDueMap).sort((a, b) => b.totalDue - a.totalDue));
 
-      // ── TRAINEES ──
+      // ── TRAINEES + KIT COVERAGE ──
       const tSnap = await getDocs(collection(db, 'trainees'));
-      setTraineeCount(tSnap.docs.filter(d => belongsToBatch(d.data()) && showDoc(d.data())).length);
+      const batchTrainees = tSnap.docs.filter(d => belongsToBatch(d.data()) && showDoc(d.data()));
+      setTraineeCount(batchTrainees.length);
+      setKitDoneCount(batchTrainees.filter(d => {
+        const data: any = d.data();
+        return Array.isArray(data.issuedKitItems) && data.issuedKitItems.length > 0;
+      }).length);
 
       // ── ISSUE RECORDS ──
       const issueSnap = await getDocs(collection(db, 'issue_records'));
-      setTotalIssueRecords(issueSnap.docs.filter(d => belongsToBatch(d.data())).length);
+      const batchIssues = issueSnap.docs.filter(d => belongsToBatch(d.data()));
+      setTotalIssueRecords(batchIssues.length);
+      const todayISO = new Date().toISOString().split('T')[0];
+      setTodayIssueCount(batchIssues.filter(d => {
+        const data: any = d.data();
+        return String(data.issueDateISO ?? '').startsWith(todayISO);
+      }).length);
 
       // ── TRAINING STOCK ALERTS ──
       // Build purchased vs issued for training items
@@ -529,17 +544,17 @@ export const QuarterMasterDashboard: React.FC = () => {
     <div className="max-w-7xl mx-auto space-y-5 pb-10">
 
       {/* ══════════ HEADER ══════════ */}
-      <div className="flex justify-between items-end border-b-2 border-slate-800 pb-3">
+      <div className="flex justify-between items-end border-b-2 border-slate-800 pb-3 flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <div className="w-11 h-11 bg-slate-800 rounded-xl flex items-center justify-center">
             <Shield size={20} className="text-white" />
           </div>
           <div>
             <h1 className="text-2xl font-black text-slate-900 uppercase tracking-wider">
-              Quarter Master Command
+              {new Date().getHours() < 12 ? 'Good Morning' : new Date().getHours() < 17 ? 'Good Afternoon' : 'Good Evening'}, {user?.name || 'Quarter Master'}
             </h1>
             <p className="text-xs text-slate-500 font-semibold mt-0.5">
-              4 Funds · Vendor Dues · Stock · Salary · Recovery · Complete Overview
+              QM Command Center · {activeBatch ? `${activeBatch.batchNumber} — ${activeBatch.batchName}` : 'No Active Batch'} · {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}
             </p>
           </div>
         </div>
@@ -619,6 +634,106 @@ export const QuarterMasterDashboard: React.FC = () => {
         )}
       </div>
 
+      {/* ══════════ NEEDS YOUR ATTENTION (HERO) ══════════ */}
+      {!loading && (() => {
+        type QAlert = { level: 'CRITICAL' | 'TODAY' | 'PENDING'; text: string; count: string; action: string; route: string };
+        const qAlerts: QAlert[] = [];
+        const negFunds = funds.filter(f => f.balance < 0);
+        if (negFunds.length > 0) qAlerts.push({ level: 'CRITICAL', text: `Fund NEGATIVE balance me: ${negFunds.map(f => f.label).join(', ')}`, count: String(negFunds.length), action: 'Funds Dashboard', route: ROUTES.fundsDashboard });
+        if (totalVendorDue > 0) qAlerts.push({ level: 'CRITICAL', text: `Vendor payments due — ${vendorDues.length} vendor(s) ka paisa baaki`, count: fmtShort(totalVendorDue), action: 'Pay Vendors', route: ROUTES.vendorPayments });
+        const zeroStock = stockAlerts.filter(a => a.currentStock === 0);
+        if (zeroStock.length > 0) qAlerts.push({ level: 'CRITICAL', text: `Items OUT OF STOCK: ${zeroStock.slice(0, 3).map(a => a.itemName).join(', ')}${zeroStock.length > 3 ? '...' : ''}`, count: String(zeroStock.length), action: 'Restock', route: ROUTES.trainingFund });
+        const lowStock = stockAlerts.filter(a => a.currentStock > 0);
+        if (lowStock.length > 0) qAlerts.push({ level: 'TODAY', text: `Items LOW stock me (≤5 bache) — jaldi order karo`, count: String(lowStock.length), action: 'View Stock', route: ROUTES.trainingFund });
+        if (totalPendingBills > 0) qAlerts.push({ level: 'TODAY', text: 'Bills verify hone baaki hain', count: String(totalPendingBills), action: 'Verify Bills', route: ROUTES.bills });
+        const kitPendingCount = Math.max(0, traineeCount - kitDoneCount);
+        if (kitPendingCount > 0) qAlerts.push({ level: 'PENDING', text: 'Trainees ko abhi tak KOI kit item issue nahi hua', count: String(kitPendingCount), action: 'Issue Kit', route: ROUTES.issueKit });
+        if (recovery.pendingCount > 0) qAlerts.push({ level: 'PENDING', text: `Recovery pending — ${fmtShort(recovery.totalDue)} wasooli baaki`, count: String(recovery.pendingCount), action: 'Recoveries', route: ROUTES.trainingFund });
+
+        const style: Record<QAlert['level'], { chip: string; border: string }> = {
+          CRITICAL: { chip: 'bg-red-600 text-white', border: 'border-l-red-600 bg-red-50/60' },
+          TODAY: { chip: 'bg-amber-500 text-white', border: 'border-l-amber-500 bg-amber-50/60' },
+          PENDING: { chip: 'bg-slate-400 text-white', border: 'border-l-slate-400 bg-slate-50' },
+        };
+        return (
+          <div className="bg-white border-2 border-slate-800 rounded-xl shadow-sm overflow-hidden">
+            <div className="bg-slate-900 px-4 py-2.5 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <AlertTriangle size={15} className="text-amber-400" />
+                <div>
+                  <h2 className="text-xs font-black text-white uppercase tracking-widest">Needs Your Attention</h2>
+                  <p className="text-[9.5px] text-slate-400">Issues that require QM action</p>
+                </div>
+              </div>
+              {qAlerts.length > 0 && (
+                <span className="bg-red-600 text-white text-[10px] font-black px-2.5 py-1 rounded-full">{qAlerts.length}</span>
+              )}
+            </div>
+            {qAlerts.length === 0 ? (
+              <div className="p-6 text-center">
+                <CheckCircle2 size={32} className="text-green-500 mx-auto mb-2" />
+                <p className="text-sm font-black text-green-700 uppercase">All Clear</p>
+                <p className="text-[10px] text-slate-400 font-bold mt-0.5">Funds, vendors, stock, bills — sab under control.</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {qAlerts.map((a, i) => (
+                  <div key={i} className={`px-4 py-3 border-l-4 flex items-center gap-3 flex-wrap ${style[a.level].border}`}>
+                    <span className={`text-[8.5px] font-black px-2 py-0.5 uppercase flex-shrink-0 rounded ${style[a.level].chip}`}>
+                      {a.level === 'TODAY' ? 'ACTION SOON' : a.level}
+                    </span>
+                    <span className="text-lg font-black text-slate-900 min-w-[52px] text-center flex-shrink-0">{a.count}</span>
+                    <span className="text-xs font-bold text-slate-700 flex-1 min-w-[180px]">{a.text}</span>
+                    <button onClick={() => go(a.route)}
+                      className="bg-slate-800 text-white px-3 py-1.5 text-[9.5px] font-black uppercase rounded hover:bg-slate-700 flex items-center gap-1.5 flex-shrink-0">
+                      {a.action} <ChevronRight size={10} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* ══════════ KIT ISSUE COVERAGE ══════════ */}
+      {!loading && traineeCount > 0 && (
+        <div className="bg-white border border-indigo-200 rounded-xl shadow-sm p-4 cursor-pointer hover:shadow-md transition-all"
+          onClick={() => go(ROUTES.issueKit)}>
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center">
+                <BoxSelect size={18} className="text-indigo-600" />
+              </div>
+              <div>
+                <p className="text-[10px] font-black text-slate-500 uppercase">Kit Issue Coverage — Active Batch</p>
+                <p className="text-lg font-black text-slate-900">
+                  {kitDoneCount} / {traineeCount} trainees ko kit mili
+                  <span className={`ml-2 text-xs ${kitDoneCount >= traineeCount ? 'text-green-600' : 'text-amber-600'}`}>
+                    ({traineeCount > 0 ? Math.round((kitDoneCount / traineeCount) * 100) : 0}%)
+                  </span>
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="text-center">
+                <p className="text-xl font-black text-indigo-700">{todayIssueCount}</p>
+                <p className="text-[9px] font-bold text-slate-400 uppercase">Issues Today</p>
+              </div>
+              <div className="text-center">
+                <p className={`text-xl font-black ${traineeCount - kitDoneCount > 0 ? 'text-amber-600' : 'text-green-600'}`}>{Math.max(0, traineeCount - kitDoneCount)}</p>
+                <p className="text-[9px] font-bold text-slate-400 uppercase">Kit Pending</p>
+              </div>
+              <ChevronRight size={16} className="text-slate-400" />
+            </div>
+          </div>
+          <div className="h-2 bg-slate-100 rounded-full mt-3 overflow-hidden">
+            <div className={`h-full rounded-full transition-all ${kitDoneCount >= traineeCount ? 'bg-green-500' : 'bg-indigo-500'}`}
+              style={{ width: `${traineeCount > 0 ? (kitDoneCount / traineeCount) * 100 : 0}%` }} />
+          </div>
+        </div>
+      )}
+
       {/* ══════════ 4 FUND CARDS ══════════ */}
       {!loading && (
         <div>
@@ -697,10 +812,11 @@ export const QuarterMasterDashboard: React.FC = () => {
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
 
           {/* Trainees */}
-          <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm text-center">
+          <div onClick={() => go(ROUTES.issueKit)}
+            className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm text-center cursor-pointer hover:shadow-md transition-all">
             <Users size={20} className="mx-auto text-slate-400 mb-1" />
             <p className="text-2xl font-black text-slate-800">{traineeCount}</p>
-            <p className="text-[9px] font-bold text-slate-400 uppercase">Trainees</p>
+            <p className="text-[9px] font-bold text-slate-400 uppercase">Trainees · {kitDoneCount} kitted</p>
           </div>
 
           {/* Issue Records */}
