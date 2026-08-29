@@ -436,8 +436,12 @@ export const Sidebar = () => {
                   <SubItem title="Training Schedule" path="/training-schedule" dot="bg-blue-400" />
                   <SubItem title="Mark Attendance" path="/staff-attendance" dot="bg-green-400" />
                   <SubItem title="Leave Management" path="/staff-leave" dot="bg-yellow-400" />
-                  <SubItem title="Duty Management" path="/duty-management" dot="bg-amber-400" />
-                  <SubItem title="Deputation Register" path="/deputation" dot="bg-purple-500" />
+                  {user?.role !== 'Ustad' && (
+                    <>
+                      <SubItem title="Duty Management" path="/duty-management" dot="bg-amber-400" />
+                      <SubItem title="Deputation Register" path="/deputation" dot="bg-purple-500" />
+                    </>
+                  )}
                 </NavGroup>
                 <div className="mx-4 my-2 h-px bg-military-800" />
               </>

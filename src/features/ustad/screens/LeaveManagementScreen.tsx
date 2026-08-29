@@ -4,6 +4,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useAuth } from '../../../contexts/AuthContext';
 import { useLeave } from '../hooks/useLeave';
 import { useStaff } from '../hooks/useStaff';
 import {
@@ -176,6 +177,8 @@ const LeaveQuotaModal: React.FC<{
 };
 
 const LeaveManagementScreen: React.FC = () => {
+  const { user } = useAuth();
+  const isCC = user?.role === 'Company Commander';
   const [searchParams, setSearchParams] = useSearchParams();
   const {
     allLeaves,
@@ -875,19 +878,23 @@ const LeaveManagementScreen: React.FC = () => {
                       {/* Pending Actions */}
                       {leave.status === 'pending' && (
                         <>
-                                                    <button
-                            onClick={() => handleApproveClick(leave)}
-                            title="Approve leave & auto-update staff status + attendance"
-                            className="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition-colors"
-                          >
-                            ✓ Approve & Sync
-                          </button>
-                          <button
-                            onClick={() => handleRejectClick(leave)}
-                            className="px-3 py-1.5 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700 transition-colors"
-                          >
-                            ✕ Reject
-                          </button>
+                          {isCC && (
+                            <>
+                              <button
+                                onClick={() => handleApproveClick(leave)}
+                                title="Approve leave & auto-update staff status + attendance"
+                                className="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition-colors"
+                              >
+                                ✓ Approve & Sync
+                              </button>
+                              <button
+                                onClick={() => handleRejectClick(leave)}
+                                className="px-3 py-1.5 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700 transition-colors"
+                              >
+                                ✕ Reject
+                              </button>
+                            </>
+                          )}
                           <button
                             onClick={() => handleCancelClick(leave)}
                             className="px-3 py-1.5 bg-gray-100 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-200 transition-colors"
@@ -898,7 +905,7 @@ const LeaveManagementScreen: React.FC = () => {
                       )}
 
                       {/* Approved + On Leave - Record Return */}
-                      {leave.status === 'approved' && !leave.returnDate && (
+                      {leave.status === 'approved' && !leave.returnDate && isCC && (
                         <button
                           onClick={() => handleReturnClick(leave)}
                           className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors"

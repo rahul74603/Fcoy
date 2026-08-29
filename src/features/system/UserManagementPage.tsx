@@ -356,7 +356,7 @@ export const UserManagementPage = () => {
                           </button>
                           <button
                             onClick={() => handleDeleteProfile(u)}
-                            title="Profile delete karo"
+                            title="Delete Firestore Profile Only (Auth account requires admin console)"
                             className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-sm border border-transparent hover:border-red-200 transition-colors"
                           >
                             <Trash2 size={13} />

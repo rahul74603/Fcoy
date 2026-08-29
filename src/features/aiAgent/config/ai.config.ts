@@ -9,10 +9,12 @@ export const envList = (base: string, count = 5): string[] => {
 };
 
 export const AI_CONFIG = {
-  groqKeys: envList('VITE_GROQ_API_KEY'),
-  geminiKeys: envList('VITE_GEMINI_API_KEY'),
-  pineconeKey: import.meta.env.VITE_PINECONE_API_KEY || '',
-  pineconeHost: import.meta.env.VITE_PINECONE_HOST || '',
+  // NOTE: API keys should not be exposed to the client in VITE_ env vars.
+  // They are disabled here for security. A backend must be used for AI features.
+  groqKeys: [],
+  geminiKeys: [],
+  pineconeKey: '',
+  pineconeHost: '',
   groqModel: import.meta.env.VITE_GROQ_MODEL || 'llama-3.3-70b-versatile',
   // 'gemini-flash-latest' hamesha current stable flash model par point karta hai.
   // Purane pinned naam (2.0-flash, 2.5-flash-lite) retire ho chuke hain /

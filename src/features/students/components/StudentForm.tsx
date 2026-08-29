@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, addDoc, updateDoc, doc } from 'firebase/firestore';
 import { db } from '../../../config/firebase'; // Path check kar lena
+import { BUSINESS_CONSTANTS } from '../../../config/constants';
 
 interface StudentFormProps {
   onSuccess: () => void;
@@ -21,7 +22,7 @@ export const StudentForm = ({ onSuccess, initialData }: StudentFormProps) => {
     attn: 'P',
     docsComplete: false,
     kitIssued: false,
-    messBill: 3500,
+    messBill: BUSINESS_CONSTANTS.DEFAULT_MESS_BILL,
     messPaid: 0,
     remarks: 'New Batch 2027 Enlistment'
   });

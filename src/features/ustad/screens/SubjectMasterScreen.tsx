@@ -4,6 +4,7 @@
 
 import React, { useState } from 'react';
 import { useSubjects } from '../hooks/useSubjects';
+import { useAuth } from '../../../contexts/AuthContext';
 import { Subject, SubjectFormData } from '../types/subject.types';
 import SubjectForm from '../components/subject/SubjectForm';
 import SubjectBadge from '../components/shared/SubjectBadge';
@@ -28,6 +29,8 @@ const CATEGORY_COLORS: Record<
 };
 
 const SubjectMasterScreen: React.FC = () => {
+  const { user } = useAuth();
+  const canManage = user?.role === 'Company Commander' || user?.role === 'Clerk';
   const {
     subjects,
     loading,
@@ -124,12 +127,14 @@ const SubjectMasterScreen: React.FC = () => {
               Manage all training subjects dynamically
             </p>
           </div>
+        {canManage && (
           <button
             onClick={() => setShowAddModal(true)}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
           >
             + Add Subject
           </button>
+        )}
         </div>
       </div>
 
@@ -328,26 +333,28 @@ const SubjectMasterScreen: React.FC = () => {
                         </span>
 
                         {/* Actions */}
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => {
-                              setSelectedSubject(subject);
-                              setShowEditModal(true);
-                            }}
-                            className="text-xs text-blue-600 hover:text-blue-800 font-medium"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => {
-                              setSelectedSubject(subject);
-                              setShowDeleteDialog(true);
-                            }}
-                            className="text-xs text-red-600 hover:text-red-800 font-medium"
-                          >
-                            Delete
-                          </button>
-                        </div>
+                        {canManage && (
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => {
+                                setSelectedSubject(subject);
+                                setShowEditModal(true);
+                              }}
+                              className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => {
+                                setSelectedSubject(subject);
+                                setShowDeleteDialog(true);
+                              }}
+                              className="text-xs text-red-600 hover:text-red-800 font-medium"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}

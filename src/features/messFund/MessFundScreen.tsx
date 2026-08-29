@@ -15,8 +15,11 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { showDoc } from '../../utils/devDataFilter';
+import { batchScopeRule } from '../../utils/batchScope';
 import { useBatch } from '../../contexts/BatchContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { BUSINESS_CONSTANTS } from '../../config/constants';
+const DEFAULT_MESS = String(BUSINESS_CONSTANTS.DEFAULT_MESS_BILL);
 import {
   PaymentModeSelector,
   PaymentModeBadge,
@@ -91,7 +94,7 @@ interface VendorDueSummary {
 export const MessFundScreen: React.FC = () => {
   const { user } = useAuth();
   const { currentBatch: activeBatch } = useBatch(); // ⛓️ STRICT: selected batch follow
-  const belongsToBatch = (data: any) => data.batchId ? data.batchId === activeBatch?.id : activeBatch?.status === 'active';
+  const belongsToBatch = (data: any) => batchScopeRule(data);
   const recordedBy = user?.email ?? 'Quarter Master';
 
   // ── DATA ──
@@ -110,7 +113,7 @@ export const MessFundScreen: React.FC = () => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   });
-  const [colPerHead, setColPerHead] = useState('4680');
+  const [colPerHead, setColPerHead] = useState(DEFAULT_MESS);
   const [colTraineeCount, setColTraineeCount] = useState('');
   const [colPaymentMode, setColPaymentMode] = useState<PaymentMode>('Cash');
   const [colCheckNumber, setColCheckNumber] = useState('');
@@ -269,12 +272,12 @@ export const MessFundScreen: React.FC = () => {
       });
       setCustomCats(ccList);
 
-      // Vendors
+      // Vendors (Global)
       const vSnap = await getDocs(collection(db, 'vendors'));
       const vList: Vendor[] = [];
       vSnap.forEach(d => {
         const data = d.data();
-        if (!belongsToBatch(data) || !showDoc(data)) return;
+        if (!showDoc(data)) return;
         if (data.isActive === false) return;
         vList.push({
           id: d.id,
@@ -453,7 +456,7 @@ export const MessFundScreen: React.FC = () => {
         createdAt:     serverTimestamp(),
       });
       setSuccessMsg(`✓ ${formatMonth(colMonth)}: ${formatCurrency(colTotal)} collected!`);
-      setColPerHead('4680'); setColTraineeCount('');
+      setColPerHead(DEFAULT_MESS); setColTraineeCount('');
       setColRemarks(''); setColCheckNumber(''); setColTransactionId('');
       setShowCollectionForm(false);
       await fetchAllData();
@@ -1011,7 +1014,7 @@ export const MessFundScreen: React.FC = () => {
           <div className="bg-white border border-green-200 rounded px-3 py-2 flex items-center gap-2">
             <Info size={12} className="text-green-600 flex-shrink-0" />
             <p className="text-[10px] text-green-700">
-              <strong>Current Trainees:</strong> {traineeCount} · Default ₹4680/month
+              <strong>Current Trainees:</strong> {traineeCount} · Default ₹{DEFAULT_MESS}/month
             </p>
           </div>
 

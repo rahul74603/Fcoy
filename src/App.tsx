@@ -381,7 +381,7 @@ function App() {
               <Route
                 path="/subjects"
                 element={
-                  <ProtectedRoute allowedRoles={STAFF_MANAGE_ROLES}>
+                  <ProtectedRoute allowedRoles={STAFF_VIEW_ROLES}>
                     <EnterpriseLayout><SubjectMasterScreen /></EnterpriseLayout>
                   </ProtectedRoute>
                 }
@@ -398,7 +398,7 @@ function App() {
               <Route
                 path="/subject-assignment"
                 element={
-                  <ProtectedRoute allowedRoles={STAFF_MANAGE_ROLES}>
+                  <ProtectedRoute allowedRoles={STAFF_VIEW_ROLES}>
                     <EnterpriseLayout><SubjectAssignmentScreen /></EnterpriseLayout>
                   </ProtectedRoute>
                 }

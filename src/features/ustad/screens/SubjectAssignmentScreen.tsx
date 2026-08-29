@@ -5,6 +5,7 @@
 import React, { useState, useEffect } from 'react';
 import { useStaff } from '../hooks/useStaff';
 import { useSubjects } from '../hooks/useSubjects';
+import { useAuth } from '../../../contexts/AuthContext';
 import { Staff } from '../types/staff.types';
 import { StaffSubjectAssignment } from '../types/subject.types';
 import SubjectBadge from '../components/shared/SubjectBadge';
@@ -12,6 +13,8 @@ import FormModal from '../components/shared/FormModal';
 import ConfirmDialog from '../components/shared/ConfirmDialog';
 
 const SubjectAssignmentScreen: React.FC = () => {
+  const { user } = useAuth();
+  const canManage = user?.role === 'Company Commander' || user?.role === 'Clerk';
   const { staffList, loading: staffLoading } = useStaff();
   const {
     activeSubjects,
@@ -254,7 +257,7 @@ const SubjectAssignmentScreen: React.FC = () => {
                         </p>
                         <p className="text-xs text-blue-200">Subjects</p>
                       </div>
-                      {availableSubjects.length > 0 && (
+                      {canManage && availableSubjects.length > 0 && (
                         <button
                           onClick={() => setShowAssignModal(true)}
                           className="px-4 py-2 bg-white text-blue-700 text-sm font-semibold rounded-lg hover:bg-blue-50 transition-colors"
@@ -280,12 +283,14 @@ const SubjectAssignmentScreen: React.FC = () => {
                     <div className="text-center py-10 text-gray-400">
                       <p className="text-4xl mb-2">📚</p>
                       <p className="text-sm">No subjects assigned yet</p>
-                      <button
-                        onClick={() => setShowAssignModal(true)}
-                        className="mt-3 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700"
-                      >
-                        Assign First Subject
-                      </button>
+                      {canManage && (
+                        <button
+                          onClick={() => setShowAssignModal(true)}
+                          className="mt-3 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700"
+                        >
+                          Assign First Subject
+                        </button>
+                      )}
                     </div>
                   ) : (
                     <div className="space-y-2">
@@ -314,15 +319,17 @@ const SubjectAssignmentScreen: React.FC = () => {
                               </p>
                             </div>
                           </div>
-                          <button
-                            onClick={() => {
-                              setSelectedAssignment(assignment);
-                              setShowRemoveDialog(true);
-                            }}
-                            className="text-xs text-red-500 hover:text-red-700 font-medium px-2 py-1 hover:bg-red-50 rounded"
-                          >
-                            Remove
-                          </button>
+                          {canManage && (
+                            <button
+                              onClick={() => {
+                                setSelectedAssignment(assignment);
+                                setShowRemoveDialog(true);
+                              }}
+                              className="text-xs text-red-500 hover:text-red-700 font-medium px-2 py-1 hover:bg-red-50 rounded"
+                            >
+                              Remove
+                            </button>
+                          )}
                         </div>
                       ))}
                     </div>

@@ -7,7 +7,7 @@ import {
   signOut,
   User as FirebaseUser
 } from 'firebase/auth';
-import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, where, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
 import { setDevViewer } from '../utils/devDataFilter';
 
@@ -75,19 +75,51 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let userUnsub: (() => void) | undefined;
     const unsubscribe = onAuthStateChanged(
       auth,
       async (firebaseUser: FirebaseUser | null) => {
         if (firebaseUser) {
-          await loadUserData(firebaseUser);
+          // Listen to user document in real-time
+          const userDocRef = doc(db, 'users', firebaseUser.uid);
+          userUnsub = onSnapshot(userDocRef, async (userDoc) => {
+            if (userDoc.exists()) {
+              const userData = userDoc.data();
+              setUser({
+                uid:         firebaseUser.uid,
+                email:       firebaseUser.email,
+                displayName: firebaseUser.displayName,
+                name:        String(userData['name']        ?? 'Unknown User'),
+                role:        normalizeRole(userData['role']),
+                phone:       String(userData['phone']       ?? 'N/A'),
+                designation: String(userData['designation'] ?? 'Unassigned'),
+                isActive:    userData['isActive'] !== false,
+                createdBy:   String(userData['createdBy']   ?? 'Unknown'),
+                isDeveloper: Boolean(userData['isDeveloper'] ?? false),
+                customerId:  userData['customerId'] != null ? String(userData['customerId']) : null,
+              });
+              setDevViewer(Boolean(userData['isDeveloper'] ?? false));
+              setLoading(false);
+            } else {
+              // fallback to loadUserData logic for legacy
+              await loadUserData(firebaseUser);
+            }
+          }, (err) => {
+            console.error("User snap error:", err);
+            loadUserData(firebaseUser); // fallback on error
+          });
         } else {
+          if (userUnsub) { userUnsub(); userUnsub = undefined; }
           setUser(null);
           setDevViewer(false);
           setLoading(false);
         }
       }
     );
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      if (userUnsub) userUnsub();
+    };
   }, []);
 
   // ─── LOAD USER DATA FROM FIRESTORE ───────

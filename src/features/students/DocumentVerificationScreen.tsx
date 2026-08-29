@@ -210,16 +210,9 @@ export const DocumentVerificationScreen = () => {
           fileType:   file.type,
           uploadedAt: new Date().toISOString(),
         });
-      } catch {
-        // Offline fallback — local URL
-        const localUrl = URL.createObjectURL(file);
-        newFiles.push({
-          fileName:   file.name,
-          fileUrl:    localUrl,
-          fileSize:   `${fileSizeKB}KB`,
-          fileType:   file.type,
-          uploadedAt: new Date().toISOString(),
-        });
+      } catch (err) {
+        console.error('File upload failed:', err);
+        setMessage('Upload failed. Please try again.');
       }
     }
 

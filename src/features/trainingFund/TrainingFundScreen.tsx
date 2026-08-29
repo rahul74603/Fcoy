@@ -16,6 +16,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { showDoc } from '../../utils/devDataFilter';
+import { batchScopeRule } from '../../utils/batchScope';
 import { useBatch } from '../../contexts/BatchContext';
 import { useAuth } from '../../contexts/AuthContext';
 import {
@@ -310,7 +311,7 @@ const RecoveryPayModal: React.FC<{
 export const TrainingFundScreen: React.FC = () => {
   const { user } = useAuth();
   const { currentBatch: activeBatch } = useBatch(); // ⛓️ STRICT: selected batch follow
-  const belongsToBatch = (data: any) => data.batchId ? data.batchId === activeBatch?.id : activeBatch?.status === 'active';
+  const belongsToBatch = (data: any) => batchScopeRule(data);
   const recordedBy = user?.email ?? 'Quarter Master';
 
   // ── DATA STATE ──
@@ -527,12 +528,12 @@ export const TrainingFundScreen: React.FC = () => {
       });
       setRecoveries(recList);
 
-      // ── Vendors ──
+      // ── Vendors (Global) ──
       const vSnap = await getDocs(collection(db, 'vendors'));
       const vList: Vendor[] = [];
       vSnap.forEach(d => {
         const data = d.data();
-        if (!belongsToBatch(data) || !showDoc(data)) return;
+        if (!showDoc(data)) return;
         if (data.isActive === false) return;
         vList.push({
           id:            d.id,

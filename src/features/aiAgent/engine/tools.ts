@@ -410,6 +410,11 @@ export async function executeTool(
         if (!ctx.allowWrites) {
           return { ok: false, data: null, summary: 'Write permission nahi hai (read-only role).' };
         }
+        if (args.collection === 'staff_leave' && args.updates && (args.updates.status === 'approved' || args.updates.status === 'rejected' || args.updates.status === 'cancelled')) {
+          if (ctx.userRole !== 'Company Commander') {
+            return { ok: false, data: null, summary: 'Permission denied: Only Company Commander can approve/reject leave.' };
+          }
+        }
         const def = COLLECTION_MAP[args.collection];
         if (!def) {
           return { ok: false, data: null, summary: `"${args.collection}" registry me nahi hai.` };

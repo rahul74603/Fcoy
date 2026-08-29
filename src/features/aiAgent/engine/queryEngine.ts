@@ -8,7 +8,7 @@
 // AI ise "tool" ki tarah call karta hai — hardcoded if-else nahi.
 // ═══════════════════════════════════════════════════════════
 
-import { collection, getDocs, query, where, limit as fbLimit } from 'firebase/firestore';
+import { collection, getDocs, query, where, limit as fbLimit, getDoc, doc } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { showDoc } from '../../../utils/devDataFilter';
 import { COLLECTION_MAP, type CollectionDef } from '../knowledge/collectionRegistry';
@@ -64,25 +64,33 @@ const CACHE_TTL = 60_000; // 60 sec
 
 export function clearQueryCache() { docCache.clear(); }
 
+import { currentScopedBatchId } from '../../../utils/batchScope';
+
 // ─────────────────────────────────────────────
 // ACTIVE BATCH
 // ─────────────────────────────────────────────
 let activeBatchCache: { at: number; batch: any } | null = null;
 
 export async function getActiveBatchInfo(): Promise<any | null> {
-  if (activeBatchCache && Date.now() - activeBatchCache.at < CACHE_TTL) {
+  const scopedId = currentScopedBatchId();
+  
+  if (activeBatchCache && Date.now() - activeBatchCache.at < CACHE_TTL && activeBatchCache.batch?.id === scopedId) {
     return activeBatchCache.batch;
   }
   try {
-    const snap = await getDocs(
-      query(collection(db, 'batches'), where('status', '==', 'active'), fbLimit(1)),
-    );
     let batch: any = null;
-    if (!snap.empty) batch = { id: snap.docs[0].id, ...snap.docs[0].data() };
-    else {
-      const any = await getDocs(query(collection(db, 'batches'), fbLimit(1)));
-      if (!any.empty) batch = { id: any.docs[0].id, ...any.docs[0].data() };
+    if (scopedId) {
+      const snap = await getDoc(doc(db, 'batches', scopedId));
+      if (snap.exists()) batch = { id: snap.id, ...snap.data() };
+    } else {
+      const snap = await getDocs(query(collection(db, 'batches'), where('status', '==', 'active'), fbLimit(1)));
+      if (!snap.empty) batch = { id: snap.docs[0].id, ...snap.docs[0].data() };
+      else {
+        const any = await getDocs(query(collection(db, 'batches'), fbLimit(1)));
+        if (!any.empty) batch = { id: any.docs[0].id, ...any.docs[0].data() };
+      }
     }
+    
     activeBatchCache = { at: Date.now(), batch };
     return batch;
   } catch {
@@ -204,14 +212,8 @@ export async function runQuery(spec: QuerySpec): Promise<QueryResult> {
     const batch = await getActiveBatchInfo();
     if (batch?.id) {
       const before = docs.length;
-      const scoped = docs.filter(d => d.batchId === batch.id);
-      // agar batch filter se sab udd gaya to filter mat lagao (purana data)
-      if (scoped.length > 0) {
-        docs = scoped;
-        batchNote = `Active batch "${batch.batchNumber ?? batch.id}" tak simit (${before}→${docs.length}).`;
-      } else {
-        batchNote = `Note: is collection me active batch ka data nahi mila, isliye saara data dikha raha hoon.`;
-      }
+      docs = docs.filter(d => d.batchId === batch.id);
+      batchNote = `Active batch "${batch.batchNumber ?? batch.id}" tak simit (${before}→${docs.length}).`;
     }
   }
 

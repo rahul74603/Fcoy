@@ -14,6 +14,7 @@ import {
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { showDoc } from '../../utils/devDataFilter';
+import { batchScopeRule } from '../../utils/batchScope';
 import { toJSDate } from '../../utils/date.utils';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBatch } from '../../contexts/BatchContext';
@@ -184,7 +185,8 @@ const formatDate = (iso: string) =>
   iso ? new Date(iso).toLocaleDateString('en-IN', {
     day: '2-digit', month: 'short', year: 'numeric'
   }) : '—';
-const todayISO = () => new Date().toISOString().split('T')[0];
+import { getLocalDateString } from '../../utils/date.utils';
+const todayISO = () => getLocalDateString();
 const nowTime = () => new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
 
 // ─────────────────────────────────────────────
@@ -317,11 +319,17 @@ export const ReportsScreen: React.FC = () => {
   const belongsToActiveBatch = (data: any) => Boolean(activeBatch && data.batchId === activeBatch.id);
 
   // ─── SAFE COLLECTION FETCHER ─────────────
-  const safeFetch = async (collName: string) => {
+  const safeFetch = async (collName: string, ignoreBatchScope = false) => {
     try {
       const snap = await getDocs(collection(db, collName));
       // 🧪 dev-tagged docs non-dev users ko nahi dikhenge
-      return snap.docs.filter(d => showDoc(d.data() as Record<string, unknown>));
+      // ⛓️ apply batch scope rule unless explicitly ignored (e.g. for global collections)
+      return snap.docs.filter(d => {
+        const data = d.data() as Record<string, unknown>;
+        if (!showDoc(data)) return false;
+        if (!ignoreBatchScope && !batchScopeRule(data)) return false;
+        return true;
+      });
     } catch (err) {
       console.warn(`Collection ${collName} fetch failed:`, err);
       return [];

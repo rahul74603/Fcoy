@@ -1,0 +1,22 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    match /documents/{allPaths=**} {
+      // Any authenticated user can read
+      allow read: if signedIn();
+      // Only authenticated users can upload
+      allow create, update: if signedIn() && request.resource.size < 15 * 1024 * 1024;
+      allow delete: if signedIn(); // Or restrict to CC? The app might delete files.
+    }
+    
+    // Default fallback
+    match /{allPaths=**} {
+      allow read: if signedIn();
+      allow write: if signedIn();
+    }
+  }
+}

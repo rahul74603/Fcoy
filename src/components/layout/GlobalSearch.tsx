@@ -15,8 +15,8 @@ const access: Record<string, { name: string; path: string }[]> = {
   'Quarter Master': [
     { name: 'trainees', path: '/issue-kit' }, { name: 'company_assets_expenses', path: '/company-assets-fund' }, { name: 'training_fund_expenses', path: '/training-fund' }, { name: 'mess_fund_expenses', path: '/mess-fund' }, { name: 'general_fund_expenses', path: '/general-fund' }, { name: 'vendor_entries', path: '/vendors' }, { name: 'issue_records', path: '/issue-kit' }, { name: 'batches', path: '/batches' },
   ],
-  Clerk: [{ name: 'trainees', path: '/profile' }, { name: 'staff', path: '/staff' }, { name: 'batches', path: '/batches' }, { name: 'subject_master', path: '/subjects' }, { name: 'staff_subjects', path: '/subject-assignment' }, { name: 'attendance', path: '/staff-attendance' }, { name: 'absent_records', path: '/absent-management' }],
-  Ustad: [{ name: 'trainees', path: '/ustad' }, { name: 'staff', path: '/staff' }, { name: 'subject_master', path: '/subjects' }, { name: 'staff_subjects', path: '/subject-assignment' }, { name: 'attendance', path: '/staff-attendance' }, { name: 'test_records', path: '/test-records' }, { name: 'training_schedules', path: '/training-schedule' }],
+  Clerk: [{ name: 'trainees', path: '/profile' }, { name: 'staff', path: '/staff' }, { name: 'batches', path: '/batches' }, { name: 'subject_master', path: '/subjects' }, { name: 'staff_subjects', path: '/subject-assignment' }, { name: 'staff_attendance', path: '/staff-attendance' }, { name: 'absentRecords', path: '/absent-management' }],
+  Ustad: [{ name: 'trainees', path: '/ustad' }, { name: 'staff', path: '/staff' }, { name: 'subject_master', path: '/subjects' }, { name: 'staff_subjects', path: '/subject-assignment' }, { name: 'staff_attendance', path: '/staff-attendance' }, { name: 'weeklyTestRecords', path: '/test-records' }, { name: 'training_schedule', path: '/training-schedule' }],
 };
 const stringify = (v: any) => typeof v === 'string' || typeof v === 'number' ? String(v) : '';
 

@@ -59,3 +59,11 @@ export const toJSDate = (value: unknown): Date | null => {
 
   return null;
 };
+
+export const getLocalDateString = (): string => {
+  const d = new Date();
+  const offset = d.getTimezoneOffset(); // in minutes
+  // Convert to local time by shifting the UTC time
+  const localDate = new Date(d.getTime() - (offset * 60 * 1000));
+  return localDate.toISOString().split('T')[0];
+};

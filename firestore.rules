@@ -1,34 +1,207 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    
     function signedIn() { return request.auth != null; }
-    function roleIs(role) {
-      return signedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role;
-    }
-    function canManage() {
-      return roleIs('Company Commander') || roleIs('Clerk');
+    function getUserData() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function hasRole(role) { return signedIn() && getUserData().role == role; }
+    
+    function isCC() { return hasRole('Company Commander'); }
+    function isClerk() { return hasRole('Clerk'); }
+    function isQM() { return hasRole('Quarter Master'); }
+    function isUstad() { return hasRole('Ustad'); }
+    function canManage() { return isCC() || isClerk(); }
+    
+    function isDevResource() { return request.resource.data.keys().hasAll(['isDevData']) && request.resource.data.isDevData == true; }
+    function isDevExisting() { return resource != null && resource.data.keys().hasAll(['isDevData']) && resource.data.isDevData == true; }
+    function canAccessDevData() { return signedIn() && getUserData().isDeveloper == true; }
+    
+    function allowDevWrite() {
+      // If creating/updating a dev document, or updating an existing dev document, must be developer
+      return (isDevResource() || isDevExisting()) ? canAccessDevData() : true;
     }
 
-    // Subject Master and staff assignments are used by the training administration screens.
-    // All authenticated staff may view them; only CC and Clerk may modify them.
+    match /users/{userId} {
+      allow read: if signedIn();
+      allow create: if isCC();
+      allow update: if signedIn() && (
+        isCC() || 
+        (request.auth.uid == userId && 
+         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'isDeveloper', 'isActive', 'permissions', 'customerId', 'subscription']))
+      );
+      allow delete: if isCC();
+    }
+
+    match /subscriptionPlans/{id} {
+      allow read: if signedIn();
+      allow write: if isCC(); 
+    }
+    match /subscriptionHistory/{id} {
+      allow read: if isCC();
+      allow write: if isCC();
+    }
+    match /subscription/{id} {
+      allow read: if isCC();
+      allow write: if isCC();
+    }
+    match /config/{id} {
+      allow read: if signedIn();
+      allow write: if isCC() || isClerk();
+    }
+
+    match /staff_leave/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn() && allowDevWrite();
+      allow update: if signedIn() && allowDevWrite() && (
+        isCC() || 
+        (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['status', 'approvedBy', 'approvedByName', 'rejectionReason', 'approvalDate'])
+          && request.resource.data.status == resource.data.status 
+        )
+      );
+      allow delete: if isCC() && allowDevWrite();
+    }
+
+    match /leave_types/{id} {
+      allow read: if signedIn();
+      allow write: if (isCC() || isClerk()) && allowDevWrite();
+    }
+
     match /subject_master/{id} {
       allow read: if signedIn();
-      allow create, update, delete: if canManage();
+      allow write: if canManage() && allowDevWrite();
     }
     match /staff_subjects/{id} {
       allow read: if signedIn();
-      allow create, update, delete: if canManage();
+      allow write: if canManage() && allowDevWrite();
     }
     match /activity_logs/{id} {
       allow read: if signedIn();
       allow create: if signedIn();
     }
-
-    // Existing ERP modules use many legacy collections. Keep the application
-    // operational for authenticated staff while those modules are migrated to
-    // collection-specific role rules.
+    
+    // Inventory and Finance (QM & CC)
+    match /item_master/{id} {
+      allow read: if signedIn();
+      allow write: if (isCC() || isQM()) && allowDevWrite();
+    }
+    match /issue_records/{id} {
+      allow read: if signedIn();
+      allow write: if (isCC() || isQM()) && allowDevWrite();
+    }
+    match /vendor_payments/{id} {
+      allow read: if signedIn();
+      allow write: if (isCC() || isQM()) && allowDevWrite();
+    }
+    match /vendors/{id} {
+      allow read: if signedIn();
+      allow write: if (isCC() || isQM()) && allowDevWrite();
+    }
+    match /expenses/{id} {
+      allow read: if signedIn();
+      allow write: if (isCC() || isQM()) && allowDevWrite();
+    }
+    match /mess_fund_expenses/{id} {
+      allow read: if signedIn();
+      allow write: if (isCC() || isQM()) && allowDevWrite();
+    }
+    match /general_fund_expenses/{id} {
+      allow read: if signedIn();
+      allow write: if (isCC() || isQM()) && allowDevWrite();
+    }
+    match /training_fund_expenses/{id} {
+      allow read: if signedIn();
+      allow write: if (isCC() || isQM()) && allowDevWrite();
+    }
+    match /company_assets_expenses/{id} {
+      allow read: if signedIn();
+      allow write: if (isCC() || isQM()) && allowDevWrite();
+    }
+    
+    // Training/Trainees/Batches (CC & Clerk)
+    match /batches/{id} {
+      allow read: if signedIn();
+      allow write: if canManage() && allowDevWrite();
+    }
+    match /trainees/{id} {
+      allow read: if signedIn();
+      allow write: if canManage() && allowDevWrite();
+    }
+    match /staff/{id} {
+      allow read: if signedIn();
+      allow write: if canManage() && allowDevWrite();
+    }
+    
+    // Tests and FPT
+    match /weeklyTestRecords/{id} {
+      allow read: if signedIn();
+      allow write: if signedIn() && allowDevWrite(); 
+    }
+    match /fptRecords/{id} {
+      allow read: if signedIn();
+      allow write: if signedIn() && allowDevWrite(); 
+    }
+    match /absentRecords/{id} {
+      allow read: if signedIn();
+      allow write: if signedIn() && allowDevWrite();
+    }
+    match /staff_attendance/{id} {
+      allow read: if signedIn();
+      allow write: if signedIn() && allowDevWrite();
+    }
+    match /medicalRecords/{id} {
+      allow read: if signedIn();
+      allow write: if signedIn() && allowDevWrite();
+    }
+    match /udhariRecords/{id} {
+      allow read: if signedIn();
+      allow write: if (isCC() || isQM()) && allowDevWrite();
+    }
+    
+    match /staff_duty/{id} {
+      allow read: if signedIn();
+      allow write: if canManage() && allowDevWrite();
+    }
+    match /deputation_records/{id} {
+      allow read: if signedIn();
+      allow write: if canManage() && allowDevWrite();
+    }
+    match /training_schedule/{id} {
+      allow read: if signedIn();
+      allow write: if canManage() && allowDevWrite();
+    }
+    match /weeklyPrograms/{id} {
+      allow read: if signedIn();
+      allow write: if canManage() && allowDevWrite();
+    }
+    match /bills/{id} {
+      allow read: if signedIn();
+      allow write: if (isCC() || isQM()) && allowDevWrite();
+    }
+    match /recoveries/{id} {
+      allow read: if signedIn();
+      allow write: if (isCC() || isQM()) && allowDevWrite();
+    }
+    match /fund_transfers/{id} {
+      allow read: if signedIn();
+      allow write: if (isCC() || isQM()) && allowDevWrite();
+    }
+    match /vendor_entries/{id} {
+      allow read: if signedIn();
+      allow write: if (isCC() || isQM()) && allowDevWrite();
+    }
+    match /mess_boys/{id} {
+      allow read: if signedIn();
+      allow write: if (isCC() || isQM()) && allowDevWrite();
+    }
+    match /mess_boy_salaries/{id} {
+      allow read: if signedIn();
+      allow write: if (isCC() || isQM()) && allowDevWrite();
+    }
     match /{document=**} {
-      allow read, write: if signedIn();
+      allow read: if signedIn();
+      // Block generic Ustad write
+      allow write: if signedIn() && !isUstad() && allowDevWrite();
     }
   }
 }

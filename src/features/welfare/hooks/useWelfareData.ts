@@ -74,13 +74,10 @@ export const useWelfareData = () => {
     return () => unsub();
   }, []);
 
-  // ── Batch scope: active batch is the default; ALL is only allowed when the
-  // user deliberately selects All Batches from the batch selector screen.
+  // ── Batch scope: ALL means ALL authorized batches.
   const effectiveFilters = useMemo(() => (
-    activeBatch && filters.batchId === 'ALL'
-      ? { ...filters, batchId: activeBatch.id }
-      : filters
-  ), [activeBatch, filters]);
+    filters
+  ), [filters]);
 
   const batchPool = useMemo(() => (
     effectiveFilters.batchId === 'ALL'

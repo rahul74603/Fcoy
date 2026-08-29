@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import {
   collection, query, where, getDocs,
-  doc, updateDoc, addDoc, serverTimestamp,
+  doc, writeBatch, serverTimestamp,
   onSnapshot
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
@@ -1138,12 +1138,16 @@ export const InventoryIssueScreen: React.FC = () => {
         ...newIssuedItems,
       ];
 
-      await updateDoc(doc(db, 'trainees', trainee.id), {
+      const batch = writeBatch(db);
+      const traineeRef = doc(db, 'trainees', trainee.id);
+      
+      batch.update(traineeRef, {
         issuedKitItems:   updatedIssuedItems,
         lastKitIssueDate: issueDateISO,
       });
 
-      await addDoc(collection(db, 'issue_records'), {
+      const issueRef = doc(collection(db, 'issue_records'));
+      batch.set(issueRef, {
         traineeId:        trainee.id,
         traineeName:      trainee.name,
         chestNo:          trainee.chestNo,
@@ -1159,6 +1163,8 @@ export const InventoryIssueScreen: React.FC = () => {
         issuedAt:         serverTimestamp(),
         issueDateISO,
       });
+
+      await batch.commit();
 
       setSuccessMsg(
         `✓ ${cartItems.length} item(s) ${trainee.name} (${trainee.chestNo}) ko issue ho gaye.`
