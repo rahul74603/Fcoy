@@ -148,6 +148,56 @@ gracefully handle karta hai, crash nahi hoga.
 
 ---
 
+## STEP 2-B — CLOUD FUNCTIONS (backend) — ONE-TIME SETUP
+
+Auto-deploy sirf **Hosting** nahi, ab **Cloud Functions** bhi deploy karta hai
+(`deploy.yml` ka "Deploy Cloud Functions" step). Functions wahi
+`FIREBASE_SERVICE_ACCOUNT` use karte hain — koi extra GitHub secret nahi.
+
+Gen2 (Firebase Functions v5) callables **7 secrets ko Secret Manager me
+bound declare karte hain**. Deploy ke time ye sab **exist karne chahiye**,
+warna functions deploy FAIL ho jayega. Values real ho ya khaali/placeholder —
+secret ka naam exist hona zaroori hai (un-used key ho to placeholder do):
+
+```powershell
+# PC par ek baar (firebase-tools logged-in hona chahiye, project:
+# training-command-erp — ya --project flag dein):
+firebase functions:secrets:set GROQ_API_KEY
+firebase functions:secrets:set GROQ_API_KEY_2
+firebase functions:secrets:set GROQ_API_KEY_3
+firebase functions:secrets:set GEMINI_API_KEY
+firebase functions:secrets:set GEMINI_API_KEY_2
+firebase functions:secrets:set PINECONE_API_KEY
+firebase functions:secrets:set PINECONE_HOST
+```
+
+- **Region:** functions `us-central1` me deploy hote hain (frontend default
+  wahi hai — `VITE_FUNCTIONS_REGION` se kuch badla nahi hai).
+- **Billing:** outbound AI calls aur Gen2 ke liye project **Blaze
+  (pay-as-you-go)** plan par hona chahiye.
+- **Deploy order:** workflow pehle functions, phir hosting deploy karta hai
+  (taaki naya frontend kabhi bina-backend na jaye).
+- **Functions names:** `createStaffAccount`, `aiGroq`, `aiGemini`,
+  `aiPineconeQuery`, `aiPineconeUpsert`.
+
+### Verify (functions live hue ya nahi)
+
+1. Actions run me **"Deploy Cloud Functions"** step green hona chahiye.
+2. Firebase Console → Functions tab me 5 functions `us-central1` me listed.
+3. Ya terminal se:
+   ```powershell
+   firebase functions:list --project training-command-erp
+   ```
+4. Smoke test (browser, logged-in CC): Settings/User Management se ek test
+   staff account bane; AI Agent chat ek non-ERP query ka jawab de.
+
+> **Note:** Firestore aur Storage RULES abhi bhi manual deploy hote hain —
+> wo is auto-pipeline ka part nahi hain. Rules badle ho to PC se
+> `firebase deploy --only firestore:rules,storage` chala lein (ya
+> functions ke saath: `--only functions,firestore:rules,storage`).
+
+---
+
 # ✅ SETUP HO GAYA — Ab Kaise Use Karein
 
 ## Tarika 1 — Manual Deploy (sabse aasan)
