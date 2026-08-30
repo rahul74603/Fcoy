@@ -427,5 +427,218 @@ describe('Firestore rules', () => {
       await testEnv.firestoreAdmin().doc('inspections/i2').set(inspectionA('ccUid'));
       await assert.isRejected(authedDb(testEnv, SO).doc('inspections/i2').delete());
     });
+
+    // ── D1: SO cannot self-assign batches / change customerId ──
+    it('D1: SO cannot expand own assignedBatchIds', async () => {
+      await assert.isRejected(
+        authedDb(testEnv, SO).doc('users/soUid')
+          .update({ assignedBatchIds: ['batchA', 'batchB'] }));
+    });
+    it('D1: SO cannot replace own assignedBatchIds', async () => {
+      await assert.isRejected(
+        authedDb(testEnv, SO).doc('users/soUid')
+          .update({ assignedBatchIds: ['batchB'] }));
+    });
+    it('D1: SO cannot change own customerId', async () => {
+      await assert.isRejected(
+        authedDb(testEnv, SO).doc('users/soUid')
+          .update({ customerId: 'cust-other' }));
+    });
+    it('D1: CC CAN edit SO assignedBatchIds (User Management)', async () => {
+      await assert.isFulfilled(
+        authedDb(testEnv, CC).doc('users/soUid')
+          .update({ assignedBatchIds: ['batchA', 'batchC'] }));
+    });
+
+    // ── D2: assigned staff cannot tamper with finding fields ──
+    const seedFinding = async (id, over) => {
+      await testEnv.firestoreAdmin().doc(`findings/${id}`).set({
+        ...findingA('soUid'), assignedToRole: 'Ustad', status: 'open',
+        assignedToName: 'Ust. Ji', category: 'Training',
+        responsibleArea: 'Training',
+        ...over,
+      });
+    };
+    it('D2: assigned Ustad cannot change assignedToRole', async () => {
+      await seedFinding('d2-1', {});
+      await assert.isRejected(
+        authedDb(testEnv, USTAD).doc('findings/d2-1')
+          .update({ assignedToRole: 'Clerk', status: 'in_progress', updatedBy: 'ustadUid' }));
+    });
+    it('D2: assigned Clerk cannot change severity', async () => {
+      await seedFinding('d2-2', { assignedToRole: 'Clerk' });
+      await assert.isRejected(
+        authedDb(testEnv, CLERK).doc('findings/d2-2')
+          .update({ severity: 'critical', status: 'in_progress', updatedBy: 'clerkUid' }));
+    });
+    it('D2: assigned QM cannot change dueDate', async () => {
+      await seedFinding('d2-3', { assignedToRole: 'Quarter Master' });
+      await assert.isRejected(
+        authedDb(testEnv, QM).doc('findings/d2-3')
+          .update({ dueDate: '2030-01-01', status: 'in_progress', updatedBy: 'qmUid' }));
+    });
+    it('D2: assigned staff cannot rewrite correctiveAction', async () => {
+      await seedFinding('d2-4', {});
+      await assert.isRejected(
+        authedDb(testEnv, USTAD).doc('findings/d2-4')
+          .update({ correctiveAction: 'do nothing', status: 'in_progress', updatedBy: 'ustadUid' }));
+    });
+    it('D2: assigned staff cannot change title/description', async () => {
+      await seedFinding('d2-5', {});
+      await assert.isRejected(
+        authedDb(testEnv, USTAD).doc('findings/d2-5')
+          .update({ title: 'changed', description: 'changed', status: 'in_progress', updatedBy: 'ustadUid' }));
+    });
+    it('D2: assigned staff cannot set verifiedBy', async () => {
+      await seedFinding('d2-6', { status: 'submitted' });
+      await assert.isRejected(
+        authedDb(testEnv, USTAD).doc('findings/d2-6')
+          .update({ verifiedBy: 'ustadUid', verifiedByName: 'U', verifiedAt: '2026-08-31T00:00:00Z' }));
+    });
+    it('D2: assigned staff cannot close a finding', async () => {
+      await seedFinding('d2-7', { status: 'submitted' });
+      await assert.isRejected(
+        authedDb(testEnv, USTAD).doc('findings/d2-7')
+          .update({ status: 'closed', updatedBy: 'ustadUid' }));
+    });
+    it('D2: assigned staff cannot reopen/regress a closed finding', async () => {
+      await seedFinding('d2-8', {
+        status: 'closed',
+        verifiedBy: 'soUid', verifiedByName: 'SO', verifiedAt: '2026-08-30T00:00:00Z',
+      });
+      await assert.isRejected(
+        authedDb(testEnv, USTAD).doc('findings/d2-8')
+          .update({ status: 'in_progress', updatedBy: 'ustadUid' }));
+    });
+    it('D2: assigned staff cannot skip open→submitted', async () => {
+      await seedFinding('d2-9', { status: 'open' });
+      await assert.isRejected(
+        authedDb(testEnv, USTAD).doc('findings/d2-9')
+          .update({ status: 'submitted', submittedBy: 'ustadUid', submittedAt: '2026-08-31T00:00:00Z', updatedBy: 'ustadUid' }));
+    });
+    it('D2: legitimate open→in_progress→submitted still works for assigned role', async () => {
+      await seedFinding('d2-ok', { status: 'open' });
+      await assert.isFulfilled(
+        authedDb(testEnv, USTAD).doc('findings/d2-ok')
+          .update({ status: 'in_progress', updatedBy: 'ustadUid', updatedAt: '2026-08-30T12:00:00Z' }));
+      await assert.isFulfilled(
+        authedDb(testEnv, USTAD).doc('findings/d2-ok')
+          .update({ status: 'submitted', submittedBy: 'ustadUid',
+            submittedAt: '2026-08-31T00:00:00Z', updatedBy: 'ustadUid',
+            updatedAt: '2026-08-31T00:00:00Z' }));
+    });
+
+    // ── D3: audit-history regression protection ──
+    it('D3: submitted inspection cannot be regressed to draft', async () => {
+      await testEnv.firestoreAdmin().doc('inspections/d3-1').set({
+        ...inspectionA('soUid'), status: 'submitted',
+      });
+      await assert.isRejected(
+        authedDb(testEnv, SO).doc('inspections/d3-1')
+          .update({ status: 'draft', updatedBy: 'soUid' }));
+    });
+    it('D3: SO cannot delete submitted inspection after revert attempt', async () => {
+      await testEnv.firestoreAdmin().doc('inspections/d3-2').set({
+        ...inspectionA('soUid'), status: 'submitted',
+      });
+      // revert itself is denied
+      await assert.isRejected(
+        authedDb(testEnv, SO).doc('inspections/d3-2')
+          .update({ status: 'draft' }));
+      // and direct delete of a submitted inspection is denied
+      await assert.isRejected(authedDb(testEnv, SO).doc('inspections/d3-2').delete());
+    });
+    it('D3: closed finding cannot be reopened (status)', async () => {
+      await testEnv.firestoreAdmin().doc('findings/d3-3').set({
+        ...findingA('soUid'), status: 'closed',
+        verifiedBy: 'soUid', verifiedByName: 'SO', verifiedAt: '2026-08-30T00:00:00Z',
+      });
+      await assert.isRejected(
+        authedDb(testEnv, SO).doc('findings/d3-3')
+          .update({ status: 'open', updatedBy: 'soUid' }));
+      await assert.isRejected(
+        authedDb(testEnv, SO).doc('findings/d3-3')
+          .update({ status: 'rework', updatedBy: 'soUid', reworkReason: 'x' }));
+    });
+    it('D3: closed finding verifiedBy cannot be removed', async () => {
+      await testEnv.firestoreAdmin().doc('findings/d3-4').set({
+        ...findingA('soUid'), status: 'closed',
+        verifiedBy: 'soUid', verifiedByName: 'SO', verifiedAt: '2026-08-30T00:00:00Z',
+      });
+      await assert.isRejected(
+        authedDb(testEnv, SO).doc('findings/d3-4')
+          .update({ verifiedBy: '', verifiedByName: '', verifiedAt: '' }));
+    });
+    it('D3: closed finding verifiedAt cannot be changed', async () => {
+      await testEnv.firestoreAdmin().doc('findings/d3-5').set({
+        ...findingA('soUid'), status: 'closed',
+        verifiedBy: 'soUid', verifiedByName: 'SO', verifiedAt: '2026-08-30T00:00:00Z',
+      });
+      await assert.isRejected(
+        authedDb(testEnv, SO).doc('findings/d3-5')
+          .update({ verifiedAt: '2020-01-01T00:00:00Z' }));
+    });
+    it('D3: SO cannot delete a closed finding after revert attempt', async () => {
+      await testEnv.firestoreAdmin().doc('findings/d3-6').set({
+        ...findingA('soUid'), status: 'closed',
+        verifiedBy: 'soUid', verifiedByName: 'SO', verifiedAt: '2026-08-30T00:00:00Z',
+      });
+      await assert.isRejected(
+        authedDb(testEnv, SO).doc('findings/d3-6').update({ status: 'open' }));
+      await assert.isRejected(authedDb(testEnv, SO).doc('findings/d3-6').delete());
+    });
+    it('D3: legitimate submitted→rework→resubmitted→closed SO flow works', async () => {
+      await testEnv.firestoreAdmin().doc('findings/d3-7').set({
+        ...findingA('soUid'), status: 'submitted',
+      });
+      await assert.isFulfilled(
+        authedDb(testEnv, SO).doc('findings/d3-7')
+          .update({ status: 'rework', reworkReason: 'incomplete',
+            verifiedBy: 'soUid', verifiedByName: 'SO', verifiedAt: '2026-08-30T12:00:00Z',
+            updatedBy: 'soUid', updatedAt: '2026-08-30T12:00:00Z' }));
+      await assert.isFulfilled(
+        authedDb(testEnv, USTAD).doc('findings/d3-7')
+          .update({ status: 'in_progress', updatedBy: 'ustadUid', updatedAt: '2026-08-31T12:00:00Z' }));
+      await assert.isFulfilled(
+        authedDb(testEnv, USTAD).doc('findings/d3-7')
+          .update({ status: 'submitted', submittedBy: 'ustadUid',
+            submittedAt: '2026-09-01T00:00:00Z', updatedBy: 'ustadUid',
+            updatedAt: '2026-09-01T00:00:00Z' }));
+      await assert.isFulfilled(
+        authedDb(testEnv, SO).doc('findings/d3-7')
+          .update({ status: 'closed', verifiedBy: 'soUid', verifiedByName: 'SO',
+            verifiedAt: '2026-09-02T00:00:00Z', closureRemarks: 'ok',
+            reworkReason: '', updatedBy: 'soUid', updatedAt: '2026-09-02T00:00:00Z' }));
+    });
+
+    // ── D4: dev-data isolation for inspections/findings ──
+    it('D4: normal SO cannot read dev-tagged inspection', async () => {
+      await testEnv.firestoreAdmin().doc('inspections/d4-1').set({
+        ...inspectionA('soUid'), isDevData: true,
+      });
+      await assert.isRejected(authedDb(testEnv, SO).doc('inspections/d4-1').get());
+    });
+    it('D4: normal SO cannot read dev-tagged finding', async () => {
+      await testEnv.firestoreAdmin().doc('findings/d4-2').set({
+        ...findingA('soUid'), isDevData: true,
+      });
+      await assert.isRejected(authedDb(testEnv, SO).doc('findings/d4-2').get());
+    });
+    it('D4: normal SO cannot create dev-tagged inspection', async () => {
+      await assert.isRejected(
+        authedDb(testEnv, SO).collection('inspections')
+          .add({ ...inspectionA('soUid'), isDevData: true }));
+    });
+    it('D4: normal SO cannot create dev-tagged finding', async () => {
+      await assert.isRejected(
+        authedDb(testEnv, SO).collection('findings')
+          .add({ ...findingA('soUid'), isDevData: true }));
+    });
+    it('D4: CC CAN read dev-tagged inspection (sandbox authority)', async () => {
+      await testEnv.firestoreAdmin().doc('inspections/d4-3').set({
+        ...inspectionA('ccUid'), isDevData: true, inspectorId: 'ccUid',
+      });
+      await assert.isFulfilled(authedDb(testEnv, CC).doc('inspections/d4-3').get());
+    });
   });
 });

@@ -297,6 +297,50 @@ test('staff_leave rule still forces CC approval (SO included in non-CC branch)',
   assert.ok(/isCC\(\)/.test(block[0]));
 });
 
+console.log('\n■ SO DEFECT FIXES D1–D4 (rules)');
+
+test('D1: self-update protection locks assignedBatchIds and customerId', () => {
+  const m = rules.match(/function protectedUserFieldsUnchanged\(\) \{[\s\S]*?\n    \}/);
+  assert.ok(m, 'protectedUserFieldsUnchanged present');
+  assert.ok(/assignedBatchIds/.test(m[0]), 'assignedBatchIds locked');
+  assert.ok(/customerId/.test(m[0]), 'customerId locked');
+});
+test('D3: inspection update forbids returning to draft', () => {
+  const block = rules.match(/match \/inspections\/\{id\} \{[\s\S]*?\n    \}/);
+  assert.ok(block);
+  assert.ok(/resource\.data\.status == 'draft'[\s\S]*?request\.resource\.data\.status != 'draft'/.test(block[0]),
+    'draft regression guard present');
+});
+test('D3: findings SO branch locks closed status + verification stamp', () => {
+  const block = rules.match(/match \/findings\/\{id\} \{[\s\S]*?\n    \}/);
+  assert.ok(block);
+  assert.ok(/resource\.data\.status != 'closed'/.test(block[0]), 'closed-terminal guard present');
+  assert.ok(/verifiedBy/.test(block[0]) && /verifiedAt/.test(block[0]),
+    'verification fields guarded');
+});
+test('D2: assigned-staff branch locks tamper fields and validates transitions', () => {
+  const block = rules.match(/match \/findings\/\{id\} \{[\s\S]*?\n    \}/);
+  assert.ok(block);
+  const staffGuard = /assignedToRole == role\(\)/.test(block[0]);
+  assert.ok(staffGuard, 'staff branch scoped by assignedToRole');
+  for (const f of ['assignedToRole', 'assignedToName', 'title', 'description',
+    'severity', 'dueDate', 'correctiveAction', 'verifiedBy', 'verifiedAt',
+    'responsibleArea', 'category']) {
+    assert.ok(block[0].includes(f), `staff branch locks ${f}`);
+  }
+  // forward-only transitions enumerated
+  assert.ok(/status == 'open'\s+&& request\.resource\.data\.status == 'in_progress'/.test(block[0]));
+  assert.ok(/status == 'in_progress'[\s\S]*?status == 'submitted'/.test(block[0]));
+});
+test('D4: inspections/findings use dev-data read/write isolation', () => {
+  const insp = rules.match(/match \/inspections\/\{id\} \{[\s\S]*?\n    \}/)[0];
+  const fnd = rules.match(/match \/findings\/\{id\} \{[\s\S]*?\n    \}/)[0];
+  assert.ok(/allow read: if isStaff\(\) && canReadDevData\(\)/.test(insp));
+  assert.ok(/canWriteDevData\(\)/.test(insp));
+  assert.ok(/allow read: if isStaff\(\) && canReadDevData\(\)/.test(fnd));
+  assert.ok(/canWriteDevData\(\)/.test(fnd));
+});
+
 console.log('\n■ STORAGE RULES STATIC AUDIT');
 
 const storageRules = fs.readFileSync(path.join(root, 'storage.rules'), 'utf8');

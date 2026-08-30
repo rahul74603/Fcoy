@@ -97,10 +97,16 @@ service cloud.firestore {
     // ──────────────────────────────────────────────────────────────────
     // Protected authorization fields. A normal user must never be able to
     // escalate role / developer flag / active flag on themselves or others.
+    // D1 fix: assignedBatchIds (SO inspection scope) and customerId are also
+    // authorization fields — a user may NEVER grant themselves more batches
+    // or change subscription ownership. Only the CC branch (which bypasses
+    // this function) may set them via User Management.
     function protectedUserFieldsUnchanged() {
       return resource.data.role        == request.resource.data.role
           && (resource.data.isDeveloper == true) == (request.resource.data.isDeveloper == true)
-          && (resource.data.isActive    == false) == (request.resource.data.isActive == false);
+          && (resource.data.isActive    == false) == (request.resource.data.isActive == false)
+          && resource.data.get('assignedBatchIds', []) == request.resource.data.get('assignedBatchIds', [])
+          && resource.data.get('customerId', null) == request.resource.data.get('customerId', null);
     }
 
     // ──────────────────────────────────────────────────────────────────
@@ -439,70 +445,121 @@ service cloud.firestore {
     }
 
     match /inspections/{id} {
-      allow read: if isStaff();
+      allow read: if isStaff() && canReadDevData();
 
       // SO creates inspections only for an assigned batch.
       allow create: if (isSO() || isCC())
         && isActive()
         && soAssignedBatchOk(request.resource.data.batchId)
         && request.resource.data.inspectorId == request.auth.uid
-        && request.resource.data.createdBy == request.auth.uid;
+        && request.resource.data.createdBy == request.auth.uid
+        && canWriteDevData();
 
       // SO edits inspections within assigned batches; ownership fields and
       // batchId are immutable.
+      // D3 fix: once an inspection leaves 'draft' it must NEVER return to
+      // 'draft' (prevents submitted→draft→delete audit-trail erasure).
       allow update: if isActive() && (isSO() || isCC())
         && soAssignedBatchOk(resource.data.batchId)
         && request.resource.data.batchId == resource.data.batchId
         && request.resource.data.createdBy == resource.data.createdBy
-        && request.resource.data.inspectorId == resource.data.inspectorId;
+        && request.resource.data.inspectorId == resource.data.inspectorId
+        && (resource.data.status == 'draft'
+            || request.resource.data.status != 'draft')
+        && canWriteDevData();
 
       // Only the creating SO may delete its own DRAFT; CC may delete any.
+      // D3 fix: the no-draft-regression rule above means a submitted
+      // inspection can never be made draft, so it cannot be deleted here.
+      // Dev-tagged records may only be deleted by CC/developer accounts.
       allow delete: if isCC()
         || (isActive() && isSO()
+            && resource.data.batchId in userDoc().assignedBatchIds
             && resource.data.createdBy == request.auth.uid
-            && resource.data.status == 'draft');
+            && resource.data.status == 'draft'
+            && (!resourceIsDev() || canUseDevSandbox()));
     }
 
     match /findings/{id} {
-      allow read: if isStaff();
+      allow read: if isStaff() && canReadDevData();
 
       // SO/CC create findings for an assigned batch.
       allow create: if (isSO() || isCC())
         && isActive()
         && soAssignedBatchOk(request.resource.data.batchId)
-        && request.resource.data.createdBy == request.auth.uid;
+        && request.resource.data.createdBy == request.auth.uid
+        && canWriteDevData();
 
       // Updates:
       //  • CC: full control within inspection lifecycle.
-      //  • SO (assigned batch): may update lifecycle/verification fields,
-      //    but never change batchId/createdBy/inspectionId/ownership.
-      //  • Assigned responsible role (Clerk/QM/Ustad): may ONLY move a
-      //    finding they are assigned to toward submission — never set
-      //    verifiedBy/closed status, and never touch ownership fields.
-      allow update: if isActive() && (
+      //  • SO (assigned batch): may drive the lifecycle/verification fields,
+      //    but never change batchId/createdBy/inspectionId/ownership, and
+      //    D3: a CLOSED finding stays closed (no reopen/re-verify erasure).
+      //  • Assigned responsible role (Clerk/QM/Ustad): D2 fix — may ONLY
+      //    advance a finding they are assigned to through the response
+      //    lifecycle. They cannot reassign it, change severity/due date/
+      //    corrective action/title/description, set verification fields,
+      //    close it, or move it backwards (closed/reopened state locked).
+      allow update: if isActive() && canWriteDevData() && (
         isCC()
         ||
-        ( (isSO() || isCC())
+        // SO / inspector on an assigned batch
+        ( isSO()
           && soAssignedBatchOk(resource.data.batchId)
           && request.resource.data.batchId == resource.data.batchId
           && request.resource.data.createdBy == resource.data.createdBy
-          && request.resource.data.inspectionId == resource.data.inspectionId )
+          && request.resource.data.inspectionId == resource.data.inspectionId
+          // D3: once a finding is CLOSED it is terminal — status must stay
+          // 'closed' and the verification stamp (verifiedBy/verifiedAt) can
+          // never be cleared or rewritten (prevents closed→reopen→delete
+          // audit-trail erasure). Before closure the SO drives the normal
+          // lifecycle (open→in_progress→submitted→closed / submitted→rework).
+          && ( resource.data.status != 'closed'
+               || ( request.resource.data.status == 'closed'
+                    && request.resource.data.get('verifiedBy', '') == resource.data.get('verifiedBy', '')
+                    && request.resource.data.get('verifiedAt', '') == resource.data.get('verifiedAt', '') ) ) )
         ||
+        // Assigned responsible staff (Clerk/QM/Ustad) — response only
         ( !isSO() && !isCC()
           && resource.data.assignedToRole == role()
+          // ownership / reassignment tampering locked
           && request.resource.data.batchId == resource.data.batchId
           && request.resource.data.createdBy == resource.data.createdBy
+          && request.resource.data.createdAt == resource.data.createdAt
           && request.resource.data.inspectionId == resource.data.inspectionId
+          && request.resource.data.assignedToRole == resource.data.assignedToRole
+          && request.resource.data.get('assignedToName', '') == resource.data.get('assignedToName', '')
+          // finding content / assignment terms locked
+          && request.resource.data.title == resource.data.title
+          && request.resource.data.description == resource.data.description
+          && request.resource.data.severity == resource.data.severity
+          && request.resource.data.responsibleArea == resource.data.responsibleArea
+          && request.resource.data.category == resource.data.category
+          && request.resource.data.dueDate == resource.data.dueDate
+          && request.resource.data.correctiveAction == resource.data.correctiveAction
+          // verification fields locked
           && request.resource.data.get('verifiedBy', '') == resource.data.get('verifiedBy', '')
           && request.resource.data.get('verifiedAt', '') == resource.data.get('verifiedAt', '')
-          // a responsible role may only set status to in_progress/submitted
-          && request.resource.data.status in ['in_progress', 'submitted'] )
+          && request.resource.data.get('verifiedByName', '') == resource.data.get('verifiedByName', '')
+          // lifecycle: only forward response transitions, no regression
+          && request.resource.data.status in ['in_progress', 'submitted']
+          && request.resource.data.status != 'closed'
+          && ( (resource.data.status == 'open'     && request.resource.data.status == 'in_progress')
+            || (resource.data.status == 'rework'   && request.resource.data.status == 'in_progress')
+            || (resource.data.status == 'in_progress' && request.resource.data.status == 'submitted')
+            || (resource.data.status == 'rework'   && request.resource.data.status == 'submitted') ) )
       );
 
+      // SO may delete only its OWN open/rework finding in an assigned batch.
+      // D3: a closed finding can never be reverted to open/rework (above),
+      // so a verified finding cannot be deleted either. Dev-tagged records
+      // are restricted to CC/developer accounts.
       allow delete: if isCC()
         || (isActive() && isSO()
+            && resource.data.batchId in userDoc().assignedBatchIds
             && resource.data.createdBy == request.auth.uid
-            && resource.data.status in ['open', 'rework']);
+            && resource.data.status in ['open', 'rework']
+            && (!resourceIsDev() || canUseDevSandbox()));
     }
 
     // ──────────────────────────────────────────────────────────────────
