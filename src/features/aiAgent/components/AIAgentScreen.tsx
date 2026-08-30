@@ -318,7 +318,7 @@ const handleSend = async (userText: string) => {
         <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-center gap-2 text-amber-800 text-xs flex-shrink-0">
           <AlertCircle size={14} />
           <span>
-            Local ERP AI active hai. Natural language fallback ke liye .env mein VITE_GROQ_API_KEY ya VITE_GEMINI_API_KEY add karo.
+            Local ERP AI active hai. Natural-language cloud AI ke liye backend AI functions deploy karo (secrets server-side rehte hain).
           </span>
         </div>
       )}

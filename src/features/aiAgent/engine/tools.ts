@@ -54,9 +54,17 @@ const GENERIC_WRITE_BLOCKED = new Set([
   'leave_types',
   'subscriptionHistory',
   'subscriptionPlans',
+  'customers',
+  'customerSubscriptions',
+  'companyBridges',
   'batches',
   'subject_master',
   'staff_subjects',
+  // Inventory ledger — these are ONLY mutated by the atomic issue
+  // transaction (src/utils/inventoryStock.ts). Generic AI writes must never
+  // bypass the concurrency-safe stock decrement / ledger creation.
+  'issue_records',
+  'stock_ledgers',
 ]);
 
 // Which tier may write to which collection (generic add/update/delete).
@@ -69,7 +77,7 @@ const FINANCE_COLLECTIONS = new Set([
   'company_assets_expenses', 'company_assets_collections', 'company_assets_custom_items',
   'vendors', 'vendor_entries', 'vendor_payments', 'bills',
   'fund_transfers', 'collections', 'expenses', 'recoveries',
-  'item_master', 'issue_records',
+  'item_master',
 ]);
 const STAFF_COLLECTIONS = new Set([
   'trainees', 'absentRecords', 'medicalRecords',
@@ -590,6 +598,18 @@ export async function executeTool(
           return { ok: false, data: null, summary: `Chest #${args.chestNo} nahi mila` };
         }
         const target: any = found.rows[0];
+        // 🔒 Kit/ledger fields are managed ONLY by the atomic inventory issue
+        // transaction. AI must never mark a trainee as issued bypassing the
+        // stock ledger.
+        const FORBIDDEN_KIT_FIELDS = ['issuedKitItems', 'lastKitIssueDate', 'kitIssued'];
+        const attempted = Object.keys(args.updates ?? {});
+        const forbiddenHit = attempted.filter(f => FORBIDDEN_KIT_FIELDS.includes(f));
+        if (forbiddenHit.length) {
+          return {
+            ok: false, data: null,
+            summary: `SURAKSHA: kit issue fields (${forbiddenHit.join(', ')}) sirf Inventory Issue screen ke atomic transaction se badle ja sakte hain — AI se nahi.`,
+          };
+        }
         await updateDoc(doc(db, 'trainees', target.id), {
           ...args.updates,
           updatedAt: serverTimestamp(),

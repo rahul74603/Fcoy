@@ -310,9 +310,9 @@ function friendlyError(groqErr: any, gemErr: any): string {
 
   if (/401|invalid|api key/i.test(msg)) {
     return (
-      `🔑 **API key galat hai ya expire ho gayi**\n\n` +
-      `\`.env\` me VITE_GROQ_API_KEY aur VITE_GEMINI_API_KEY check karein.\n` +
-      `Key badalne ke baad dev server **restart** zaroori hai.\n\n` +
+      `🔑 **Cloud AI credentials issue**\n\n` +
+      `Secrets server-side (Cloud Functions) me hote hain. Admin se confirm karein ` +
+      `ki AI functions deployed hain aur GROQ_API_KEY/GEMINI_API_KEY Secret Manager me set hain.\n\n` +
       `_Technical: ${msg.slice(0, 120)}_`
     );
   }
@@ -474,7 +474,7 @@ export async function runAgent(
   }
 
   return {
-    reply: '❌ Koi AI key configured nahi hai. .env me VITE_GROQ_API_KEY ya VITE_GEMINI_API_KEY daalein.',
+    reply: '❌ Cloud AI available nahi hai. Local ERP commands chal rahi hain; natural-language AI ke liye backend AI functions deploy karna hoga (secrets server-side).',
     steps, provider: 'none', model: '-', iterations: 0,
     elapsedMs: Date.now() - started, error: 'no keys',
   };

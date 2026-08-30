@@ -32,15 +32,22 @@ const envList = (base: string, count = 5): string[] => {
 };
 
 export const AI_CONFIG = {
-  // Optional trusted backend that proxies cloud AI calls and keeps keys
-  // server-side. When set, the agents call this URL instead of the public
-  // Groq/Gemini endpoints with an embedded key.
+  // Optional REST-style proxy URL (alternative deployment). The PRIMARY
+  // production path is Firebase Callable Functions (see aiBackend.client.ts),
+  // which keep keys server-side and enforce auth + role.
   proxyUrl: (import.meta.env.VITE_AI_PROXY_URL as string | undefined) || '',
 
+  // ── DEV-ONLY browser keys ─────────────────────────────────────────────
+  // These are ONLY ever used when `browserKeysAllowed()` is true — i.e. a
+  // local Vite dev server (import.meta.env.DEV) with the explicit opt-in
+  // VITE_AI_ALLOW_BROWSER_KEYS=true. In a production build they are never
+  // read/used; the deployed Cloud Functions supply the credentials.
   groqKeys: envList('VITE_GROQ_API_KEY'),
   geminiKeys: envList('VITE_GEMINI_API_KEY'),
-  pineconeKey: import.meta.env.VITE_PINECONE_API_KEY || '',
-  pineconeHost: import.meta.env.VITE_PINECONE_HOST || '',
+  // 🔒 Pinecone credentials NEVER live in the client (the index is a secret
+  // vector store). RAG always goes through the server callable functions.
+  pineconeKey: '',
+  pineconeHost: '',
   groqModel: import.meta.env.VITE_GROQ_MODEL || 'llama-3.3-70b-versatile',
   // 'gemini-flash-latest' hamesha current stable flash model par point karta hai.
   // Purane pinned naam (2.0-flash, 2.5-flash-lite) retire ho chuke hain /
@@ -64,9 +71,13 @@ export const hasProxy = (): boolean => Boolean(AI_CONFIG.proxyUrl);
 
 export const getAIHealth = () => ({
   localERP: AI_CONFIG.enableLocalERP,
-  groq: AI_CONFIG.enableGroq && (AI_CONFIG.groqKeys.length > 0 || hasProxy()),
-  gemini: AI_CONFIG.enableGemini && (AI_CONFIG.geminiKeys.length > 0 || hasProxy()),
-  pinecone: AI_CONFIG.enablePinecone && hasProxy() && Boolean(AI_CONFIG.pineconeHost),
+  // Cloud providers are considered available when the deployed callable
+  // functions are the path (production) OR a dev opted into browser keys.
+  groq: AI_CONFIG.enableGroq,
+  gemini: AI_CONFIG.enableGemini,
+  // RAG requires server-side Pinecone (callable functions). A browser key is
+  // never accepted.
+  pinecone: AI_CONFIG.enablePinecone,
   proxy: hasProxy(),
   groqKeys: AI_CONFIG.groqKeys.length,
   geminiKeys: AI_CONFIG.geminiKeys.length,

@@ -8,6 +8,7 @@ import { getSchemaForAI } from "../schemas/collections.schema";
 import { db } from "../../../config/firebase";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { AI_CONFIG } from "../config/ai.config";
+import { callGemini, browserKeysAllowed } from "./aiBackend.client";
 
 // ─────────────────────────────────────────
 // ACTION RESULT TYPE — har action ka result
@@ -87,8 +88,24 @@ function pickKeyIndex(): number {
 // SMART FETCH — 429 aaye to dusri key try karo
 // ═══════════════════════════════════════════════════
 async function geminiFetch(body: any): Promise<any> {
-  // 🔒 SECURE PATH: backend proxy holds the real Gemini key server-side.
-  if (AI_CONFIG.proxyUrl) {
+  // 🔒 PRODUCTION PATH: Firebase Callable Function holds the key server-side.
+  try {
+    return await callGemini({
+      contents: body?.contents,
+      generationConfig: body?.generationConfig,
+      systemInstruction: body?.systemInstruction,
+    });
+  } catch (e: any) {
+    const code = e?.code || '';
+    if (code === 'functions/permission-denied' || code === 'functions/unauthenticated'
+        || /permission-denied|unauthenticated/i.test(String(e?.message))) {
+      throw new Error('Authorization: AI sirf Company Commander use kar sakta hai.');
+    }
+    console.warn('Backend Gemini call unavailable:', e?.message ?? e);
+  }
+
+  // DEV-ONLY PATH: bundled browser key only with explicit local-dev opt-in.
+  if (browserKeysAllowed() && AI_CONFIG.proxyUrl) {
     const response = await fetch(`${AI_CONFIG.proxyUrl.replace(/\/$/, "")}/gemini`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -98,10 +115,17 @@ async function geminiFetch(body: any): Promise<any> {
     return response.json();
   }
 
-  if (API_KEYS.length === 0) {
-    throw new Error("Koi API key set nahi hai! .env check karo.");
+  if (browserKeysAllowed() && API_KEYS.length > 0) {
+    return geminiFetchWithBrowserKey(body);
   }
 
+  throw new Error(
+    "Cloud AI configured nahi hai. Backend functions deploy karein " +
+    "(local ERP commands bina cloud AI ke chalti hain).",
+  );
+}
+
+async function geminiFetchWithBrowserKey(body: any): Promise<any> {
   const triedKeys = new Set<number>();
 
   while (triedKeys.size < API_KEYS.length) {

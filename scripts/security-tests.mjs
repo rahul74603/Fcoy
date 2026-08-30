@@ -266,6 +266,39 @@ test('AI generic writes blocked for users/staff_leave/batches/subscriptions', ()
 test('AI delete restricted to CC', () => {
   assert.ok(/record delete sirf Company Commander/.test(toolsSrc));
 });
+test('AI generic writes CANNOT touch inventory ledgers (issue_records/stock_ledgers)', () => {
+  assert.ok(/GENERIC_WRITE_BLOCKED[\s\S]*?'issue_records'/.test(toolsSrc));
+  assert.ok(/GENERIC_WRITE_BLOCKED[\s\S]*?'stock_ledgers'/.test(toolsSrc));
+});
+test('AI update_trainee CANNOT mutate kit/issue fields', () => {
+  assert.ok(/FORBIDDEN_KIT_FIELDS/.test(toolsSrc));
+  assert.ok(/issuedKitItems/.test(toolsSrc));
+});
+
+console.log('\n■ AI BACKEND (secret isolation)');
+const backend = fs.readFileSync(path.join(root, 'functions/index.js'), 'utf8');
+test('backend callables verify authenticated + CC role server-side', () => {
+  assert.ok(/assertAiAuthorized/.test(backend));
+  assert.ok(/request\?\.auth\?\.uid/.test(backend));
+  assert.ok(/isActive === false/.test(backend));
+  assert.ok(/Company Commander/.test(backend));
+});
+test('backend defines secrets server-side and never returns them', () => {
+  ['GROQ_API_KEY', 'GEMINI_API_KEY', 'PINECONE_API_KEY', 'PINECONE_HOST'].forEach(s => {
+    assert.ok(backend.includes(`defineSecret('${s}')`), `defineSecret ${s}`);
+  });
+  // Responses return only content/model/matches — never a key.
+  assert.ok(!/res\.json\(\).*api_?key/i.test(backend));
+});
+test('backend is not a generic Firestore proxy (only users role lookup)', () => {
+  const genericProxy = /admin\w*\.(firestore)?\(?\.(collection|doc)\(.*request\.data/;
+  assert.ok(!genericProxy.test(backend));
+});
+test('Pinecone client never holds a browser secret', () => {
+  const sync = fs.readFileSync(path.join(root, 'src/features/aiAgent/scripts/syncToPinecone.ts'), 'utf8');
+  assert.ok(!/AI_CONFIG\.pineconeKey/.test(sync));
+  assert.ok(/callPinecone(Upsert|Query)/.test(sync));
+});
 
 console.log('\n■ DOCUMENT UPLOAD FAKE-SUCCESS AUDIT');
 

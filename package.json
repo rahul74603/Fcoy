@@ -8,8 +8,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "node scripts/security-tests.mjs",
-    "test:rules": "echo \"Firestore/Storage emulator tests require Java + firebase-tools; run: firebase emulators:exec 'npm test' when available. Static rule audit runs in 'npm test'.\""
+    "test": "node scripts/security-tests.mjs && node scripts/audit-rules.mjs",
+    "audit:rules": "node scripts/audit-rules.mjs",
+    "test:rules": "echo \"Runtime emulator tests live in functions/test. On a machine with Java + firebase-tools run: firebase emulators:exec --project fcoy-test 'npm --prefix functions run test'\""
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
