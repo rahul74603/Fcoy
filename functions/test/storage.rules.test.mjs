@@ -28,7 +28,7 @@ import { readFileSync } from 'node:fs';
 assert.isFulfilled = (p) => assertSucceeds(p);
 assert.isRejected = (p) => assertFails(p);
 
-const PROJECT_ID = 'fcoy-test';
+const PROJECT_ID = 'training-command-erp';
 
 /** @type {RulesTestEnvironment} */
 let testEnv;
