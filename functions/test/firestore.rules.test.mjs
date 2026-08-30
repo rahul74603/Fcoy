@@ -65,6 +65,15 @@ async function seedProfiles(env) {
   // seed writes inside ONE callback against that disabled-context Firestore.
   await env.withSecurityRulesDisabled(async (ctx) => {
     const admin = ctx.firestore();
+    // Simulate a REAL, already-set-up company: the first-run wizard writes a
+    // config/firstRun marker once setup completes (FirstRunSetupScreen). When
+    // it exists, firstRunOpen() is false, so the bootstrap backdoors in the
+    // users / subscription rules correctly stay CLOSED (CC-only). Without
+    // this marker the emulator looks like a fresh/unconfigured tenant and the
+    // wizard-allow paths would spuriously permit normal users.
+    await admin.doc('config/firstRun').set({
+      completedAt: '2026-01-01T00:00:00Z', completedBy: 'ccUid',
+    });
     await admin.doc('users/ccUid').set({
       name: 'CC', email: CC.email, role: 'Company Commander',
       isActive: true, isDeveloper: false,

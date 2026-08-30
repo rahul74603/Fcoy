@@ -72,11 +72,18 @@ service cloud.firestore {
     // ──────────────────────────────────────────────────────────────────
     // DEV / TEST DATA ISOLATION
     // ──────────────────────────────────────────────────────────────────
+    // Missing-field safe: a normal company document simply has no
+    // `isDevData` field. Reading a missing map key directly errors rule
+    // evaluation ("isDevData is undefined") and would wrongly reject every
+    // legitimate write, so use .get(key, false). `request.resource` is also
+    // null on DELETE, which is guarded explicitly (deletes carry no incoming
+    // document, so an incoming doc can never be dev-tagged).
     function resourceIsDev() {
-      return resource != null && resource.data.isDevData == true;
+      return resource != null && resource.data.get('isDevData', false) == true;
     }
     function requestIsDev() {
-      return request.resource.data.isDevData == true;
+      return request.resource != null
+        && request.resource.data.get('isDevData', false) == true;
     }
     // A document is visible to this user if it is NOT dev-tagged, or the
     // user is CC / a developer account.
