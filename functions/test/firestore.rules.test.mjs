@@ -38,6 +38,8 @@ const CC    = { uid: 'ccUid',  email: 'cc@example.com' };
 const CLERK = { uid: 'clerkUid', email: 'clerk@example.com' };
 const QM    = { uid: 'qmUid',   email: 'qm@example.com' };
 const USTAD = { uid: 'ustadUid', email: 'ustad@example.com' };
+// Senior Officer / Inspector — assigned batchA ONLY (batchB must be denied)
+const SO    = { uid: 'soUid',   email: 'so@example.com' };
 
 async function seedProfiles(env) {
   // Write profiles with admin (bypasses rules) so role lookups resolve.
@@ -57,6 +59,10 @@ async function seedProfiles(env) {
   await admin.doc('users/ustadUid').set({
     name: 'Ustad', email: USTAD.email, role: 'Ustad',
     isActive: true, isDeveloper: false,
+  });
+  await admin.doc('users/soUid').set({
+    name: 'SO', email: SO.email, role: 'Senior Officer / Inspector',
+    isActive: true, isDeveloper: false, assignedBatchIds: ['batchA'],
   });
 }
 
@@ -263,6 +269,163 @@ describe('Firestore rules', () => {
       await assert.isRejected(
         authedDb(testEnv, QM).doc('stock_ledgers/dm-shoes')
           .set({ balance: -1 }));
+    });
+  });
+
+  // ── SENIOR OFFICER / INSPECTOR MODULE ───────────────────────────────
+  describe('Senior Officer / Inspector module', () => {
+    const inspectionA = (uid) => ({
+      batchId: 'batchA', batchNumber: 'Batch A', inspectionType: 'General',
+      inspectionDate: '2026-08-30', inspectorId: uid, inspectorName: 'SO',
+      subject: 'Routine check', observations: '', status: 'submitted',
+      createdBy: uid, createdAt: '2026-08-30T00:00:00Z',
+    });
+    const findingA = (uid) => ({
+      batchId: 'batchA', inspectionId: 'insp1', category: 'Training',
+      title: 'Register not updated', severity: 'minor',
+      responsibleArea: 'Training', assignedToRole: 'Ustad',
+      assignedToName: '', dueDate: '2026-09-10', status: 'open',
+      correctiveAction: 'Update register', createdBy: uid,
+      createdAt: '2026-08-30T00:00:00Z',
+    });
+
+    it('SO can create inspection for assigned batch', async () => {
+      await assert.isFulfilled(
+        authedDb(testEnv, SO).collection('inspections')
+          .add(inspectionA('soUid')));
+    });
+    it('SO CANNOT create inspection for unassigned batch', async () => {
+      await assert.isRejected(
+        authedDb(testEnv, SO).collection('inspections')
+          .add({ ...inspectionA('soUid'), batchId: 'batchB' }));
+    });
+    it('SO cannot spoof inspectorId/createdBy on inspection', async () => {
+      await assert.isRejected(
+        authedDb(testEnv, SO).collection('inspections')
+          .add({ ...inspectionA('soUid'), inspectorId: 'ccUid', createdBy: 'ccUid' }));
+    });
+    it('SO can create finding for assigned batch', async () => {
+      await assert.isFulfilled(
+        authedDb(testEnv, SO).collection('findings')
+          .add(findingA('soUid')));
+    });
+    it('SO CANNOT create finding for unassigned batch', async () => {
+      await assert.isRejected(
+        authedDb(testEnv, SO).collection('findings')
+          .add({ ...findingA('soUid'), batchId: 'batchB' }));
+    });
+    it('CC sees and can create SO inspections (oversight)', async () => {
+      await testEnv.firestoreAdmin().doc('inspections/i1').set(inspectionA('soUid'));
+      await assert.isFulfilled(authedDb(testEnv, CC).doc('inspections/i1').get());
+      await assert.isFulfilled(
+        authedDb(testEnv, CC).collection('inspections')
+          .add({ ...inspectionA('ccUid'), inspectorId: 'ccUid' }));
+    });
+    it('SO can verify-close a submitted finding in assigned batch', async () => {
+      await testEnv.firestoreAdmin().doc('findings/f1').set({
+        ...findingA('soUid'), status: 'submitted',
+      });
+      await assert.isFulfilled(
+        authedDb(testEnv, SO).doc('findings/f1')
+          .update({ status: 'closed', verifiedBy: 'soUid',
+            verifiedByName: 'SO', verifiedAt: '2026-08-31T00:00:00Z' }));
+    });
+    it('SO CANNOT close a finding for an unassigned batch', async () => {
+      await testEnv.firestoreAdmin().doc('findings/f2').set({
+        ...findingA('soUid'), batchId: 'batchB', status: 'submitted',
+      });
+      await assert.isRejected(
+        authedDb(testEnv, SO).doc('findings/f2')
+          .update({ status: 'closed', verifiedBy: 'soUid' }));
+    });
+    it('Assigned Ustad can submit corrective action (submitted status)', async () => {
+      await testEnv.firestoreAdmin().doc('findings/f3').set({
+        ...findingA('soUid'), assignedToRole: 'Ustad', status: 'in_progress',
+      });
+      await assert.isFulfilled(
+        authedDb(testEnv, USTAD).doc('findings/f3')
+          .update({ status: 'submitted', submittedBy: 'ustadUid',
+            submittedAt: '2026-08-31T00:00:00Z', updatedBy: 'ustadUid',
+            updatedAt: '2026-08-31T00:00:00Z' }));
+    });
+    it('Ustad CANNOT close/verify a finding', async () => {
+      await testEnv.firestoreAdmin().doc('findings/f4').set({
+        ...findingA('soUid'), assignedToRole: 'Ustad', status: 'submitted',
+      });
+      await assert.isRejected(
+        authedDb(testEnv, USTAD).doc('findings/f4')
+          .update({ status: 'closed', verifiedBy: 'ustadUid' }));
+    });
+    it('Ustad cannot act on a finding assigned to another role', async () => {
+      await testEnv.firestoreAdmin().doc('findings/f5').set({
+        ...findingA('soUid'), assignedToRole: 'Clerk', status: 'open',
+      });
+      await assert.isRejected(
+        authedDb(testEnv, USTAD).doc('findings/f5')
+          .update({ status: 'in_progress', updatedBy: 'ustadUid' }));
+    });
+
+    // ── SO must NOT gain commander powers ──
+    it('SO cannot approve leave', async () => {
+      await testEnv.firestoreAdmin().doc('staff_leave/lv1').set({
+        leaveNumber: 'LV-1', staffId: 's1', staffName: 'X',
+        status: 'pending', approvedBy: '', approvedByName: '',
+        approvalDate: null, rejectionReason: '', remarks: '',
+      });
+      await assert.isRejected(
+        authedDb(testEnv, SO).doc('staff_leave/lv1')
+          .update({ status: 'approved', approvedBy: 'soUid',
+            approvalDate: '2026-08-31' }));
+    });
+    it('SO cannot reject leave', async () => {
+      await testEnv.firestoreAdmin().doc('staff_leave/lv2').set({
+        leaveNumber: 'LV-2', staffId: 's1', staffName: 'X',
+        status: 'pending', approvedBy: '', approvedByName: '',
+        approvalDate: null, rejectionReason: '', remarks: '',
+      });
+      await assert.isRejected(
+        authedDb(testEnv, SO).doc('staff_leave/lv2')
+          .update({ status: 'rejected', rejectionReason: 'nope' }));
+    });
+    it('SO can add non-approval leave recommendation fields', async () => {
+      await testEnv.firestoreAdmin().doc('staff_leave/lv3').set({
+        leaveNumber: 'LV-3', staffId: 's1', staffName: 'X',
+        status: 'pending', approvedBy: '', approvedByName: '',
+        approvalDate: null, rejectionReason: '', remarks: '',
+      });
+      await assert.isFulfilled(
+        authedDb(testEnv, SO).doc('staff_leave/lv3')
+          .update({ soRecommendation: 'Recommended', soRemarks: 'ok',
+            soReviewedBy: 'soUid', soReviewedAt: '2026-08-31T00:00:00Z' }));
+    });
+    it('SO cannot change a user role', async () => {
+      await assert.isRejected(
+        authedDb(testEnv, SO).doc('users/clerkUid')
+          .update({ role: 'Company Commander' }));
+    });
+    it('SO cannot create users', async () => {
+      await assert.isRejected(
+        authedDb(testEnv, SO).collection('users')
+          .add({ name: 'x', role: 'Clerk', isActive: true }));
+    });
+    it('SO cannot modify subscription', async () => {
+      await assert.isRejected(
+        authedDb(testEnv, SO).doc('subscription/current')
+          .set({ planId: 'p1' }));
+    });
+    it('SO cannot adjust inventory stock ledger', async () => {
+      await assert.isRejected(
+        authedDb(testEnv, SO).doc('stock_ledgers/dm-shoes')
+          .set({ balance: 500 }));
+    });
+    it('SO cannot write finance expenses', async () => {
+      await assert.isRejected(
+        authedDb(testEnv, SO).collection('mess_fund_expenses')
+          .add({ amount: 100 }));
+    });
+    it('SO cannot delete another SO inspection (only creator draft / CC)', async () => {
+      await testEnv.firestoreAdmin().doc('inspections/i2').set(inspectionA('ccUid'));
+      await assert.isRejected(authedDb(testEnv, SO).doc('inspections/i2').delete());
     });
   });
 });

@@ -52,7 +52,8 @@ service cloud.firestore {
     function isClerk()   { return signedIn() && role() == 'Clerk'; }
     function isQM()      { return signedIn() && role() == 'Quarter Master'; }
     function isUstad()   { return signedIn() && role() == 'Ustad'; }
-    function isStaff()   { return signedIn() && role() in ['Company Commander', 'Clerk', 'Quarter Master', 'Ustad']; }
+    function isSO()      { return signedIn() && role() == 'Senior Officer / Inspector'; }
+    function isStaff()   { return signedIn() && role() in ['Company Commander', 'Clerk', 'Quarter Master', 'Ustad', 'Senior Officer / Inspector']; }
     function isActive()  { return signedIn() && userDoc().isActive != false; }
 
     // Management tier = CC or Clerk (per existing business rules)
@@ -414,6 +415,94 @@ service cloud.firestore {
     match /ustads/{id} {
       allow read: if isStaff();
       allow write: if canManage() && canWriteDevData();
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // SENIOR OFFICER / INSPECTOR — INSPECTION & SUPERVISION
+    // ──────────────────────────────────────────────────────────────────
+    // SO is a SUPERVISORY role. It inspects assigned batches, records
+    // findings, assigns/verifies corrective actions, and reports upward to
+    // the Company Commander. It is NOT another commander: it cannot approve
+    // leave, manage users, touch finance/inventory stock, or subscription.
+    //
+    // Batch security (enforced here, not only in the UI):
+    //   • CC     → all inspections/findings
+    //   • SO     → only documents whose batchId is in the SO's own
+    //              users/{uid}.assignedBatchIds
+    //
+    // Immutability: batchId / createdBy / inspectionId / verification
+    // ownership fields cannot be changed after creation.
+    function soAssignedBatchOk(batchId) {
+      return isCC()
+        || (isActive() && isSO()
+            && batchId in userDoc().assignedBatchIds);
+    }
+
+    match /inspections/{id} {
+      allow read: if isStaff();
+
+      // SO creates inspections only for an assigned batch.
+      allow create: if (isSO() || isCC())
+        && isActive()
+        && soAssignedBatchOk(request.resource.data.batchId)
+        && request.resource.data.inspectorId == request.auth.uid
+        && request.resource.data.createdBy == request.auth.uid;
+
+      // SO edits inspections within assigned batches; ownership fields and
+      // batchId are immutable.
+      allow update: if isActive() && (isSO() || isCC())
+        && soAssignedBatchOk(resource.data.batchId)
+        && request.resource.data.batchId == resource.data.batchId
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.inspectorId == resource.data.inspectorId;
+
+      // Only the creating SO may delete its own DRAFT; CC may delete any.
+      allow delete: if isCC()
+        || (isActive() && isSO()
+            && resource.data.createdBy == request.auth.uid
+            && resource.data.status == 'draft');
+    }
+
+    match /findings/{id} {
+      allow read: if isStaff();
+
+      // SO/CC create findings for an assigned batch.
+      allow create: if (isSO() || isCC())
+        && isActive()
+        && soAssignedBatchOk(request.resource.data.batchId)
+        && request.resource.data.createdBy == request.auth.uid;
+
+      // Updates:
+      //  • CC: full control within inspection lifecycle.
+      //  • SO (assigned batch): may update lifecycle/verification fields,
+      //    but never change batchId/createdBy/inspectionId/ownership.
+      //  • Assigned responsible role (Clerk/QM/Ustad): may ONLY move a
+      //    finding they are assigned to toward submission — never set
+      //    verifiedBy/closed status, and never touch ownership fields.
+      allow update: if isActive() && (
+        isCC()
+        ||
+        ( (isSO() || isCC())
+          && soAssignedBatchOk(resource.data.batchId)
+          && request.resource.data.batchId == resource.data.batchId
+          && request.resource.data.createdBy == resource.data.createdBy
+          && request.resource.data.inspectionId == resource.data.inspectionId )
+        ||
+        ( !isSO() && !isCC()
+          && resource.data.assignedToRole == role()
+          && request.resource.data.batchId == resource.data.batchId
+          && request.resource.data.createdBy == resource.data.createdBy
+          && request.resource.data.inspectionId == resource.data.inspectionId
+          && request.resource.data.get('verifiedBy', '') == resource.data.get('verifiedBy', '')
+          && request.resource.data.get('verifiedAt', '') == resource.data.get('verifiedAt', '')
+          // a responsible role may only set status to in_progress/submitted
+          && request.resource.data.status in ['in_progress', 'submitted'] )
+      );
+
+      allow delete: if isCC()
+        || (isActive() && isSO()
+            && resource.data.createdBy == request.auth.uid
+            && resource.data.status in ['open', 'rework']);
     }
 
     // ──────────────────────────────────────────────────────────────────

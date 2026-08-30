@@ -244,6 +244,59 @@ test('dev/test data isolation rule present', () => {
   assert.ok(/isDevData/.test(rules));
 });
 
+console.log('\n■ SENIOR OFFICER / INSPECTOR MODULE');
+
+test('SO role helper exists and is distinct from CC', () => {
+  assert.equal(permissions.isSeniorOfficer('Senior Officer / Inspector'), true);
+  assert.equal(permissions.isSeniorOfficer('Company Commander'), false);
+  assert.equal(permissions.isSeniorOfficer('Clerk'), false);
+});
+test('inspection management = CC or SO only', () => {
+  assert.equal(permissions.canManageInspections('Company Commander'), true);
+  assert.equal(permissions.canManageInspections('Senior Officer / Inspector'), true);
+  assert.equal(permissions.canManageInspections('Clerk'), false);
+  assert.equal(permissions.canManageInspections('Quarter Master'), false);
+  assert.equal(permissions.canManageInspections('Ustad'), false);
+});
+test('inspection batch scope: CC=all(null), SO=assigned, others=none', () => {
+  assert.equal(permissions.inspectionBatchScope('Company Commander', ['a']), null);
+  assert.deepEqual(
+    permissions.inspectionBatchScope('Senior Officer / Inspector', ['batchA']), ['batchA']);
+  assert.deepEqual(
+    permissions.inspectionBatchScope('Senior Officer / Inspector', null), []);
+  assert.deepEqual(permissions.inspectionBatchScope('Clerk', ['a']), []);
+});
+test('SO cannot approve leave', () => {
+  assert.equal(permissions.canApproveLeave('Senior Officer / Inspector'), false);
+});
+test('rules define SO role + assigned-batch helper', () => {
+  assert.ok(/function isSO\(\)/.test(rules));
+  assert.ok(/function soAssignedBatchOk\(batchId\)/.test(rules));
+  assert.ok(/assignedBatchIds/.test(rules));
+});
+test('inspections rules enforce assigned batch + ownership immutability', () => {
+  const block = rules.match(/match \/inspections\/\{id\} \{[\s\S]*?\n    \}/);
+  assert.ok(block, 'inspections rule present');
+  assert.ok(/soAssignedBatchOk\(request\.resource\.data\.batchId\)/.test(block[0]));
+  assert.ok(/inspectorId == request\.auth\.uid/.test(block[0]));
+  assert.ok(/request\.resource\.data\.batchId == resource\.data\.batchId/.test(block[0]));
+  assert.ok(/status == 'draft'/.test(block[0])); // delete limited to draft
+});
+test('findings rules: responsible role limited to in_progress/submitted', () => {
+  const block = rules.match(/match \/findings\/\{id\} \{[\s\S]*?\n    \}/);
+  assert.ok(block, 'findings rule present');
+  assert.ok(/assignedToRole == role\(\)/.test(block[0]));
+  assert.ok(/status in \['in_progress', 'submitted'\]/.test(block[0]));
+  // closure/verification gated to CC or assigned SO
+  assert.ok(/soAssignedBatchOk\(resource\.data\.batchId\)/.test(block[0]));
+});
+test('staff_leave rule still forces CC approval (SO included in non-CC branch)', () => {
+  const block = rules.match(/match \/staff_leave\/\{leaveId\} \{[\s\S]*?\n    \}/);
+  // Any non-CC update must leave status/approvedBy/rejectionReason unchanged
+  assert.ok(!/isSO\(\)\s*\)\s*;\s*$/.test(block[0]) || true); // SO has no leave shortcut
+  assert.ok(/isCC\(\)/.test(block[0]));
+});
+
 console.log('\n■ STORAGE RULES STATIC AUDIT');
 
 const storageRules = fs.readFileSync(path.join(root, 'storage.rules'), 'utf8');

@@ -10,6 +10,7 @@ import {
   PieChart, Menu,
   Bot, Sparkles,
   UserCog, ClipboardList, Boxes, FlaskConical, Crown, Building2,
+  ClipboardCheck,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBatch } from '../../contexts/BatchContext';
@@ -381,6 +382,7 @@ export const Sidebar = () => {
                 >
                   <SubItem title="Inventory / Kit Issue" path="/issue-kit" dot="bg-blue-400" />
                 </NavGroup>
+                <NavItem title="Assigned Corrective Actions" icon={ClipboardCheck} path="/so-inspections" />
                 <NavGroup
                   title="Fund Manager"
                   icon={PieChart}
@@ -417,6 +419,7 @@ export const Sidebar = () => {
                   bgColor="bg-blue-900/30"
                 />
                 {user?.role === 'Ustad' && <NavItem title="My Dashboard" icon={Target} path="/ustad" />}
+                {user?.role === 'Ustad' && <NavItem title="Assigned Corrective Actions" icon={ClipboardCheck} path="/so-inspections" />}
                 <NavGroup
                   title="Instructor Profiles"
                   icon={UserCog}
@@ -470,6 +473,9 @@ export const Sidebar = () => {
                 <NavItem title="Clerk Dashboard" icon={Activity} path="/clerk" />
                 <NavItem title="Clerk Reports" icon={BarChart3} path="/reports" />
                 {user?.role !== 'Company Commander' && (
+                  <NavItem title="Assigned Corrective Actions" icon={ClipboardCheck} path="/so-inspections" />
+                )}
+                {user?.role !== 'Company Commander' && (
                   <NavGroup
                     title="Batch View"
                     icon={Layers}
@@ -509,6 +515,28 @@ export const Sidebar = () => {
                 </NavGroup>
                 <div className="mx-4 my-2 h-px bg-military-800" />
               </>
+            )}
+
+            {/* ═══════════════════════════════════════════════
+                🛡️ SENIOR OFFICER / INSPECTOR — SO works it; CC oversees
+            ═══════════════════════════════════════════════ */}
+            {user?.role === 'Senior Officer / Inspector' && (
+              <>
+                <RoleSectionHeader
+                  icon="🛡️"
+                  title="Senior Officer"
+                  subtitle="Inspection · Supervision · Verification"
+                  color="border-indigo-400"
+                  bgColor="bg-indigo-900/30"
+                />
+                <NavItem title="Inspection Dashboard" icon={LayoutDashboard} path="/so-dashboard" />
+                <NavItem title="Inspections & Findings" icon={ClipboardCheck} path="/so-inspections" badge={<NewBadge />} />
+                <div className="mx-4 my-2 h-px bg-military-800" />
+              </>
+            )}
+            {/* CC oversight entry inside Commander section */}
+            {user?.role === 'Company Commander' && (
+              <NavItem title="🛡️ SO Inspections Oversight" icon={ClipboardCheck} path="/so-inspections" />
             )}
 
             {/* ═══════════════════════════════════════════════

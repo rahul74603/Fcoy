@@ -22,6 +22,9 @@ const normalizeRole = (value: unknown): string => {
   if (key === 'cc' || key === 'commander' || key === 'company commander') return 'Company Commander';
   if (key === 'clerk') return 'Clerk';
   if (key === 'ustad' || key === 'instructor') return 'Ustad';
+  if (key === 'so' || key === 'senior officer' || key === 'inspector'
+      || key === 'senior officer / inspector' || key === 'senior officer/inspector')
+    return 'Senior Officer / Inspector';
   return String(value ?? 'Unassigned');
 };
 
@@ -37,6 +40,7 @@ interface AppUser {
   createdBy: string;
   isDeveloper: boolean; // 🧪 Dev/Practice account flag
   customerId?: string | null; // 👑 Customer (CC) account ki Customer ID
+  assignedBatchIds?: string[]; // 🔎 Senior Officer/Inspector assigned batches
 }
 
 interface AuthContextType {
@@ -104,6 +108,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         createdBy:   String(userData['createdBy']   ?? 'Unknown'),
         isDeveloper: Boolean(userData['isDeveloper'] ?? false),
         customerId:  userData['customerId'] != null ? String(userData['customerId']) : null,
+        assignedBatchIds: Array.isArray(userData["assignedBatchIds"]) ? userData["assignedBatchIds"].map(String) : [],
       });
       setDevViewer(Boolean(userData['isDeveloper'] ?? false));
     };
@@ -169,6 +174,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           createdBy:   String(userData['createdBy']   ?? 'Unknown'),
           isDeveloper: Boolean(userData['isDeveloper'] ?? false),
           customerId:  userData['customerId'] != null ? String(userData['customerId']) : null,
+          assignedBatchIds: Array.isArray(userData["assignedBatchIds"]) ? userData["assignedBatchIds"].map(String) : [],
         });
         setDevViewer(Boolean(userData['isDeveloper'] ?? false));
       } else {
@@ -282,6 +288,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           createdBy:   String(userData['createdBy']   ?? 'Unknown'),
           isDeveloper: Boolean(userData['isDeveloper'] ?? false),
           customerId:  userData['customerId'] != null ? String(userData['customerId']) : null,
+          assignedBatchIds: Array.isArray(userData["assignedBatchIds"]) ? userData["assignedBatchIds"].map(String) : [],
         });
         setDevViewer(Boolean(userData['isDeveloper'] ?? false));
 

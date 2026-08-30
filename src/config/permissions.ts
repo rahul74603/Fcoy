@@ -77,6 +77,35 @@ export const canUpdateLeave = (
   });
 };
 
+/** Senior Officer / Inspector — supervisory inspection role. */
+export const isSeniorOfficer = (role: Role): boolean =>
+  normalizeRoleInput(role) === 'senior officer / inspector';
+
+/**
+ * SO may create/edit inspections, findings and corrective actions within
+ * ASSIGNED batches, and verify/close findings. SO may NOT approve leave,
+ * manage users, touch finance/inventory, or manage subscriptions.
+ */
+export const canManageInspections = (role: Role): boolean =>
+  normalizeRoleInput(role) === 'company commander' || isSeniorOfficer(role);
+
+/**
+ * Assigned-batch scoping. Returns:
+ *   - null  → unrestricted (Company Commander sees all batches)
+ *   - string[] → the batch ids the user may operate on (SO assigned batches)
+ * Other roles get an empty list for inspection data.
+ */
+export const inspectionBatchScope = (
+  role: Role,
+  assignedBatchIds?: string[] | null,
+): string[] | null => {
+  if (normalizeRoleInput(role) === 'company commander') return null;
+  if (isSeniorOfficer(role)) {
+    return Array.isArray(assignedBatchIds) ? assignedBatchIds : [];
+  }
+  return [];
+};
+
 /**
  * Fields on a user profile that a non-CC must never change on themselves or
  * others (privilege escalation protection).

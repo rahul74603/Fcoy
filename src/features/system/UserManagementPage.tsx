@@ -19,6 +19,8 @@ import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail } from 
 import { getApps, initializeApp } from 'firebase/app';
 import { db, firebaseConfig } from '../../config/firebase';
 import { useAuth } from '../../contexts/AuthContext';
+import { useBatch } from '../../contexts/BatchContext';
+import { Layers } from 'lucide-react';
 
 interface UserModel {
   id: string;
@@ -31,6 +33,7 @@ interface UserModel {
   createdAt: string;
   createdBy: string;
   isDeveloper?: boolean;
+  assignedBatchIds?: string[];
 }
 
 // Firebase UID 28-char alphanumeric hota hai — purane USR-xxx broken profiles 24+ nahi
@@ -45,6 +48,7 @@ const provisionAuth = () => {
 
 export const UserManagementPage = () => {
   const { user } = useAuth();
+  const { allBatches } = useBatch();
 
   const [users, setUsers] = useState<UserModel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,8 +64,29 @@ export const UserManagementPage = () => {
     designation: '',
     role: 'Clerk',
   });
+  const [soBatchIds, setSoBatchIds] = useState<string[]>([]);
   const [showPw, setShowPw] = useState(false);
   const [resetting, setResetting] = useState('');
+  const [assignFor, setAssignFor] = useState<UserModel | null>(null);
+  const [assignDraft, setAssignDraft] = useState<string[]>([]);
+  const [assigning, setAssigning] = useState(false);
+
+  const openAssign = (u: UserModel) => { setAssignFor(u); setAssignDraft(u.assignedBatchIds ?? []); };
+
+  const saveAssignedBatches = async () => {
+    if (!assignFor) return;
+    setAssigning(true);
+    try {
+      await updateDoc(doc(db, 'users', assignFor.id), { assignedBatchIds: assignDraft });
+      setMessage(`SUCCESS: ${assignFor.name} ko ${assignDraft.length} batch(es) assigned.`);
+      setAssignFor(null);
+      fetchUsers();
+    } catch (err: any) {
+      setMessage(`ERROR: ${err.message}`);
+    } finally {
+      setAssigning(false);
+    }
+  };
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -118,6 +143,7 @@ export const UserManagementPage = () => {
         phone: formData.phone,
         designation: formData.designation,
         role: formData.role,
+        assignedBatchIds: formData.role === 'Senior Officer / Inspector' ? soBatchIds : [],
         isActive: true,
         isDeveloper: false, // dev flag kabhi yahan se nahi
         createdAt: new Date().toISOString(),
@@ -128,6 +154,7 @@ export const UserManagementPage = () => {
 
       setMessage(`SUCCESS: ${email} ka LOGIN account ban gaya ✓ — password staff ko de do.`);
       setFormData({ name: '', email: '', password: '', phone: '', designation: '', role: 'Clerk' });
+      setSoBatchIds([]);
       fetchUsers();
     } catch (err: any) {
       let msg = `ERROR: ${err.message}`;
@@ -269,11 +296,38 @@ export const UserManagementPage = () => {
                 <option value="Quarter Master">Quarter Master</option>
                 <option value="Clerk">Clerk</option>
                 <option value="Ustad">Ustad</option>
+                <option value="Senior Officer / Inspector">Senior Officer / Inspector</option>
               </select>
               <p className="text-[9px] text-slate-400 mt-1 leading-snug">
                 Company Commander accounts yahan nahi bante — wo sirf <strong>App Owner</strong> banata hai (Owner Panel → Customers).
               </p>
             </div>
+
+            {/* Assigned batches — only for Senior Officer / Inspector */}
+            {formData.role === 'Senior Officer / Inspector' && (
+              <div className="bg-indigo-50 border border-indigo-200 rounded p-3">
+                <label className="text-[10px] font-bold text-indigo-900 uppercase flex items-center gap-1">
+                  <Layers size={12} /> Assigned Batches (inspection scope)
+                </label>
+                <p className="text-[9px] text-indigo-700 mt-0.5">
+                  SO sirf inhi batches ka inspection/finding likh sakta hai. Blank = koi access nahi.
+                </p>
+                <div className="mt-2 grid grid-cols-2 gap-1">
+                  {allBatches.map(b => (
+                    <label key={b.id} className="flex items-center gap-2 text-xs text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={soBatchIds.includes(b.id)}
+                        onChange={e => setSoBatchIds(prev =>
+                          e.target.checked ? [...prev, b.id] : prev.filter(id => id !== b.id))}
+                      />
+                      {b.batchNumber}
+                    </label>
+                  ))}
+                  {allBatches.length === 0 && <span className="text-[10px] text-slate-400">No batches found.</span>}
+                </div>
+              </div>
+            )}
 
             <div className="bg-green-50 border border-green-200 rounded p-2.5">
               <p className="text-[10px] font-bold text-green-800 leading-snug">
@@ -344,6 +398,11 @@ export const UserManagementPage = () => {
                           <span className="bg-military-100 text-military-800 border border-military-200 px-2 py-0.5 text-[10px] font-bold uppercase rounded-sm">
                             {u.role}
                           </span>
+                          {u.role === 'Senior Officer / Inspector' && (
+                            <div className="mt-1 text-[9px] font-bold text-indigo-700 flex items-center gap-1">
+                              <Layers size={9} /> {u.assignedBatchIds?.length ? `${u.assignedBatchIds.length} batch(es) assigned` : 'NO BATCH ASSIGNED'}
+                            </div>
+                          )}
                           {broken && (
                             <div className="mt-1 flex items-center gap-1 text-[9px] font-black text-red-600" title="Firestore doc ID Auth UID se match nahi karta — is profile se login possible nahi. Delete karke naya account banao.">
                               <AlertTriangle size={10} /> NO LOGIN (broken)
@@ -360,6 +419,15 @@ export const UserManagementPage = () => {
                         </td>
                         <td className="px-4 py-2 text-center">
                           <div className="flex items-center justify-center gap-1">
+                          {u.role === 'Senior Officer / Inspector' && (
+                            <button
+                              onClick={() => openAssign(u)}
+                              title="Assigned batches set karo"
+                              className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-sm border border-transparent hover:border-indigo-200 transition-colors"
+                            >
+                              <Layers size={13} />
+                            </button>
+                          )}
                           <button
                             onClick={() => handleResetPassword(u)}
                             disabled={resetting === u.id}
@@ -386,6 +454,45 @@ export const UserManagementPage = () => {
           </div>
         </div>
       </div>
+
+      {/* Assign batches modal (Senior Officer / Inspector) */}
+      {assignFor && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl w-full max-w-md p-5">
+            <h2 className="text-base font-black text-slate-900 flex items-center gap-2">
+              <Layers size={16} className="text-indigo-700" /> Assigned Batches — {assignFor.name}
+            </h2>
+            <p className="text-[11px] text-slate-500 mt-1">
+              Senior Officer / Inspector sirf selected batches ki inspections aur findings likh/verify kar sakta hai.
+            </p>
+            <div className="mt-3 grid grid-cols-2 gap-2 max-h-64 overflow-auto">
+              {allBatches.map(b => (
+                <label key={b.id} className="flex items-center gap-2 text-sm text-slate-700 border border-slate-200 rounded p-2">
+                  <input
+                    type="checkbox"
+                    checked={assignDraft.includes(b.id)}
+                    onChange={e => setAssignDraft(prev =>
+                      e.target.checked ? [...prev, b.id] : prev.filter(id => id !== b.id))}
+                  />
+                  <span>
+                    <b>{b.batchNumber}</b>
+                    <span className="block text-[10px] text-slate-400">{b.batchName}</span>
+                  </span>
+                </label>
+              ))}
+              {allBatches.length === 0 && <p className="text-xs text-slate-400 col-span-2">No batches.</p>}
+            </div>
+            <div className="flex justify-end gap-2 mt-4">
+              <button onClick={() => setAssignFor(null)}
+                className="px-4 py-2 text-sm font-bold text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200">Cancel</button>
+              <button onClick={saveAssignedBatches} disabled={assigning}
+                className="px-4 py-2 text-sm font-bold text-white bg-indigo-700 rounded-lg hover:bg-indigo-800 disabled:opacity-50 flex items-center gap-2">
+                {assigning && <Loader2 size={14} className="animate-spin" />} Save Assignment
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
