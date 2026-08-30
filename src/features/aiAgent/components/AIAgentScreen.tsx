@@ -15,6 +15,17 @@ import { checkQuickResponse } from "../utils/commandPatterns";
 import { runAgent, type AgentStep } from "../engine/agentLoop";
 import { tryFastPath } from "../engine/fastPath";
 import { COLLECTIONS } from "../knowledge/collectionRegistry";
+import { buildAgentContext } from "../engine/agentContext";
+import { useBatch } from "../../../contexts/BatchContext";
+
+// A pending write awaiting the user's "haan confirm".
+interface PendingWrite {
+  token: string;
+  action: string;
+  preview: any;
+  toolName: string;
+}
+const CONFIRM_WORDS = /^(haan?|yes|confirm|confirm karo|haan confirm|ji haan|ok|theek hai|karo|do it)\b/i;
 
 // Unique ID banane ka simple function
 const makeId = () => Math.random().toString(36).slice(2);
@@ -63,9 +74,13 @@ const AIAgentScreen: React.FC = () => {
   const [cloudAIMissing, setCloudAIMissing] = useState(false);
   const [aiHealth, setAIHealth] = useState(getAIHealth());
 
-  // Current logged in user
+  // Current logged in user + selected batch (SAME state as the whole app)
   const { user } = useAuth();
+  const { selectedBatchId, allBatches } = useBatch();
   const userEmail = user?.email || "unknown";
+
+  // Write awaiting explicit user confirmation.
+  const [pendingWrite, setPendingWrite] = useState<PendingWrite | null>(null);
 
   // Chat ka neeche wala hissa - auto scroll ke liye
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -130,16 +145,41 @@ const handleSend = async (userText: string) => {
       console.warn("Fast path fail, AI agent chala rahe hain:", e);
     }
 
+    // ── Confirmation handshake: user said "haan" after a pending write ──
+    let confirmToken: string | undefined;
+    if (pendingWrite && CONFIRM_WORDS.test(userText.trim())) {
+      confirmToken = pendingWrite.token;
+    }
+
     // ── Layer 3: Asli AI Agent — tools ke saath live database ──
+    // Trusted context: authenticated user + selected batch (same as the app).
+    const agentCtx = await buildAgentContext(
+      {
+        uid: user?.uid,
+        email: user?.email,
+        name: user?.name ?? user?.displayName,
+        role: user?.role,
+        assignedBatchIds: (user as any)?.assignedBatchIds,
+      },
+      { allBatchesMode: !selectedBatchId },
+    );
+    void allBatches;
+
     const answer = await runAgent(
       userText,
       {
         userEmail,
         userRole: user?.role || "Unknown",
-        // Commander aur Clerk hi data badal sakte hain
-        allowWrites: user?.role === "Company Commander" || user?.role === "Clerk",
+        // Writes follow role policy: CC broad; Clerk staff-admin; QM finance;
+        // SO inspections. Defense in depth — Firestore rules are the boundary.
+        allowWrites:
+          user?.role === "Company Commander" ||
+          user?.role === "Clerk" ||
+          user?.role === "Quarter Master" ||
+          user?.role === "Senior Officer / Inspector",
+        agentCtx,
       },
-      // pichhle 3 exchanges ka context (follow-up sawaal ke liye)
+      // pichhle exchanges ka context (follow-up sawaal ke liye)
       messages
         .filter((m) => m.type === "user" || m.type === "ai")
         .slice(-6)
@@ -147,7 +187,20 @@ const handleSend = async (userText: string) => {
           role: (m.type === "user" ? "user" : "assistant") as "user" | "assistant",
           content: m.text,
         })),
+      { confirmationToken: confirmToken },
     );
+
+    // Track a write awaiting confirmation, or clear once executed.
+    if (answer.pendingConfirmation) {
+      setPendingWrite({
+        token: answer.pendingConfirmation.token,
+        action: answer.pendingConfirmation.action,
+        preview: answer.pendingConfirmation.preview,
+        toolName: answer.pendingConfirmation.action,
+      });
+    } else if (confirmToken) {
+      setPendingWrite(null);
+    }
 
     console.log("🤖 Agent:", answer);
 
@@ -318,7 +371,7 @@ const handleSend = async (userText: string) => {
         <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-center gap-2 text-amber-800 text-xs flex-shrink-0">
           <AlertCircle size={14} />
           <span>
-            Local ERP AI active hai. Natural language fallback ke liye .env mein VITE_GROQ_API_KEY ya VITE_GEMINI_API_KEY add karo.
+            Local ERP AI active hai. Natural-language cloud AI ke liye backend AI functions deploy karo (secrets server-side rehte hain).
           </span>
         </div>
       )}

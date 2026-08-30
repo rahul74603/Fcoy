@@ -4,6 +4,7 @@
 
 import { getSchemaForAI } from "../schemas/collections.schema";
 import { AI_CONFIG } from "../config/ai.config";
+import { callGroq, browserKeysAllowed } from "./aiBackend.client";
 
 export interface GroqResponse {
   action: string;
@@ -55,9 +56,61 @@ function pickKeyIndex(): number {
 }
 
 async function groqFetch(messages: any[]): Promise<any> {
-  if (API_KEYS.length === 0) {
-    throw new Error("Koi Groq API key set nahi hai! .env check karo.");
+  // 🔒 PRODUCTION PATH: Firebase Callable Function holds the key server-side.
+  // The browser sends NO secret; the function enforces auth + CC role.
+  try {
+    const content = await callGroq({
+      messages,
+      temperature: 0.1,
+      maxTokens: 1000,
+      responseFormat: { type: 'json_object' },
+    });
+    if (content) {
+      // Return a shape compatible with the existing parser (choices[0]...).
+      return { choices: [{ message: { content } }] };
+    }
+  } catch (e: any) {
+    // permission-denied / unauthenticated must surface clearly, not silently
+    // fall back to a browser key.
+    const code = e?.code || '';
+    if (code === 'functions/permission-denied' || code === 'functions/unauthenticated'
+        || /permission-denied|unauthenticated/i.test(String(e?.message))) {
+      throw new Error('Authorization: AI sirf Company Commander use kar sakta hai.');
+    }
+    // Function missing/transient: fall through to dev-only browser keys or fail.
+    console.warn('Backend Groq call unavailable:', e?.message ?? e);
   }
+
+  // DEV-ONLY PATH: a bundled browser key is used ONLY when the dev explicitly
+  // opts in (VITE_AI_ALLOW_BROWSER_KEYS=true in a local dev server). It is
+  // never the production path and never available in production builds.
+  if (browserKeysAllowed() && AI_CONFIG.proxyUrl) {
+    const response = await fetch(`${AI_CONFIG.proxyUrl.replace(/\/$/, '')}/groq`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: MODEL,
+        messages,
+        temperature: 0.1,
+        max_tokens: 1000,
+        response_format: { type: "json_object" },
+      }),
+    });
+    if (!response.ok) throw new Error(`Groq proxy error ${response.status}`);
+    return response.json();
+  }
+
+  if (browserKeysAllowed() && API_KEYS.length > 0) {
+    return groqFetchWithBrowserKey(messages);
+  }
+
+  throw new Error(
+    "Cloud AI configured nahi hai. Backend functions deploy karein " +
+    "(local ERP commands phir bhi bina cloud AI ke chalti hain).",
+  );
+}
+
+async function groqFetchWithBrowserKey(messages: any[]): Promise<any> {
 
   const triedKeys = new Set<number>();
 

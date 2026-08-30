@@ -67,7 +67,7 @@ const isAssetLike = (category?: string, name?: string) => {
 };
 
 // QM screen ka fixed catalog (yahi list InventoryIssueScreen me hai)
-const FIXED_ITEMS: { name: string; category: string }[] = [
+export const FIXED_ITEMS: { name: string; category: string }[] = [
   { name: 'DM Shoes',     category: 'Footwear'  },
   { name: 'PT Shoes',     category: 'Footwear'  },
   { name: 'Ankle Shoes',  category: 'Footwear'  },

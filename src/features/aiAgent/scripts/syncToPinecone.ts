@@ -1,6 +1,7 @@
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { AI_CONFIG } from '../config/ai.config';
+import { callPineconeQuery, callPineconeUpsert, shouldUseBackend } from '../api/aiBackend.client';
 
 // ✅ Backend imports SABSE PEHLE - order matter karta hai!
 import '@tensorflow/tfjs-backend-webgl';
@@ -8,9 +9,10 @@ import '@tensorflow/tfjs-backend-cpu';
 import * as tf from '@tensorflow/tfjs';
 import * as use from '@tensorflow-models/universal-sentence-encoder';
 
-const PINECONE_API_KEY = AI_CONFIG.pineconeKey;
-const PINECONE_HOST = AI_CONFIG.pineconeHost;
-
+// 🔒 Pinecone secret keys live ONLY in the Cloud Function. The browser never
+// holds PINECONE_API_KEY/PINECONE_HOST; the callable function performs the
+// authenticated upsert/query. Embeddings are computed locally (TF USE) and
+// only the vector is sent to the server-side function.
 let model: use.UniversalSentenceEncoder | null = null;
 
 // ✅ Backend initialize karna
@@ -47,8 +49,9 @@ async function getEmbedding(text: string): Promise<number[]> {
 }
 
 export async function syncFirebaseToPinecone(collectionsToSync: string[]) {
-  if (!AI_CONFIG.enablePinecone || !PINECONE_API_KEY || !PINECONE_HOST) {
-    console.warn("Pinecone disabled/missing. Set VITE_AI_ENABLE_PINECONE=true, VITE_PINECONE_API_KEY and VITE_PINECONE_HOST to enable sync.");
+  // Pinecone is enabled via the deployed backend functions (secret server-side).
+  if (!AI_CONFIG.enablePinecone || !shouldUseBackend()) {
+    console.warn("Pinecone disabled: backend functions not available (RAG requires deployed functions with PINECONE_API_KEY/PINECONE_HOST).");
     return;
   }
 
@@ -84,22 +87,13 @@ export async function syncFirebaseToPinecone(collectionsToSync: string[]) {
         }
       }
 
-      // ✅ Ek batch mein upsert karo
+      // ✅ Ek batch mein upsert karo — via server-side callable (secret stays on server).
       if (vectors.length > 0) {
-        const response = await fetch(`${PINECONE_HOST}/vectors/upsert`, {
-          method: "POST",
-          headers: {
-            "Api-Key": PINECONE_API_KEY,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({ vectors })
-        });
-
-        if (!response.ok) {
-          const errText = await response.text();
-          console.error(`❌ Upsert error for ${colName}:`, errText);
-        } else {
+        try {
+          await callPineconeUpsert({ vectors });
           console.log(`✅ ${colName} sync ho gaya! (${vectors.length} docs)`);
+        } catch (err: any) {
+          console.error(`❌ Upsert error for ${colName}:`, err?.message ?? err);
         }
       }
     }
@@ -113,37 +107,21 @@ export async function syncFirebaseToPinecone(collectionsToSync: string[]) {
 
 export async function searchPinecone(queryText: string): Promise<string> {
   try {
-    if (!AI_CONFIG.enablePinecone || !PINECONE_API_KEY || !PINECONE_HOST) return "";
+    if (!AI_CONFIG.enablePinecone || !shouldUseBackend()) return "";
     const queryEmbedding = await getEmbedding(queryText);
-    
-    const response = await fetch(`${PINECONE_HOST}/query`, {
-      method: "POST",
-      headers: {
-        "Api-Key": PINECONE_API_KEY,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        vector: queryEmbedding,
-        topK: 5,           // ✅ 3 se 5 kiya
-        includeMetadata: true
-      })
-    });
 
-    if (!response.ok) {
-      console.error('❌ Pinecone search error:', await response.text());
-      return "";
-    }
+    // 🔒 Query via server-side callable — browser never sends the Pinecone key.
+    const result = await callPineconeQuery({ vector: queryEmbedding, topK: 5 });
 
-    const result = await response.json();
-    
     if (!result.matches || result.matches.length === 0) {
       return "";
     }
 
     return result.matches
-      .map((m: any) => m.metadata.text)
+      .map((m) => m.metadata?.text)
+      .filter(Boolean)
       .join("\n---\n");
-      
+
   } catch (error) {
     console.error("❌ Search error:", error);
     return "";

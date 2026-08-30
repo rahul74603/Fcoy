@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { showDoc } from '../../utils/devDataFilter';
+import { MESS_COLLECTION_PER_HEAD } from '../../config/businessConstants';
 import { useBatch } from '../../contexts/BatchContext';
 import { useAuth } from '../../contexts/AuthContext';
 import {
@@ -110,7 +111,7 @@ export const MessFundScreen: React.FC = () => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   });
-  const [colPerHead, setColPerHead] = useState('4680');
+  const [colPerHead, setColPerHead] = useState(String(MESS_COLLECTION_PER_HEAD));
   const [colTraineeCount, setColTraineeCount] = useState('');
   const [colPaymentMode, setColPaymentMode] = useState<PaymentMode>('Cash');
   const [colCheckNumber, setColCheckNumber] = useState('');
@@ -453,7 +454,7 @@ export const MessFundScreen: React.FC = () => {
         createdAt:     serverTimestamp(),
       });
       setSuccessMsg(`✓ ${formatMonth(colMonth)}: ${formatCurrency(colTotal)} collected!`);
-      setColPerHead('4680'); setColTraineeCount('');
+      setColPerHead(String(MESS_COLLECTION_PER_HEAD)); setColTraineeCount('');
       setColRemarks(''); setColCheckNumber(''); setColTransactionId('');
       setShowCollectionForm(false);
       await fetchAllData();
@@ -1011,7 +1012,7 @@ export const MessFundScreen: React.FC = () => {
           <div className="bg-white border border-green-200 rounded px-3 py-2 flex items-center gap-2">
             <Info size={12} className="text-green-600 flex-shrink-0" />
             <p className="text-[10px] text-green-700">
-              <strong>Current Trainees:</strong> {traineeCount} · Default ₹4680/month
+              <strong>Current Trainees:</strong> {traineeCount} · Default ₹{MESS_COLLECTION_PER_HEAD}/month
             </p>
           </div>
 

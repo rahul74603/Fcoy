@@ -13,6 +13,8 @@ import { updateStaffStatus } from '../api/staff.api';  // 🆕 ADD
 import { markBulkAttendance } from '../api/attendance.api';  // 🆕 ADD
 import { useAuth } from '../../../contexts/AuthContext';
 import { useBatch } from '../../../contexts/BatchContext';
+import { localDateISOString } from '../../../utils/localDate';
+import { canApproveLeave as roleCanApproveLeave, canManageLeaveTypes as roleCanManageLeaveTypes } from '../../../config/permissions';
 interface UseLeaveReturn {
   allLeaves: StaffLeave[];
   pendingLeaves: StaffLeave[];
@@ -24,6 +26,10 @@ interface UseLeaveReturn {
   loading: boolean;
   submitting: boolean;
   error: string | null;
+  /** true ONLY for Company Commander — approve/reject/return authority */
+  canApproveLeave: boolean;
+  /** true for CC + Clerk — leave-type master administration */
+  canManageLeaveTypes: boolean;
   fetchAllLeaves: () => Promise<void>;
   fetchPendingLeaves: () => Promise<void>;
   fetchCurrentLeaves: () => Promise<void>;
@@ -67,6 +73,17 @@ const DEFAULT_STATISTICS: LeaveStatistics = {
 export const useLeave = (): UseLeaveReturn => {
   const { user } = useAuth();
   const { activeBatch } = useBatch();
+
+  // 🔒 AUTHORIZATION — Only Company Commander may approve/reject/return
+  // (finalize) a leave application. This is enforced in THREE layers:
+  //   1. UI buttons hidden (LeaveManagementScreen)
+  //   2. Handler guard below (rejects even a direct/manual invocation)
+  //   3. Firestore security rules (staff_leave update) — a Ustad/Clerk
+  //      writing status/approvedBy/approvalDate/rejectionReason directly
+  //      gets PERMISSION_DENIED.
+  const canApproveLeave = roleCanApproveLeave(user?.role ?? '');
+  // Leave-type master administration is CC + Clerk (matches Firestore rules).
+  const canManageLeaveTypes = roleCanManageLeaveTypes(user?.role ?? '');
 
   const [allLeaves, setAllLeaves] = useState<StaffLeave[]>([]);
   const [pendingLeaves, setPendingLeaves] = useState<StaffLeave[]>([]);
@@ -249,6 +266,10 @@ export const useLeave = (): UseLeaveReturn => {
     setSubmitting(true);
     setError(null);
     try {
+      // 🔒 Only Company Commander may approve leave.
+      if (!canApproveLeave) {
+        throw new Error('Authorization: sirf Company Commander hi leave approve kar sakte hain.');
+      }
       // Find the leave record
       const leave = allLeaves.find(l => l.id === leaveId);
       if (!leave) {
@@ -290,8 +311,9 @@ export const useLeave = (): UseLeaveReturn => {
             remarks: `Auto: ${leave.leaveTypeName} (${leave.leaveNumber})`,
           });
 
-          // Mark attendance for each day
-          const dateStr = currentDate.toISOString().split('T')[0];
+          // Mark attendance for each day — use LOCAL business date to avoid
+          // the UTC midnight date-shift (toISOString can be "yesterday" IST).
+          const dateStr = localDateISOString(currentDate);
                     try {
             await markBulkAttendance(
               [{
@@ -348,6 +370,10 @@ export const useLeave = (): UseLeaveReturn => {
     setSubmitting(true);
     setError(null);
     try {
+      // 🔒 Only Company Commander may reject leave.
+      if (!canApproveLeave) {
+        throw new Error('Authorization: sirf Company Commander hi leave reject kar sakte hain.');
+      }
       await rejectLeave(
         leaveId,
         user?.uid ?? '',
@@ -413,6 +439,10 @@ export const useLeave = (): UseLeaveReturn => {
     setSubmitting(true);
     setError(null);
     try {
+      // 🔒 Recording a return finalizes a leave — CC only.
+      if (!canApproveLeave) {
+        throw new Error('Authorization: sirf Company Commander hi leave return record kar sakte hain.');
+      }
       // Find the leave record
       const leave = allLeaves.find(l => l.id === leaveId);
       if (!leave) {
@@ -478,6 +508,9 @@ export const useLeave = (): UseLeaveReturn => {
     setSubmitting(true);
     setError(null);
     try {
+      if (!canManageLeaveTypes) {
+        throw new Error('Authorization: leave types sirf CC/Clerk manage kar sakte hain.');
+      }
       await addLeaveType(name, code, maxDays, isPaid, description);
       await fetchLeaveTypes();
       return true;
@@ -494,6 +527,9 @@ export const useLeave = (): UseLeaveReturn => {
   ): Promise<boolean> => {
     setSubmitting(true);
     try {
+      if (!canManageLeaveTypes) {
+        throw new Error('Authorization: leave types sirf CC/Clerk manage kar sakte hain.');
+      }
       await toggleLeaveTypeStatus(typeId, isActive);
       setLeaveTypes((prev) =>
         prev.map((lt) => (lt.id === typeId ? { ...lt, isActive } : lt))
@@ -516,6 +552,7 @@ export const useLeave = (): UseLeaveReturn => {
     allLeaves, pendingLeaves, currentLeaves, staffLeaves,
     leaveTypes, activeLeaveTypes, statistics,
     loading, submitting, error,
+    canApproveLeave, canManageLeaveTypes,
     fetchAllLeaves, fetchPendingLeaves, fetchCurrentLeaves, fetchStaffLeaves,
     handleApplyLeave, handleApproveLeave, handleRejectLeave,
     handleCancelLeave, handleRecordReturn,

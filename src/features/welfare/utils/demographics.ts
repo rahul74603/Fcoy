@@ -422,6 +422,19 @@ export const downloadCSV = (
 // ─────────────────────────────────────────────
 // PRINT (A4 report, ReportsScreen ke style me)
 // ─────────────────────────────────────────────
+/**
+ * Escape user/database-derived text before inserting into generated HTML,
+ * so stored content can never become executable markup in a print preview
+ * (HTML-injection / stored-XSS protection).
+ */
+const escapeHtml = (value: unknown): string =>
+  String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
 export const printWelfareReport = (
   title: string,
   subtitle: string,
@@ -429,16 +442,16 @@ export const printWelfareReport = (
   footNote?: string,
 ) => {
   const body = sections.map(s => `
-    <h3>${s.heading}</h3>
+    <h3>${escapeHtml(s.heading)}</h3>
     <table>
-      <thead><tr>${s.headers.map(h => `<th>${h}</th>`).join('')}</tr></thead>
+      <thead><tr>${s.headers.map(h => `<th>${escapeHtml(h)}</th>`).join('')}</tr></thead>
       <tbody>
-        ${s.rows.map(r => `<tr>${r.map(c => `<td>${c ?? ''}</td>`).join('')}</tr>`).join('')}
+        ${s.rows.map(r => `<tr>${r.map(c => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`).join('')}
       </tbody>
     </table>
   `).join('');
 
-  const html = `<!DOCTYPE html><html><head><title>${title}</title><style>
+  const html = `<!DOCTYPE html><html><head><title>${escapeHtml(title)}</title><style>
     @page { margin: 12mm; size: A4 portrait; }
     body { font-family: Arial, sans-serif; font-size: 10px; color: #1a1a1a; }
     .header { text-align:center; border-bottom:3px double #1f2937; padding-bottom:8px; margin-bottom:10px; }
@@ -457,8 +470,8 @@ export const printWelfareReport = (
     @media print { button { display:none !important; } }
   </style></head><body>
     <div class="header">
-      <h1>${title}</h1>
-      <h2>${subtitle}</h2>
+      <h1>${escapeHtml(title)}</h1>
+      <h2>${escapeHtml(subtitle)}</h2>
     </div>
     <div class="purpose">
       <b>PURPOSE / प्रयोजन:</b> Ye report keval <b>KALYAN (WELFARE) NIYOJAN</b> ke liye hai —
@@ -467,7 +480,7 @@ export const printWelfareReport = (
       prayog nahi ki jaayegi. Data source: Trainee Registration Form (koi nayi jaankari nahi li gayi).
     </div>
     ${body}
-    ${footNote ? `<div class="foot">${footNote}</div>` : ''}
+    ${footNote ? `<div class="foot">${escapeHtml(footNote)}</div>` : ''}
     <div class="stamp">
       <div><div class="line">Clerk / Head Clerk</div></div>
       <div><div class="line">Company Commander</div></div>

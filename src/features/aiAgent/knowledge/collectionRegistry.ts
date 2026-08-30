@@ -569,7 +569,7 @@ export const COLLECTIONS: CollectionDef[] = [
     batchScoped: false, titleField: 'name', domain: 'system',
     fields: [{ name:'name', kind:'text', label:'Name' },
       { name:'email', kind:'text', label:'Email' },
-      { name:'role', kind:'enum', label:'Role', values:['Company Commander','Clerk','Quarter Master','Ustad'] },
+      { name:'role', kind:'enum', label:'Role', values:['Company Commander','Clerk','Quarter Master','Ustad','Senior Officer / Inspector'] },
       { name:'isActive', kind:'bool', label:'Active' }],
   },
   {
@@ -592,6 +592,39 @@ export const COLLECTIONS: CollectionDef[] = [
     synonyms: ['duty type'],
     batchScoped: false, domain: 'system',
     fields: [{ name:'name', kind:'text', label:'Name' }],
+  },
+
+  // ══════════════ SO / INSPECTION SUPERVISION ══════════════
+  {
+    name: 'inspections',
+    description: 'Senior Officer/Inspector ke inspection events (batch-wise). Read via get_inspections tool.',
+    synonyms: ['inspection', 'nirikshan', 'so inspection', 'supervision'],
+    batchScoped: true, titleField: 'subject', linkField: 'inspectionType', domain: 'training',
+    fields: [
+      { name:'subject', kind:'text', label:'Subject' },
+      { name:'inspectionType', kind:'text', label:'Type' },
+      { name:'inspectionDate', kind:'date', label:'Date' },
+      { name:'inspectorName', kind:'text', label:'Inspector' },
+      { name:'status', kind:'enum', label:'Status', values:['draft','submitted','closed'] },
+      { name:'severity', kind:'enum', label:'Severity', values:['critical','major','minor','observation'] },
+      { name:'batchNumber', kind:'text', label:'Batch' },
+    ],
+  },
+  {
+    name: 'findings',
+    description: 'Inspection findings + corrective actions. Read via get_inspections tool; verify via verify_finding (SO/CC).',
+    synonyms: ['finding', 'corrective action', 'overdue', 'verification', 'rework'],
+    batchScoped: true, titleField: 'title', linkField: 'chestNo', domain: 'training',
+    fields: [
+      { name:'title', kind:'text', label:'Title' },
+      { name:'category', kind:'text', label:'Category' },
+      { name:'severity', kind:'enum', label:'Severity', values:['critical','major','minor','observation'] },
+      { name:'status', kind:'enum', label:'Status', values:['open','in_progress','submitted','closed','rework'] },
+      { name:'assignedToRole', kind:'text', label:'Assigned Role' },
+      { name:'dueDate', kind:'date', label:'Due Date' },
+      { name:'verifiedByName', kind:'text', label:'Verified By' },
+      { name:'batchNumber', kind:'text', label:'Batch' },
+    ],
   },
 ];
 
