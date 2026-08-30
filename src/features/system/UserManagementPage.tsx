@@ -171,11 +171,25 @@ export const UserManagementPage = () => {
     const broken = !isLoginCapable(u.id);
     const warn = broken
       ? `${u.name} (${u.email}) — ye BROKEN profile hai (Auth account kabhi bana hi nahi tha, isse login possible nahi). DELETE karein?`
-      : `${u.name} (${u.email}) ka Firestore profile DELETE karein?\n\n⚠ Dhyan dein: Auth account Firebase Console se alag se delete karna hoga — warna wo email dobara use nahi hoga.`;
+      : `${u.name} (${u.email}) ka Firestore profile DELETE karein?\n\n` +
+        '⚠ Sirf Firestore profile delete hota hai.\n' +
+        '• Firebase AUTHENTICATION account DELETE NAHI hota — wo Admin SDK / backend / Firebase Console se alag se delete karna hota hai.\n' +
+        '• Recommendation: pehle "Active" ko Disabled karo (Deactivate) — turant access band. Delete sirf broken/duplicate profile ke liye.\n\n' +
+        'Profile ko pehle Deactivate bhi kar diya jayega taaki koi access na rahe. DELETE karein?';
     if (!window.confirm(warn)) return;
     try {
+      // Safety: deactivate FIRST so the account can never authenticate with
+      // a stale session even before the profile doc is removed.
+      if (!broken) {
+        try { await updateDoc(doc(db, 'users', u.id), { isActive: false }); } catch { /* best effort */ }
+      }
       await deleteDoc(doc(db, 'users', u.id));
-      setMessage(`Deleted: ${u.email}`);
+      setMessage(
+        `Deleted Firestore profile: ${u.email}. ` +
+        (broken
+          ? ''
+          : 'NOTE: Firebase Authentication account abhi bhi maujood hai — use Firebase Console / Admin SDK se alag delete karna zaroori hai.'),
+      );
       fetchUsers();
     } catch (error) {
       alert('Delete failed');

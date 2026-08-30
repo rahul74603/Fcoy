@@ -28,6 +28,70 @@ export interface ToolContext {
   allowWrites: boolean;
 }
 
+// ─────────────────────────────────────────────
+// ROLE AUTHORIZATION (defense in depth — the real enforcement is in
+// Firestore security rules; this layer fails fast with a clear message)
+// ─────────────────────────────────────────────
+const NORMALIZED_ROLE = (r: string): string =>
+  String(r ?? '').trim().toLowerCase();
+
+/** Finance/inventory writes (funds, expenses, issues, vendors) = CC or QM */
+function canFinance(ctx: ToolContext): boolean {
+  const r = NORMALIZED_ROLE(ctx.userRole);
+  return r === 'company commander' || r === 'quarter master';
+}
+/** Staff/training administration writes = CC or Clerk */
+function canManageStaff(ctx: ToolContext): boolean {
+  const r = NORMALIZED_ROLE(ctx.userRole);
+  return r === 'company commander' || r === 'clerk';
+}
+
+// Collections the AI may NEVER mutate through the generic write tools.
+// These are protected/sensitive — approval flows, identity, licensing.
+const GENERIC_WRITE_BLOCKED = new Set([
+  'users',
+  'staff_leave',      // approval fields are CC-only via dedicated rules
+  'leave_types',
+  'subscriptionHistory',
+  'subscriptionPlans',
+  'batches',
+  'subject_master',
+  'staff_subjects',
+]);
+
+// Which tier may write to which collection (generic add/update/delete).
+const FINANCE_COLLECTIONS = new Set([
+  'mess_fund_expenses', 'mess_fund_collections', 'mess_custom_categories',
+  'mess_boys', 'mess_boy_salaries',
+  'training_fund_expenses', 'training_fund_collections', 'training_fund_recoveries',
+  'training_custom_items',
+  'general_fund_expenses', 'general_fund_collections',
+  'company_assets_expenses', 'company_assets_collections', 'company_assets_custom_items',
+  'vendors', 'vendor_entries', 'vendor_payments', 'bills',
+  'fund_transfers', 'collections', 'expenses', 'recoveries',
+  'item_master', 'issue_records',
+]);
+const STAFF_COLLECTIONS = new Set([
+  'trainees', 'absentRecords', 'medicalRecords',
+  'fptRecords', 'weeklyTestRecords', 'weeklyPrograms',
+  'staff', 'staff_attendance', 'staff_duty', 'duty_types',
+  'deputation_records', 'training_schedule',
+]);
+
+function authorizeGenericWrite(ctx: ToolContext, collection: string): string | null {
+  if (!ctx.allowWrites) return 'Write permission nahi hai (read-only role).';
+  if (GENERIC_WRITE_BLOCKED.has(collection)) {
+    return `SURAKSHA: "${collection}" ko generic write se badla nahi ja sakta. Ye protected collection hai (role/approval/licensing) — sahi business screen use karo.`;
+  }
+  if (FINANCE_COLLECTIONS.has(collection) && !canFinance(ctx)) {
+    return `SURAKSHA: finance/inventory ("${collection}") sirf Company Commander ya Quarter Master likh sakte hain.`;
+  }
+  if (STAFF_COLLECTIONS.has(collection) && !canManageStaff(ctx)) {
+    return `SURAKSHA: staff/training ("${collection}") sirf Company Commander ya Clerk likh sakte hain.`;
+  }
+  return null;
+}
+
 export interface ToolResult {
   ok: boolean;
   data: any;
@@ -381,6 +445,9 @@ export async function executeTool(
                    summary: `"${args.collection}" registry me nahi hai.` };
         }
 
+        const authErr = authorizeGenericWrite(ctx, def.name);
+        if (authErr) return { ok: false, data: null, summary: authErr };
+
         const payload: Record<string, any> = { ...(args.data ?? {}) };
 
         // Batch-scoped collection me batchId apne aap lag jaye
@@ -414,6 +481,9 @@ export async function executeTool(
         if (!def) {
           return { ok: false, data: null, summary: `"${args.collection}" registry me nahi hai.` };
         }
+
+        const authErr = authorizeGenericWrite(ctx, def.name);
+        if (authErr) return { ok: false, data: null, summary: authErr };
 
         const ref  = doc(db, def.name, args.docId);
         const snap = await getDoc(ref);
@@ -450,6 +520,14 @@ export async function executeTool(
         if (!def) {
           return { ok: false, data: null, summary: `"${args.collection}" registry me nahi hai.` };
         }
+
+        // Deletes are destructive: only Company Commander may delete.
+        if (NORMALIZED_ROLE(ctx.userRole) !== 'company commander') {
+          return { ok: false, data: null,
+                   summary: 'SURAKSHA: record delete sirf Company Commander kar sakta hai.' };
+        }
+        const authErr = authorizeGenericWrite(ctx, def.name);
+        if (authErr) return { ok: false, data: null, summary: authErr };
 
         const ref  = doc(db, def.name, args.docId);
         const snap = await getDoc(ref);

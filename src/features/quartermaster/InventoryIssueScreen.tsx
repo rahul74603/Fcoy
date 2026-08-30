@@ -11,13 +11,14 @@ import {
 } from 'lucide-react';
 import {
   collection, query, where, getDocs,
-  doc, updateDoc, addDoc, serverTimestamp,
+  doc, serverTimestamp,
   onSnapshot
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { ModuleReportButton } from '../system/ModuleReportButton';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBatch } from '../../contexts/BatchContext';
+import { atomicIssue, normalizeKey } from '../../utils/inventoryStock';
 
 const SHOE_SIZES  = ['5', '6', '7', '8', '9', '10', '11', '12', '13'];
 const SHIRT_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'];
@@ -1138,26 +1139,51 @@ export const InventoryIssueScreen: React.FC = () => {
         ...newIssuedItems,
       ];
 
-      await updateDoc(doc(db, 'trainees', trainee.id), {
-        issuedKitItems:   updatedIssuedItems,
-        lastKitIssueDate: issueDateISO,
-      });
+      const issueLedgerRef = doc(collection(db, 'issue_records'));
+      const traineeRef = doc(db, 'trainees', trainee.id);
 
-      await addDoc(collection(db, 'issue_records'), {
-        traineeId:        trainee.id,
-        traineeName:      trainee.name,
-        chestNo:          trainee.chestNo,
-        platoon:          trainee.platoon ?? '',
-        issueType:        'TRAINING_ESSENTIALS',
-        issueSource:      'TRAINING_ESSENTIALS',
-        issuedItems:      newIssuedItems,
-        totalItemsIssued: cartItems.length,
-        totalUnits,
-        totalValue,
-        issuedBy,
-        batchId:          activeBatch?.id ?? '',
-        issuedAt:         serverTimestamp(),
-        issueDateISO,
+      // ⚛️ ATOMIC + CONCURRENCY-SAFE:
+      // The stock counters are verified & decremented inside a Firestore
+      // transaction. The trainee update and the issue-ledger write are staged
+      // in the SAME transaction, so either everything commits (counters +
+      // ledger + trainee) or nothing does — and two simultaneous issues
+      // can never drive stock below zero.
+      const expectedAvailable = (itemKey: string, size?: string): number => {
+        const item = allItems.find(i => normalizeKey(i.itemName) === itemKey);
+        if (!item) return 0;
+        if (size) return Number(item.sizeStock[size] ?? 0);
+        return Number(item.currentStock ?? 0);
+      };
+
+      await atomicIssue({
+        items: cartItems.map(i => ({
+          itemName: i.itemName,
+          assignedSize: i.assignedSize,
+          quantity: i.quantity,
+        })),
+        expectedAvailable,
+        applyWrites: (batch) => {
+          batch.update(traineeRef, {
+            issuedKitItems:   updatedIssuedItems,
+            lastKitIssueDate: issueDateISO,
+          });
+          batch.set(issueLedgerRef, {
+            traineeId:        trainee.id,
+            traineeName:      trainee.name,
+            chestNo:          trainee.chestNo,
+            platoon:          trainee.platoon ?? '',
+            issueType:        'TRAINING_ESSENTIALS',
+            issueSource:      'TRAINING_ESSENTIALS',
+            issuedItems:      newIssuedItems,
+            totalItemsIssued: cartItems.length,
+            totalUnits,
+            totalValue,
+            issuedBy,
+            batchId:          activeBatch?.id ?? '',
+            issuedAt:         serverTimestamp(),
+            issueDateISO,
+          });
+        },
       });
 
       setSuccessMsg(
@@ -1169,7 +1195,12 @@ export const InventoryIssueScreen: React.FC = () => {
 
     } catch (err) {
       console.error('Issue error:', err);
-      setErrorMsg('Issue karne mein error. Please retry karein.');
+      const msg = err instanceof Error ? err.message : 'Issue karne mein error.';
+      setErrorMsg(
+        msg.includes('INSUFFICIENT STOCK')
+          ? msg
+          : 'Issue karne mein error. Please retry karein.'
+      );
     } finally {
       setIssueLoading(false);
     }

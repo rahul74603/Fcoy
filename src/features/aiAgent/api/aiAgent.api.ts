@@ -87,6 +87,17 @@ function pickKeyIndex(): number {
 // SMART FETCH — 429 aaye to dusri key try karo
 // ═══════════════════════════════════════════════════
 async function geminiFetch(body: any): Promise<any> {
+  // 🔒 SECURE PATH: backend proxy holds the real Gemini key server-side.
+  if (AI_CONFIG.proxyUrl) {
+    const response = await fetch(`${AI_CONFIG.proxyUrl.replace(/\/$/, "")}/gemini`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: MODEL, ...body }),
+    });
+    if (!response.ok) throw new Error(`Gemini proxy error ${response.status}`);
+    return response.json();
+  }
+
   if (API_KEYS.length === 0) {
     throw new Error("Koi API key set nahi hai! .env check karo.");
   }

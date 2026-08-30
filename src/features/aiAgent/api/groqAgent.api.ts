@@ -55,6 +55,24 @@ function pickKeyIndex(): number {
 }
 
 async function groqFetch(messages: any[]): Promise<any> {
+  // 🔒 SECURE PATH: if a backend proxy is configured, call it (the proxy
+  // holds the real key server-side). No secret is shipped to the browser.
+  if (AI_CONFIG.proxyUrl) {
+    const response = await fetch(`${AI_CONFIG.proxyUrl.replace(/\/$/, '')}/groq`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: MODEL,
+        messages,
+        temperature: 0.1,
+        max_tokens: 1000,
+        response_format: { type: "json_object" },
+      }),
+    });
+    if (!response.ok) throw new Error(`Groq proxy error ${response.status}`);
+    return response.json();
+  }
+
   if (API_KEYS.length === 0) {
     throw new Error("Koi Groq API key set nahi hai! .env check karo.");
   }
