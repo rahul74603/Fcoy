@@ -538,7 +538,9 @@ service cloud.firestore {
           && request.resource.data.get('assignedToName', '') == resource.data.get('assignedToName', '')
           // finding content / assignment terms locked
           && request.resource.data.title == resource.data.title
-          && request.resource.data.description == resource.data.description
+          // description is optional on a finding; compare missing-field
+          // safely so a doc without it doesn't error rule evaluation.
+          && request.resource.data.get('description', '') == resource.data.get('description', '')
           && request.resource.data.severity == resource.data.severity
           && request.resource.data.responsibleArea == resource.data.responsibleArea
           && request.resource.data.category == resource.data.category
