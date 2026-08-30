@@ -78,8 +78,7 @@ async function importTs(rel) {
         return a;
       }
       return `${pre}${target}${post}`;
-    });
-    const tmp = path.join(root, 'node_modules', `.cache-test-${path.basename(rel)}.mjs`);
+    });    const tmp = path.join(root, 'node_modules', `.cache-test-${path.basename(rel)}.mjs`);
     fs.writeFileSync(tmp, js);
     return await import(pathToFileURL(tmp).href);
   }
@@ -537,7 +536,6 @@ test('write policy: inspections/findings writes SO allowed, QM denied', () => {
   assert.equal(agentContext.canWriteCollection(qm, 'findings').ok, false);
 });
 } // end agentContext tests
-
 console.log('\n■ STORAGE RULES STATIC AUDIT');
 
 const storageRules = fs.readFileSync(path.join(root, 'storage.rules'), 'utf8');
