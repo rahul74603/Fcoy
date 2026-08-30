@@ -18,8 +18,23 @@ import { assert } from 'chai';
 // @firebase/rules-unit-testing v4 — it is NOT a runtime export. Importing it
 // as a value throws "does not provide an export named 'RulesTestEnvironment'".
 // The runtime entry point is `initializeTestEnvironment`.
-import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
+import {
+  initializeTestEnvironment,
+  assertSucceeds,
+  assertFails,
+} from '@firebase/rules-unit-testing';
 import { readFileSync } from 'node:fs';
+
+// The existing suites were written with chai-as-promised's
+// assert.isFulfilled / assert.isRejected. chai-as-promised is not installed
+// (Chai 5 ships no plugin built-in). Instead of adding a dependency, alias the
+// canonical rules-unit-testing assertions onto the same names:
+//   isFulfilled(p) -> assertSucceeds(p)  (request must be allowed)
+//   isRejected(p)  -> assertFails(p)     (request must be DENIED; it still
+//                     rejects when the promise resolves OR fails for a
+//                     non-permission reason, so real bugs are never masked).
+assert.isFulfilled = (p) => assertSucceeds(p);
+assert.isRejected = (p) => assertFails(p);
 
 const PROJECT_ID = 'fcoy-test';
 

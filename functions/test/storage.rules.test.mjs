@@ -14,8 +14,19 @@ import { assert } from 'chai';
 // NOTE: `RulesTestEnvironment` is a TypeScript TYPE only in
 // @firebase/rules-unit-testing v4 — it is NOT a runtime export. The runtime
 // entry point is `initializeTestEnvironment`.
-import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
+import {
+  initializeTestEnvironment,
+  assertSucceeds,
+  assertFails,
+} from '@firebase/rules-unit-testing';
 import { readFileSync } from 'node:fs';
+
+// chai-as-promised (assert.isFulfilled / isRejected) is not installed under
+// Chai 5; alias the canonical rules-unit-testing assertions (assertFails
+// still rejects on a non-permission error or on success, so bugs aren't
+// masked). See firestore.rules.test.mjs for details.
+assert.isFulfilled = (p) => assertSucceeds(p);
+assert.isRejected = (p) => assertFails(p);
 
 const PROJECT_ID = 'fcoy-test';
 
