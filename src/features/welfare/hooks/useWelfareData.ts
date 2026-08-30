@@ -12,6 +12,7 @@ import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { showDoc } from '../../../utils/devDataFilter';
 import { useBatch } from '../../../contexts/BatchContext';
+import { useAuth } from '../../../contexts/AuthContext';
 
 import type {
   WelfareTrainee, WelfareFilters, DimensionKey, DimensionStat,
@@ -30,6 +31,11 @@ const EMPTY_FILTERS: WelfareFilters = {
 
 export const useWelfareData = () => {
   const { activeBatch, allBatches, loading: batchLoading } = useBatch();
+  const { user } = useAuth();
+  // ⛓️ "All Batches" is an authorized cross-batch view. Only Company
+  // Commander may aggregate across batches; other roles always stay within
+  // their current batch.
+  const canViewAllBatches = user?.role === 'Company Commander';
 
   const [rawTrainees, setRawTrainees] = useState<WelfareTrainee[]>([]);
   const [loading, setLoading]         = useState(true);
@@ -41,15 +47,19 @@ export const useWelfareData = () => {
   const [activeDimensions, setActiveDimensions] =
     useState<DimensionKey[]>([...PINNED_DIMENSIONS]);
 
-  // ── Batch default: active batch pe lock, warna ALL ──
+  // ── Batch default: active batch pe lock, warna ALL (CC hi ALL rakh sakte hain) ──
   useEffect(() => {
     if (batchLoading) return;
-    setFilters(prev =>
-      prev.batchId === 'ALL' && activeBatch
-        ? { ...prev, batchId: activeBatch.id }
-        : prev,
-    );
-  }, [activeBatch, batchLoading]);
+    setFilters(prev => {
+      // Non-CC kabhi ALL pe nahi reh sakte — hamesha active batch.
+      if (!canViewAllBatches && prev.batchId === 'ALL' && activeBatch) {
+        return { ...prev, batchId: activeBatch.id };
+      }
+      // CC ka intentional 'ALL' choice preserve karo; sirf shuru me
+      // (jab koi selection nahi) active batch pe default karo.
+      return prev;
+    });
+  }, [activeBatch, batchLoading, canViewAllBatches]);
 
   // ── Real-time trainees listener ──
   useEffect(() => {
@@ -74,13 +84,15 @@ export const useWelfareData = () => {
     return () => unsub();
   }, []);
 
-  // ── Batch scope: active batch is the default; ALL is only allowed when the
-  // user deliberately selects All Batches from the batch selector screen.
+  // ── Batch scope ──
+  // CC may deliberately choose 'ALL' → every (authorized) batch is pooled.
+  // Any other role is forced onto the active batch — 'ALL' is silently
+  // narrowed so the selection can never leak cross-batch data.
   const effectiveFilters = useMemo(() => (
-    activeBatch && filters.batchId === 'ALL'
+    filters.batchId === 'ALL' && !canViewAllBatches && activeBatch
       ? { ...filters, batchId: activeBatch.id }
       : filters
-  ), [activeBatch, filters]);
+  ), [filters, canViewAllBatches, activeBatch]);
 
   const batchPool = useMemo(() => (
     effectiveFilters.batchId === 'ALL'
@@ -186,6 +198,7 @@ export const useWelfareData = () => {
     activeFilterCount,
     allBatches,
     activeBatch,
+    canViewAllBatches,
 
     // actions
     toggleValue,

@@ -51,6 +51,10 @@ import { WelfareDemographicsScreen }  from './features/welfare/WelfareDemographi
 import { WeeklyProgramScreen }        from './features/weekly/WeeklyProgramScreen';
 import { MedicalRegisterScreen }      from './features/medical/MedicalRegisterScreen';
 import { DeputationScreen } from './features/ustad/screens';
+// --- Senior Officer / Inspector ---
+import SODashboard from './features/inspection/screens/SODashboard';
+import SOInspectionsScreen from './features/inspection/screens/SOInspectionsScreen';
+
 // --- Dashboard Sub-Modules ---
 import { AbsentManagement }  from './features/dashboard/AbsentManagement';
 import { TestRecordsScreen } from './features/ustad/screens';
@@ -92,6 +96,15 @@ const WELFARE_ROLES = ['Company Commander', 'Clerk', 'Quarter Master'];
 // Staff module access — CC + Clerk can manage, Ustad can view own
 const STAFF_MANAGE_ROLES = ['Company Commander', 'Clerk'];
 const STAFF_VIEW_ROLES   = ['Company Commander', 'Clerk', 'Ustad'];
+
+// Senior Officer / Inspector module — SO works it, CC oversees all
+const SO_ROLES           = ['Company Commander', 'Senior Officer / Inspector'];
+// Inspections screen is also reachable by Clerk/QM/Ustad — but only to
+// respond to corrective actions assigned to their own role (read + submit).
+const SO_INSPECTIONS_ROLES = [
+  'Company Commander', 'Senior Officer / Inspector',
+  'Clerk', 'Quarter Master', 'Ustad',
+];
 
 function App() {
   return (
@@ -255,6 +268,28 @@ function App() {
                 element={
                   <ProtectedRoute allowedRoles={QM_ROLES}>
                     <EnterpriseLayout><VendorPaymentScreen /></EnterpriseLayout>
+                  </ProtectedRoute>
+                }
+              />
+
+              {/* ════════════════════════════════
+                  SENIOR OFFICER / INSPECTOR MODULE
+                  SO: assigned-batch inspections & supervision
+                  CC: full oversight
+              ════════════════════════════════ */}
+              <Route
+                path="/so-dashboard"
+                element={
+                  <ProtectedRoute allowedRoles={SO_ROLES}>
+                    <EnterpriseLayout><SODashboard /></EnterpriseLayout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/so-inspections"
+                element={
+                  <ProtectedRoute allowedRoles={SO_INSPECTIONS_ROLES}>
+                    <EnterpriseLayout><SOInspectionsScreen /></EnterpriseLayout>
                   </ProtectedRoute>
                 }
               />

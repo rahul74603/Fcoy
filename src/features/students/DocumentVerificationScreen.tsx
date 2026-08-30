@@ -192,10 +192,14 @@ export const DocumentVerificationScreen = () => {
     setMessage('');
 
     const newFiles: FileInfo[] = [];
+    const failed: string[] = [];
 
     for (const file of filesArray) {
       const fileSizeKB = Math.round(file.size / 1024);
       try {
+        // 🔒 Every document MUST be persisted to Firebase Storage. A
+        // temporary blob: URL is NOT a persisted document and is never
+        // treated as success.
         const storage    = getStorage();
         const storageRef = ref(
           storage,
@@ -210,31 +214,35 @@ export const DocumentVerificationScreen = () => {
           fileType:   file.type,
           uploadedAt: new Date().toISOString(),
         });
-      } catch {
-        // Offline fallback — local URL
-        const localUrl = URL.createObjectURL(file);
-        newFiles.push({
-          fileName:   file.name,
-          fileUrl:    localUrl,
-          fileSize:   `${fileSizeKB}KB`,
-          fileType:   file.type,
-          uploadedAt: new Date().toISOString(),
-        });
+      } catch (uploadErr) {
+        // Upload failed — do NOT save a fake blob URL and do NOT mark the
+        // document as uploaded. Surface a retry-able error instead.
+        console.error('Document upload failed:', uploadErr);
+        failed.push(file.name);
       }
     }
 
-    setDocStatus(prev => ({
-      ...prev,
-      [currentUploadKey]: {
-        ...prev[currentUploadKey],
-        status: 'Uploaded',
-        files:  currentUploadMultiple
-          ? [...(prev[currentUploadKey]?.files || []), ...newFiles]
-          : newFiles,
-      },
-    }));
+    if (newFiles.length > 0) {
+      setDocStatus(prev => ({
+        ...prev,
+        [currentUploadKey]: {
+          ...prev[currentUploadKey],
+          status: 'Uploaded',
+          files:  currentUploadMultiple
+            ? [...(prev[currentUploadKey]?.files || []), ...newFiles]
+            : newFiles,
+        },
+      }));
+    }
 
-    setMessage(`SUCCESS: ${newFiles.length} file(s) upload ho gayi!`);
+    if (failed.length > 0) {
+      setMessage(
+        `UPLOAD FAILED: ${failed.join(', ')} — file save nahi hui. ` +
+        `Network/storage check karke dobara try (Retry) karein.`
+      );
+    } else {
+      setMessage(`SUCCESS: ${newFiles.length} file(s) upload ho gayi!`);
+    }
     setUploadingKey('');
     setCurrentUploadKey('');
     setCurrentUploadMultiple(false);

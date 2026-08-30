@@ -11,6 +11,7 @@
 import { collection, getDocs, query, where, limit as fbLimit } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { showDoc } from '../../../utils/devDataFilter';
+import { currentScopedBatchId } from '../../../utils/batchScope';
 import { COLLECTION_MAP, type CollectionDef } from '../knowledge/collectionRegistry';
 
 // ─────────────────────────────────────────────
@@ -65,11 +66,32 @@ const CACHE_TTL = 60_000; // 60 sec
 export function clearQueryCache() { docCache.clear(); }
 
 // ─────────────────────────────────────────────
-// ACTIVE BATCH
+// ACTIVE / SELECTED BATCH
 // ─────────────────────────────────────────────
+// ⛓️ The AI MUST follow the same batch the user is currently viewing in the
+// UI. BatchContext keeps `batchScope` synced to the user's selected batch
+// (default = the real active batch). We prefer that scope; we only fall
+// back to a Firestore lookup when no scope is registered (e.g. standalone
+// scripts/tests).
 let activeBatchCache: { at: number; batch: any } | null = null;
+let batchDocCache: { at: number; docs: Map<string, any> } | null = null;
 
 export async function getActiveBatchInfo(): Promise<any | null> {
+  // 1) Prefer the batch the user has actually selected in the UI.
+  const scopedId = currentScopedBatchId();
+  if (scopedId) {
+    try {
+      const batchDocs = await getBatchDocs();
+      const selected = batchDocs.get(scopedId);
+      if (selected) return selected;
+      // scope id not found in Firestore — synthesize a minimal stub so the
+      // batch filter still applies (empty result instead of leaking others)
+      return { id: scopedId, batchNumber: scopedId, batchName: scopedId, status: 'active' };
+    } catch {
+      return { id: scopedId, batchNumber: scopedId, batchName: scopedId, status: 'active' };
+    }
+  }
+
   if (activeBatchCache && Date.now() - activeBatchCache.at < CACHE_TTL) {
     return activeBatchCache.batch;
   }
@@ -88,6 +110,21 @@ export async function getActiveBatchInfo(): Promise<any | null> {
   } catch {
     return null;
   }
+}
+
+async function getBatchDocs(): Promise<Map<string, any>> {
+  if (batchDocCache && Date.now() - batchDocCache.at < CACHE_TTL) {
+    return batchDocCache.docs;
+  }
+  const snap = await getDocs(query(collection(db, 'batches')));
+  const map = new Map<string, any>();
+  snap.docs.forEach(d => {
+    const b = { id: d.id, ...d.data() } as any;
+    map.set(d.id, b);
+  });
+  batchDocCache = { at: Date.now(), docs: map };
+  activeBatchCache = { at: Date.now(), batch: map.get([...map.values()].find((b: any) => b.status === 'active')?.id ?? '') ?? null };
+  return map;
 }
 
 // ─────────────────────────────────────────────
@@ -198,6 +235,11 @@ export async function runQuery(spec: QuerySpec): Promise<QueryResult> {
   const totalScanned = docs.length;
 
   // ── Batch scoping ──
+  // ⛓️ STRICT: an empty scoped result must NEVER fall back to all batches.
+  // If the selected batch has 0 records we return 0 records — records from
+  // other batches are never shown. Legacy docs without batchId are only
+  // included when the scope targets the *real active* batch (handled via
+  // scopeVisible semantics), never when scoping returned zero.
   const wantBatch = spec.useActiveBatch ?? def.batchScoped;
   let batchNote = '';
   if (wantBatch && def.batchScoped) {
@@ -205,13 +247,14 @@ export async function runQuery(spec: QuerySpec): Promise<QueryResult> {
     if (batch?.id) {
       const before = docs.length;
       const scoped = docs.filter(d => d.batchId === batch.id);
-      // agar batch filter se sab udd gaya to filter mat lagao (purana data)
-      if (scoped.length > 0) {
-        docs = scoped;
-        batchNote = `Active batch "${batch.batchNumber ?? batch.id}" tak simit (${before}→${docs.length}).`;
-      } else {
-        batchNote = `Note: is collection me active batch ka data nahi mila, isliye saara data dikha raha hoon.`;
-      }
+      // ALWAYS apply the filter — zero stays zero, no cross-batch leak.
+      docs = scoped;
+      batchNote = `Batch "${batch.batchNumber ?? batch.id}" tak simit (${before}→${docs.length} records).`;
+    } else {
+      // No batch context at all → a batch-scoped collection returns nothing
+      // rather than every batch's data.
+      docs = [];
+      batchNote = 'Koi selected batch nahi — batch-scoped data nahi dikhaya gaya.';
     }
   }
 

@@ -9,6 +9,7 @@ import {
   SubscriptionPlan, UnitSubscription, SubscriptionHistoryEntry,
   HistoryAction, DEFAULT_PLANS, addMonths,
 } from '../types/subscription.types';
+import { verifyOwnerKey, hashOwnerKey, generateSalt } from '../utils/ownerKey';
 
 // ─────────────────────────────────────────────
 // COLLECTION PATHS
@@ -210,11 +211,26 @@ export const renewWithOwnerKey = async (
 ): Promise<{ endDate: string }> => {
   const snap = await getDoc(doc(db, CURRENT_DOC));
   if (!snap.exists()) throw new Error('Is app pe koi subscription nahi mili (wizard nahi chala?).');
-  const sub = snap.data() as UnitSubscription;
-  if (!sub.ownerKey) {
+  const sub = snap.data() as UnitSubscription & {
+    ownerKey?: string; ownerKeyHash?: string; ownerKeySalt?: string;
+  };
+  if (!sub.ownerKeyHash && !sub.ownerKey) {
     throw new Error('Is app pe owner key set nahi hai (purane setup ki app) — Owner se key mangwa lo.');
   }
-  if (sub.ownerKey !== ownerKey.trim().toUpperCase()) throw new Error('Owner key GALAT hai.');
+  // 🔒 Verify against the salted hash; plaintext is never trusted going
+  // forward (and is migrated to a hash on this successful renewal).
+  const ok = await verifyOwnerKey(ownerKey, sub);
+  if (!ok) throw new Error('Owner key GALAT hai.');
+
+  // Security fields written on every owner renewal: replace any legacy
+  // plaintext key with a fresh salted hash.
+  const salt = sub.ownerKeySalt ?? generateSalt();
+  const ownerKeyHash = await hashOwnerKey(ownerKey, salt);
+  const securityFields = {
+    ownerKeyHash,
+    ownerKeySalt: salt,
+    ownerKey: deleteField(), // remove legacy plaintext if present
+  };
 
   // ── FIRST ACTIVATION: wizard ne plan PENDING rakha tha (planId khaali) ──
   if (!sub.planId) {
@@ -237,7 +253,8 @@ export const renewWithOwnerKey = async (
       remarks: `Owner FIRST activation: ${paymentRef}`,
       updatedAt: actISO,
       updatedBy: 'OWNER-RENEW',
-    };
+      ...securityFields,
+    } as unknown as UnitSubscription;
     await setDoc(doc(db, CURRENT_DOC), activated);
     await logHistory({
       action: 'ACTIVATED',
@@ -264,7 +281,8 @@ export const renewWithOwnerKey = async (
     remarks: `Owner renewal (+${months}m): ${paymentRef}`,
     updatedAt: nowISO,
     updatedBy: 'OWNER-RENEW',
-  };
+    ...securityFields,
+  } as unknown as UnitSubscription;
   await setDoc(doc(db, CURRENT_DOC), updated);
   await logHistory({
     action: 'RENEWED',

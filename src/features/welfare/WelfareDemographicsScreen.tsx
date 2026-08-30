@@ -38,7 +38,7 @@ export const WelfareDemographicsScreen: React.FC = () => {
   const {
     filtered, facetStats, filteredStats, summary, festivalPlans,
     loading, error, filters, activeDimensions, activeFilterCount,
-    allBatches, activeBatch,
+    allBatches, activeBatch, canViewAllBatches,
     toggleValue, clearDimension, clearAllFilters,
     setBatch, setSearch, addDimension, removeDimension,
   } = useWelfareData();
@@ -236,7 +236,9 @@ export const WelfareDemographicsScreen: React.FC = () => {
               onChange={e => setBatch(e.target.value)}
               className="text-[10.5px] font-bold border border-slate-300 px-2 py-1.5 focus:outline-none focus:border-military-600 bg-white"
             >
-              <option value="ALL">All Batches ({summary.totalTrainees})</option>
+              {canViewAllBatches && (
+                <option value="ALL">All Batches ({summary.totalTrainees})</option>
+              )}
               {allBatches.map((b: any) => (
                 <option key={b.id} value={b.id}>
                   {b.batchNumber} — {b.batchName}

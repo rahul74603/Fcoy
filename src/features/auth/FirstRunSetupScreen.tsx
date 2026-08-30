@@ -25,6 +25,7 @@ import {
   collection, doc, getDocs, setDoc, addDoc, limit, query,
 } from 'firebase/firestore';
 import { auth, db , firebaseConfig } from '../../config/firebase';
+import { hashOwnerKey, generateSalt } from '../subscription/utils/ownerKey';
 import {
   AlertTriangle, CheckCircle2, Loader2, Building2, Rocket,
 } from 'lucide-react';
@@ -148,6 +149,9 @@ export const FirstRunSetupScreen: React.FC = () => {
       const plan = allPlans.find(p => p.id === planId) ?? allPlans[0];
       // Owner ka secret renew key — company ko kabhi mat dena (master notes me save karo)
       const ownerKey = 'OWN-' + Math.random().toString(36).slice(2, 8).toUpperCase();
+      // 🔒 Store ONLY a salted hash of the key — never the plaintext.
+      const ownerKeySalt = generateSalt();
+      const ownerKeyHash = await hashOwnerKey(ownerKey, ownerKeySalt);
       if (givePlan && plan) {
         const start = new Date();
         const end = addMonths(start, plan.durationMonths);
@@ -163,7 +167,8 @@ export const FirstRunSetupScreen: React.FC = () => {
           remarks: `First-run activation — ${unitName}`,
           updatedAt: now,
           updatedBy: email,
-          ownerKey,
+          ownerKeyHash,
+          ownerKeySalt,
         });
         await addDoc(collection(db, 'subscriptionHistory'), {
           action: 'ACTIVATED',
@@ -185,7 +190,8 @@ export const FirstRunSetupScreen: React.FC = () => {
           remarks: 'Pending owner activation - plan owner key se lagega (payment ke baad)',
           updatedAt: now,
           updatedBy: email,
-          ownerKey,
+          ownerKeyHash,
+          ownerKeySalt,
         });
       }
 

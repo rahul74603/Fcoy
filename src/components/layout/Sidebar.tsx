@@ -10,6 +10,7 @@ import {
   PieChart, Menu,
   Bot, Sparkles,
   UserCog, ClipboardList, Boxes, FlaskConical, Crown, Building2,
+  ClipboardCheck,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBatch } from '../../contexts/BatchContext';
@@ -381,6 +382,7 @@ export const Sidebar = () => {
                 >
                   <SubItem title="Inventory / Kit Issue" path="/issue-kit" dot="bg-blue-400" />
                 </NavGroup>
+                <NavItem title="Assigned Corrective Actions" icon={ClipboardCheck} path="/so-inspections" />
                 <NavGroup
                   title="Fund Manager"
                   icon={PieChart}
@@ -417,6 +419,7 @@ export const Sidebar = () => {
                   bgColor="bg-blue-900/30"
                 />
                 {user?.role === 'Ustad' && <NavItem title="My Dashboard" icon={Target} path="/ustad" />}
+                {user?.role === 'Ustad' && <NavItem title="Assigned Corrective Actions" icon={ClipboardCheck} path="/so-inspections" />}
                 <NavGroup
                   title="Instructor Profiles"
                   icon={UserCog}
@@ -424,8 +427,14 @@ export const Sidebar = () => {
                   badge={<NewBadge />}
                 >
                   <SubItem title="Staff List" path="/staff" dot="bg-blue-400" />
-                  <SubItem title="Subject Master" path="/subjects" dot="bg-purple-400" />
-                  <SubItem title="Subject Assignment" path="/subject-assignment" dot="bg-indigo-400" />
+                  {/* Subject Master / Assignment are CC+Clerk administration —
+                      hidden from Ustad so no menu leads to an Access-Denied wall. */}
+                  {user?.role !== 'Ustad' && (
+                    <>
+                      <SubItem title="Subject Master" path="/subjects" dot="bg-purple-400" />
+                      <SubItem title="Subject Assignment" path="/subject-assignment" dot="bg-indigo-400" />
+                    </>
+                  )}
                 </NavGroup>
                 <NavGroup
                   title="Daily Operations"
@@ -434,10 +443,16 @@ export const Sidebar = () => {
                 >
                   <SubItem title="📊 Batch Progress" path="/batch-progress" dot="bg-purple-500" />
                   <SubItem title="Training Schedule" path="/training-schedule" dot="bg-blue-400" />
-                  <SubItem title="Mark Attendance" path="/staff-attendance" dot="bg-green-400" />
+                  {/* Attendance / Duty / Deputation are CC+Clerk administration.
+                      Ustad sees staff + schedule + own leave only. */}
+                  {user?.role !== 'Ustad' && (
+                    <>
+                      <SubItem title="Mark Attendance" path="/staff-attendance" dot="bg-green-400" />
+                      <SubItem title="Duty Management" path="/duty-management" dot="bg-amber-400" />
+                      <SubItem title="Deputation Register" path="/deputation" dot="bg-purple-500" />
+                    </>
+                  )}
                   <SubItem title="Leave Management" path="/staff-leave" dot="bg-yellow-400" />
-                  <SubItem title="Duty Management" path="/duty-management" dot="bg-amber-400" />
-                  <SubItem title="Deputation Register" path="/deputation" dot="bg-purple-500" />
                 </NavGroup>
                 <div className="mx-4 my-2 h-px bg-military-800" />
               </>
@@ -457,6 +472,9 @@ export const Sidebar = () => {
                 />
                 <NavItem title="Clerk Dashboard" icon={Activity} path="/clerk" />
                 <NavItem title="Clerk Reports" icon={BarChart3} path="/reports" />
+                {user?.role !== 'Company Commander' && (
+                  <NavItem title="Assigned Corrective Actions" icon={ClipboardCheck} path="/so-inspections" />
+                )}
                 {user?.role !== 'Company Commander' && (
                   <NavGroup
                     title="Batch View"
@@ -497,6 +515,28 @@ export const Sidebar = () => {
                 </NavGroup>
                 <div className="mx-4 my-2 h-px bg-military-800" />
               </>
+            )}
+
+            {/* ═══════════════════════════════════════════════
+                🛡️ SENIOR OFFICER / INSPECTOR — SO works it; CC oversees
+            ═══════════════════════════════════════════════ */}
+            {user?.role === 'Senior Officer / Inspector' && (
+              <>
+                <RoleSectionHeader
+                  icon="🛡️"
+                  title="Senior Officer"
+                  subtitle="Inspection · Supervision · Verification"
+                  color="border-indigo-400"
+                  bgColor="bg-indigo-900/30"
+                />
+                <NavItem title="Inspection Dashboard" icon={LayoutDashboard} path="/so-dashboard" />
+                <NavItem title="Inspections & Findings" icon={ClipboardCheck} path="/so-inspections" badge={<NewBadge />} />
+                <div className="mx-4 my-2 h-px bg-military-800" />
+              </>
+            )}
+            {/* CC oversight entry inside Commander section */}
+            {user?.role === 'Company Commander' && (
+              <NavItem title="🛡️ SO Inspections Oversight" icon={ClipboardCheck} path="/so-inspections" />
             )}
 
             {/* ═══════════════════════════════════════════════

@@ -14,6 +14,8 @@ import { AI_CONFIG } from '../config/ai.config';
 import { TOOL_SCHEMAS, executeTool, type ToolContext } from './tools';
 import { buildFocusedDigest } from '../knowledge/collectionRegistry';
 import { clearQueryCache } from './queryEngine';
+import { chatGroq, chatGemini } from './llmProviders';
+
 
 export interface AgentStep {
   tool: string;
@@ -30,22 +32,52 @@ export interface AgentAnswer {
   iterations: number;
   elapsedMs: number;
   error?: string;
+  /** Set when a write needs the user's explicit YES before it runs. */
+  pendingConfirmation?: { token: string; action: string; preview: any; summary: string };
 }
 
-const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
+
 const MAX_ITERATIONS = 6;
+
+/** Pending write confirmation carried across turns (in-memory per session). */
+export interface PendingConfirmation {
+  token: string;
+  tool: string;
+  args: any;
+  preview: any;
+  summary: string;
+}
 
 // ─────────────────────────────────────────────
 // SYSTEM PROMPT
 // ─────────────────────────────────────────────
 function buildSystemPrompt(ctx: ToolContext, userMessage: string): string {
-  const today = new Date();
+  const a = ctx.agentCtx;
+  const batchLine = a
+    ? `SELECTED BATCH: ${a.selectedBatch ? `${a.selectedBatch.batchNumber ?? a.selectedBatch.id} (${a.selectedBatch.batchName ?? ''})` : 'NONE'} | BATCH MODE: ${a.batchMode}` +
+      (a.isSO ? ` | SO ASSIGNED BATCHES: ${a.user.assignedBatchIds.join(', ') || 'NONE'}` : '') +
+      ` | LOCAL DATE: ${a.todayISO}`
+    : `DATE: ${new Date().toISOString().split('T')[0]}`;
   // Focused digest = sirf sawaal se jude collections ke poore fields.
   // Isse har call ~1,270 → ~500 token ho jaata hai (Groq TPM bachta hai).
-  return `Tu "F Coy ERP Assistant" hai — BSF Training Company ka data analyst.
+  return `Tu "F Coy ERP Assistant" hai — BSF Training Company ka 360° ERP operator.
 
-DATE: ${today.toISOString().split('T')[0]} | USER: ${ctx.userRole}
+${batchLine} | USER ROLE: ${ctx.userRole}
 MODE: ${ctx.allowWrites ? 'READ+WRITE' : 'READ-ONLY (add/update mat karo)'}
+
+⚠️ BATCH KANUN (sabse zaroori):
+  • Trainee/attendance/schedule ke sawaal HAMESHA current SELECTED batch ke hain.
+  • Batch A me 0 records ho to 0 hi bolo — DOOSRI batch ka data KABHI mat dikhao.
+  • Tu khud koi batchId nahi bana sakta. SO sirf apni assigned batches dekh sakta hai.
+  • "aaj/kal/parso/Monday" jaise dates ke liye pehle resolve_date chala, phir us date se filter kar.
+
+⚠️ LOG:
+  • Trainee dhoondhne ke liye get_trainee / get_trainee_360 use kar (chest number ya naam).
+    "chest 23" = chestNo 23. Multiple matches mile to options dikha kar poochho — guess mat karo.
+  • Stock/inventory sawaal par get_stock; issue ke liye issue_inventory (wo khud atomic transaction chalata hai).
+  • Inspections/findings ke liye get_inspections; verify/rework ke liye verify_finding (SO/CC only).
+  • Finance ke liye get_finance_summary / get_fund_balance (global, batch-scoped nahi).
+  • Pehle get_context chala kar role/batch/date confirm kar liya karo jab sawaal me batch/date/role ho.
 
 ${buildFocusedDigest(userMessage)}
 
@@ -86,191 +118,9 @@ EXAMPLES:
 "Bihar ke jo FPT fail" → join_data{left:{collection:"trainees",filters:[{field:"state",op:"contains",value:"bihar"}]},right:{collection:"fptRecords",filters:[{field:"overallStatus",op:"contains",value:"fail"}]}}`;
 }
 
-// ─────────────────────────────────────────────
-// GROQ CALL (with key rotation)
-// ─────────────────────────────────────────────
-let groqKeyIdx = 0;
-
-const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-
 /** Rate-limit ki jaankari UI tak pahunchane ke liye */
 export class RateLimitError extends Error {
   constructor(public waitSeconds: number, msg: string) { super(msg); }
-}
-
-async function callGroq(messages: any[], useTools: boolean): Promise<any> {
-  const keys = AI_CONFIG.groqKeys;
-  if (!keys.length) throw new Error('Koi Groq key nahi hai');
-
-  let lastErr: any = null;
-  let rateLimitWait = 0;
-
-  // Har key try karo; agar SAARI keys rate-limited hain to
-  // ek baar thoda ruk kar dobara try karo (Groq ka limit rolling window hai).
-  for (let round = 0; round < 2; round++) {
-    for (let attempt = 0; attempt < keys.length; attempt++) {
-      const key = keys[groqKeyIdx % keys.length];
-      groqKeyIdx++;
-
-      try {
-        const body: any = {
-          model: AI_CONFIG.groqModel,
-          messages,
-          temperature: 0.1,
-          max_tokens: 1200,          // 2000 → 1200: TPM bachta hai
-        };
-        if (useTools) {
-          body.tools = TOOL_SCHEMAS;
-          body.tool_choice = 'auto';
-        }
-
-        const res = await fetch(GROQ_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-          body: JSON.stringify(body),
-        });
-
-        if (res.status === 429) {
-          // Groq batata hai kitni der rukna hai — usko padho
-          const retryAfter = parseFloat(res.headers.get('retry-after') ?? '0');
-          const txt = await res.text().catch(() => '');
-          const m = txt.match(/try again in ([\d.]+)([ms])/i);
-          const parsed = m ? (m[2] === 'm' ? parseFloat(m[1]) * 60 : parseFloat(m[1])) : 0;
-          const wait = retryAfter || parsed || 8;
-          rateLimitWait = Math.max(rateLimitWait, wait);
-          lastErr = new RateLimitError(wait, `Rate limit — ${Math.ceil(wait)}s`);
-          console.warn(`⏳ Groq key #${attempt + 1} rate limited (${wait}s)`);
-          continue;
-        }
-        if (res.status === 401) {
-          lastErr = new Error('Groq key invalid');
-          continue;
-        }
-        if (!res.ok) {
-          const txt = await res.text().catch(() => '');
-          lastErr = new Error(`Groq ${res.status}: ${txt.slice(0, 160)}`);
-          continue;
-        }
-
-        return await res.json();
-      } catch (e: any) {
-        lastErr = e;
-      }
-    }
-
-    // Saari keys rate-limited — chhota wait karke ek aur round
-    if (round === 0 && lastErr instanceof RateLimitError && rateLimitWait <= 12) {
-      console.warn(`⏳ Saari keys busy, ${Math.ceil(rateLimitWait)}s wait...`);
-      await sleep(Math.min(rateLimitWait * 1000 + 500, 12000));
-      continue;
-    }
-    break;
-  }
-
-  throw lastErr ?? new Error('Groq fail');
-}
-
-// ─────────────────────────────────────────────
-// GEMINI FALLBACK (function calling)
-// ─────────────────────────────────────────────
-function toGeminiTools() {
-  return [{
-    functionDeclarations: TOOL_SCHEMAS.map(t => ({
-      name: t.function.name,
-      description: t.function.description,
-      parameters: sanitizeForGemini(t.function.parameters),
-    })),
-  }];
-}
-
-/** Gemini strict hai — unsupported keys hata do */
-function sanitizeForGemini(schema: any): any {
-  if (!schema || typeof schema !== 'object') return schema;
-  if (Array.isArray(schema)) return schema.map(sanitizeForGemini);
-  const out: any = {};
-  for (const [k, v] of Object.entries(schema)) {
-    if (k === 'additionalProperties' || k === '$schema') continue;
-    // property without type → Gemini reject karta hai
-    if (k === 'properties' && v && typeof v === 'object') {
-      const props: any = {};
-      for (const [pk, pv] of Object.entries(v as any)) {
-        const cleaned = sanitizeForGemini(pv);
-        if (!cleaned.type) cleaned.type = 'string';
-        props[pk] = cleaned;
-      }
-      out[k] = props;
-      continue;
-    }
-    out[k] = sanitizeForGemini(v);
-  }
-  return out;
-}
-
-/**
- * Gemini models retire hote rehte hain (gemini-2.0-flash June 2026 me band ho gaya,
- * 2.5-flash-lite naye users ko nahi milta). Isliye ek fallback ladder rakhi hai —
- * 404/400 aane par apne aap agla model try hota hai.
- */
-const GEMINI_FALLBACKS = [
-  'gemini-flash-latest',
-  'gemini-2.5-flash',
-  'gemini-2.5-flash-lite',
-  'gemini-2.5-pro',
-];
-
-/** Jo model chal gaya usko yaad rakho — baar baar 404 na kha'ein */
-let workingGeminiModel: string | null = null;
-
-async function callGemini(contents: any[], systemPrompt: string): Promise<any> {
-  const keys = AI_CONFIG.geminiKeys;
-  if (!keys.length) throw new Error('Koi Gemini key nahi hai');
-
-  const models = workingGeminiModel
-    ? [workingGeminiModel]
-    : [AI_CONFIG.geminiModel, ...GEMINI_FALLBACKS.filter(m => m !== AI_CONFIG.geminiModel)];
-
-  let lastErr: any = null;
-
-  for (const model of models) {
-    for (const key of keys) {
-      try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents,
-            systemInstruction: { parts: [{ text: systemPrompt }] },
-            tools: toGeminiTools(),
-            generationConfig: { temperature: 0.1, maxOutputTokens: 1200 },
-          }),
-        });
-
-        if (res.status === 404 || res.status === 400) {
-          const txt = await res.text().catch(() => '');
-          lastErr = new Error(`Gemini ${res.status} (${model}): ${txt.slice(0, 140)}`);
-          console.warn(`⚠️ Gemini model "${model}" nahi chala, agla try...`);
-          break;                     // is model ko chhodo, agla model
-        }
-        if (res.status === 429) {
-          lastErr = new RateLimitError(20, 'Gemini rate limit');
-          continue;                  // agli key
-        }
-        if (!res.ok) {
-          const txt = await res.text().catch(() => '');
-          lastErr = new Error(`Gemini ${res.status}: ${txt.slice(0, 140)}`);
-          continue;
-        }
-
-        if (workingGeminiModel !== model) {
-          workingGeminiModel = model;
-          console.log(`✅ Gemini model locked: ${model}`);
-        }
-        return await res.json();
-      } catch (e: any) { lastErr = e; }
-    }
-  }
-  throw lastErr ?? new Error('Gemini fail');
 }
 
 // ─────────────────────────────────────────────
@@ -310,9 +160,9 @@ function friendlyError(groqErr: any, gemErr: any): string {
 
   if (/401|invalid|api key/i.test(msg)) {
     return (
-      `🔑 **API key galat hai ya expire ho gayi**\n\n` +
-      `\`.env\` me VITE_GROQ_API_KEY aur VITE_GEMINI_API_KEY check karein.\n` +
-      `Key badalne ke baad dev server **restart** zaroori hai.\n\n` +
+      `🔑 **Cloud AI credentials issue**\n\n` +
+      `Secrets server-side (Cloud Functions) me hote hain. Admin se confirm karein ` +
+      `ki AI functions deployed hain aur GROQ_API_KEY/GEMINI_API_KEY Secret Manager me set hain.\n\n` +
       `_Technical: ${msg.slice(0, 120)}_`
     );
   }
@@ -335,17 +185,23 @@ export async function runAgent(
   userMessage: string,
   ctx: ToolContext,
   history: { role: 'user' | 'assistant'; content: string }[] = [],
+  opts: { confirmationToken?: string; provider?: 'groq' | 'gemini' } = {},
 ): Promise<AgentAnswer> {
   const started = Date.now();
-  /** Groq ki error yaad rakho — Gemini bhi fail ho to dono ka context chahiye */
   let groqError: any = null;
   const steps: AgentStep[] = [];
   clearQueryCache();                      // har naye sawaal par fresh data
 
-  const systemPrompt = buildSystemPrompt(ctx, userMessage);
+  // If the user is confirming a write, inject the token into tool context.
+  const toolCtx: ToolContext = { ...ctx, confirmToken: opts.confirmationToken };
+
+  const systemPrompt = buildSystemPrompt(toolCtx, userMessage);
+
+  // Whether a cloud LLM is reachable at all (backend callable OR dev keys).
+  const cloudAvailable = AI_CONFIG.enableGroq || AI_CONFIG.enableGemini;
 
   // ══════════ GROQ PATH (primary) ══════════
-  if (AI_CONFIG.enableGroq && AI_CONFIG.groqKeys.length) {
+  if (cloudAvailable) {
     try {
       const messages: any[] = [
         { role: 'system', content: systemPrompt },
@@ -354,7 +210,15 @@ export async function runAgent(
       ];
 
       for (let i = 0; i < MAX_ITERATIONS; i++) {
-        const data = await callGroq(messages, true);
+        let data: any;
+        try {
+          data = await chatGroq({ messages, tools: TOOL_SCHEMAS, temperature: 0.1, maxTokens: 1200 });
+        } catch (gErr) {
+          // Groq unavailable → bounded failover to Gemini for this turn.
+          console.warn('Groq fail, Gemini failover:', (gErr as any)?.message);
+          groqError = gErr;
+          throw gErr;
+        }
         const msg = data?.choices?.[0]?.message;
         if (!msg) throw new Error('Groq se khaali response');
 
@@ -375,10 +239,29 @@ export async function runAgent(
         const results = await Promise.all(calls.map(async (c: any) => {
           let args: any = {};
           try { args = JSON.parse(c.function.arguments || '{}'); } catch { /* ignore */ }
-          const r = await executeTool(c.function.name, args, ctx);
+          const r = await executeTool(c.function.name, args, toolCtx);
           steps.push({ tool: c.function.name, args, summary: r.summary, ok: r.ok });
           return { c, r };
         }));
+
+        // If any tool requested confirmation, surface that and STOP (no write).
+        const confirmReq = results.find(({ r }) => r.data?.needsConfirmation);
+        if (confirmReq && !opts.confirmationToken) {
+          const { r } = confirmReq;
+          return {
+            reply:
+              `⚠️ **Confirm karein — ye action data badlega:**\n\n` +
+              `🔧 ${r.data.action}\n` +
+              '```\n' + JSON.stringify(r.data.preview, null, 2) + '\n```\n\n' +
+              `Sahi hai to **"haan confirm"** likhein — tabhi action hoga.`,
+            steps, provider: 'groq', model: AI_CONFIG.groqModel,
+            iterations: i + 1, elapsedMs: Date.now() - started,
+            pendingConfirmation: {
+              token: r.data.confirmToken, action: r.data.action,
+              preview: r.data.preview, summary: r.summary,
+            },
+          };
+        }
 
         for (const { c, r } of results) {
           messages.push({
@@ -395,7 +278,7 @@ export async function runAgent(
         role: 'user',
         content: 'Ab tak jo data mila hai usi se final jawab do. Aur tool mat chalao.',
       });
-      const finalData = await callGroq(messages, false);
+      const finalData = await chatGroq({ messages, temperature: 0.1, maxTokens: 1200 });
       return {
         reply: finalData?.choices?.[0]?.message?.content?.trim() || 'Data mila par jawab nahi ban paaya.',
         steps, provider: 'groq', model: AI_CONFIG.groqModel,
@@ -408,8 +291,8 @@ export async function runAgent(
     }
   }
 
-  // ══════════ GEMINI PATH (fallback) ══════════
-  if (AI_CONFIG.enableGemini && AI_CONFIG.geminiKeys.length) {
+  // ══════════ GEMINI PATH (fallback — backend callable in production) ══════════
+  if (AI_CONFIG.enableGemini) {
     try {
       const contents: any[] = [
         ...history.slice(-6).map(h => ({
@@ -420,7 +303,7 @@ export async function runAgent(
       ];
 
       for (let i = 0; i < MAX_ITERATIONS; i++) {
-        const data = await callGemini(contents, systemPrompt);
+        const data = await chatGemini(contents, systemPrompt, TOOL_SCHEMAS);
         const parts = data?.candidates?.[0]?.content?.parts ?? [];
         const fnCalls = parts.filter((p: any) => p.functionCall).map((p: any) => p.functionCall);
 
@@ -436,15 +319,33 @@ export async function runAgent(
         contents.push({ role: 'model', parts: fnCalls.map((fc: any) => ({ functionCall: fc })) });
 
         const responseParts: any[] = [];
+        let confirmReq: any = null;
         for (const fc of fnCalls) {
-          const r = await executeTool(fc.name, fc.args ?? {}, ctx);
+          const r = await executeTool(fc.name, fc.args ?? {}, toolCtx);
           steps.push({ tool: fc.name, args: fc.args, summary: r.summary, ok: r.ok });
+          if (r.data?.needsConfirmation && !opts.confirmationToken) confirmReq = r;
           responseParts.push({
             functionResponse: {
               name: fc.name,
               response: { ok: r.ok, summary: r.summary, data: r.data },
             },
           });
+        }
+        if (confirmReq) {
+          const r = confirmReq;
+          return {
+            reply:
+              `⚠️ **Confirm karein — ye action data badlega:**\n\n` +
+              `🔧 ${r.data.action}\n` +
+              '```\n' + JSON.stringify(r.data.preview, null, 2) + '\n```\n\n' +
+              `Sahi hai to **"haan confirm"** likhein.`,
+            steps, provider: 'gemini', model: AI_CONFIG.geminiModel,
+            iterations: i + 1, elapsedMs: Date.now() - started,
+            pendingConfirmation: {
+              token: r.data.confirmToken, action: r.data.action,
+              preview: r.data.preview, summary: r.summary,
+            },
+          };
         }
         contents.push({ role: 'user', parts: responseParts });
       }
@@ -474,7 +375,7 @@ export async function runAgent(
   }
 
   return {
-    reply: '❌ Koi AI key configured nahi hai. .env me VITE_GROQ_API_KEY ya VITE_GEMINI_API_KEY daalein.',
+    reply: '❌ Cloud AI available nahi hai. Local ERP commands chal rahi hain; natural-language AI ke liye backend AI functions deploy karna hoga (secrets server-side).',
     steps, provider: 'none', model: '-', iterations: 0,
     elapsedMs: Date.now() - started, error: 'no keys',
   };
