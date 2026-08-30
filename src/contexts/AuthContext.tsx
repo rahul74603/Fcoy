@@ -1,13 +1,15 @@
 // D:\ALL PROJECTS\BSF COYs\frontend\src\contexts\AuthContext.tsx
 
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, type ReactNode } from 'react';
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signOut,
   User as FirebaseUser
 } from 'firebase/auth';
-import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
+import {
+  collection, doc, getDoc, getDocs, onSnapshot, query, where,
+} from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
 import { setDevViewer } from '../utils/devDataFilter';
 
@@ -20,6 +22,9 @@ const normalizeRole = (value: unknown): string => {
   if (key === 'cc' || key === 'commander' || key === 'company commander') return 'Company Commander';
   if (key === 'clerk') return 'Clerk';
   if (key === 'ustad' || key === 'instructor') return 'Ustad';
+  if (key === 'so' || key === 'senior officer' || key === 'inspector'
+      || key === 'senior officer / inspector' || key === 'senior officer/inspector')
+    return 'Senior Officer / Inspector';
   return String(value ?? 'Unassigned');
 };
 
@@ -35,6 +40,7 @@ interface AppUser {
   createdBy: string;
   isDeveloper: boolean; // 🧪 Dev/Practice account flag
   customerId?: string | null; // 👑 Customer (CC) account ki Customer ID
+  assignedBatchIds?: string[]; // 🔎 Senior Officer/Inspector assigned batches
 }
 
 interface AuthContextType {
@@ -74,20 +80,78 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser]       = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Real-time profile listener — so role changes / deactivation made by the
+  // Company Commander take effect in the active session immediately, instead
+  // of the session retaining stale elevated access until next login.
+  const profileUnsubRef = useRef<(() => void) | null>(null);
+
+  const stopProfileListener = () => {
+    if (profileUnsubRef.current) {
+      profileUnsubRef.current();
+      profileUnsubRef.current = null;
+    }
+  };
+
+  /** Attach a live listener to the signed-in user's profile document. */
+  const watchProfile = (firebaseUser: FirebaseUser, legacyEmailFallback = false) => {
+    stopProfileListener();
+    const applyData = (userData: Record<string, any>) => {
+      setUser({
+        uid:         firebaseUser.uid,
+        email:       firebaseUser.email,
+        displayName: firebaseUser.displayName,
+        name:        String(userData['name']        ?? firebaseUser.displayName ?? 'User'),
+        role:        normalizeRole(userData['role']),
+        phone:       String(userData['phone']       ?? 'N/A'),
+        designation: String(userData['designation'] ?? 'Unassigned'),
+        isActive:    userData['isActive'] !== false,
+        createdBy:   String(userData['createdBy']   ?? 'Unknown'),
+        isDeveloper: Boolean(userData['isDeveloper'] ?? false),
+        customerId:  userData['customerId'] != null ? String(userData['customerId']) : null,
+        assignedBatchIds: Array.isArray(userData["assignedBatchIds"]) ? userData["assignedBatchIds"].map(String) : [],
+      });
+      setDevViewer(Boolean(userData['isDeveloper'] ?? false));
+    };
+
+    profileUnsubRef.current = onSnapshot(
+      doc(db, 'users', firebaseUser.uid),
+      (snap) => {
+        if (snap.exists()) {
+          applyData(snap.data() as Record<string, any>);
+        } else if (legacyEmailFallback && firebaseUser.email) {
+          // Legacy profile keyed by a random id — poll once via email lookup.
+          getDocs(query(collection(db, 'users'), where('email', '==', firebaseUser.email)))
+            .then(legacySnap => {
+              if (!legacySnap.empty) applyData(legacySnap.docs[0].data() as Record<string, any>);
+            })
+            .catch(() => { /* static fallback already set */ });
+        }
+        setLoading(false);
+      },
+      () => {
+        // Permission/transient errors: keep the session with basic info.
+        setLoading(false);
+      },
+    );
+  };
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(
       auth,
       async (firebaseUser: FirebaseUser | null) => {
         if (firebaseUser) {
           await loadUserData(firebaseUser);
+          // Keep authorization state current for the lifetime of the session.
+          watchProfile(firebaseUser, true);
         } else {
+          stopProfileListener();
           setUser(null);
           setDevViewer(false);
           setLoading(false);
         }
       }
     );
-    return () => unsubscribe();
+    return () => { unsubscribe(); stopProfileListener(); };
   }, []);
 
   // ─── LOAD USER DATA FROM FIRESTORE ───────
@@ -110,6 +174,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           createdBy:   String(userData['createdBy']   ?? 'Unknown'),
           isDeveloper: Boolean(userData['isDeveloper'] ?? false),
           customerId:  userData['customerId'] != null ? String(userData['customerId']) : null,
+          assignedBatchIds: Array.isArray(userData["assignedBatchIds"]) ? userData["assignedBatchIds"].map(String) : [],
         });
         setDevViewer(Boolean(userData['isDeveloper'] ?? false));
       } else {
@@ -223,6 +288,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           createdBy:   String(userData['createdBy']   ?? 'Unknown'),
           isDeveloper: Boolean(userData['isDeveloper'] ?? false),
           customerId:  userData['customerId'] != null ? String(userData['customerId']) : null,
+          assignedBatchIds: Array.isArray(userData["assignedBatchIds"]) ? userData["assignedBatchIds"].map(String) : [],
         });
         setDevViewer(Boolean(userData['isDeveloper'] ?? false));
 

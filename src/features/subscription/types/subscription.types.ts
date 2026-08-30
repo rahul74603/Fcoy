@@ -31,7 +31,12 @@ export interface UnitSubscription {
   remarks: string;
   updatedAt: string;
   updatedBy: string;
-  ownerKey?: string;     // 🔑 sirf owner jaanta hai — renew/unlock isi se hota hai
+  // 🔑 Owner renew key. The plaintext `ownerKey` is LEGACY and no longer
+  // written. New documents store only a salted hash that cannot reveal the
+  // key to a client reader.
+  ownerKey?: string;
+  ownerKeyHash?: string;
+  ownerKeySalt?: string;
 }
 
 export type HistoryAction =

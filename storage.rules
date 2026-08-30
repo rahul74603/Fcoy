@@ -1,0 +1,69 @@
+rules_version = '2';
+
+// ═══════════════════════════════════════════════════════════════════════
+// FCOY TRAINING-COMMAND ERP — FIREBASE STORAGE SECURITY RULES
+// ───────────────────────────────────────────────────────────────────────
+// Documents/photos are NOT public. Only authenticated, active staff may
+// read/write, and only within the company's storage tree. Trainee
+// documents (the `documents/` tree) are managed by Clerk/CC (verification
+// screen) and QM (kit records may attach bills). Deletes are restricted
+// to the Company Commander.
+// ═══════════════════════════════════════════════════════════════════════
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+    function userDoc() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+    function role() {
+      return userDoc().role;
+    }
+    function isActive() {
+      return signedIn() && userDoc().isActive != false;
+    }
+    function isCC()    { return isActive() && role() == 'Company Commander'; }
+    function isClerk() { return isActive() && role() == 'Clerk'; }
+    function isQM()    { return isActive() && role() == 'Quarter Master'; }
+
+    // File-type/size guard for uploads (images + PDF).
+    function validDocUpload() {
+      return request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*')
+        || request.resource.contentType == 'application/pdf';
+    }
+
+    // ── Trainee verification documents ──
+    // Clerk/CC upload and manage; QM may upload (kit-related); all active
+    // staff may read (verification status is viewed across dashboards).
+    match /documents/{allPaths=**} {
+      allow read:  if isActive();
+      allow write: if (isCC() || isClerk() || isQM()) && validDocUpload();
+      allow delete: if isCC();
+    }
+
+    // ── Trainee photos (stored directly when used) ──
+    match /trainees/{allPaths=**} {
+      allow read:  if isActive();
+      allow write: if (isCC() || isClerk() || isQM())
+                   && request.resource.size < 15 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+      allow delete: if isCC();
+    }
+
+    // ── Bill / receipt uploads (finance) — CC + QM ──
+    match /bills/{allPaths=**} {
+      allow read:  if isActive();
+      allow write: if (isCC() || isQM()) && validDocUpload();
+      allow delete: if isCC();
+    }
+
+    // Default deny for anything else.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

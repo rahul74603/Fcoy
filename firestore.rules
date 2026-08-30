@@ -1,34 +1,574 @@
 rules_version = '2';
+
+// ═══════════════════════════════════════════════════════════════════════
+// FCOY TRAINING-COMMAND ERP — FIRESTORE SECURITY RULES
+// ───────────────────────────────────────────────────────────────────────
+// Defense-in-depth authorization. The React UI ALSO hides controls, but
+// hiding UI is NOT security — every sensitive operation is enforced here
+// at the data layer.
+//
+// Roles (users/{uid}.role, normalized):
+//   'Company Commander' — full administrative authority
+//   'Clerk'             — clerk/operations administration
+//   'Quarter Master'    — finance / inventory / assets
+//   'Ustad'             — instructor: training/staff view + own actions
+//
+// Batch isolation:
+//   Batch-scoped documents carry `batchId`. Documents without `batchId`
+//   are legacy/global. Rules do NOT restrict reads by batch (staff are
+//   allowed to switch between their own company's batches via the UI);
+//   the UI batch scope is enforced client-side. Cross-*company* isolation
+//   is handled by separate Firebase projects per company deployment.
+//
+// Developer/test isolation:
+//   Documents/batches tagged `isDevData: true` belong to the dev sandbox.
+//   They are ONLY readable/writable by developer accounts or the
+//   Company Commander. Regular users can never read or create dev data.
+// ═══════════════════════════════════════════════════════════════════════
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() { return request.auth != null; }
-    function roleIs(role) {
-      return signedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role;
-    }
-    function canManage() {
-      return roleIs('Company Commander') || roleIs('Clerk');
+
+    // ──────────────────────────────────────────────────────────────────
+    // CORE HELPERS
+    // ──────────────────────────────────────────────────────────────────
+    function signedIn() {
+      return request.auth != null;
     }
 
-    // Subject Master and staff assignments are used by the training administration screens.
-    // All authenticated staff may view them; only CC and Clerk may modify them.
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function role() {
+      return userDoc().role;
+    }
+
+    // First-run wizard has not yet completed (config/firstRun marker absent).
+    function firstRunOpen() {
+      return !exists(/databases/$(database)/documents/config/firstRun);
+    }
+    function isCC()      { return signedIn() && role() == 'Company Commander'; }
+    function isClerk()   { return signedIn() && role() == 'Clerk'; }
+    function isQM()      { return signedIn() && role() == 'Quarter Master'; }
+    function isUstad()   { return signedIn() && role() == 'Ustad'; }
+    function isSO()      { return signedIn() && role() == 'Senior Officer / Inspector'; }
+    function isStaff()   { return signedIn() && role() in ['Company Commander', 'Clerk', 'Quarter Master', 'Ustad', 'Senior Officer / Inspector']; }
+    function isActive()  { return signedIn() && userDoc().isActive != false; }
+
+    // Management tier = CC or Clerk (per existing business rules)
+    function canManage() { return isActive() && (isCC() || isClerk()); }
+    // Finance / inventory tier = CC or Quarter Master
+    function canFinance() { return isActive() && (isCC() || isQM()); }
+
+    function isDeveloper() {
+      return signedIn() && userDoc().isDeveloper == true;
+    }
+    // CC or a marked developer test account
+    function canUseDevSandbox() {
+      return isCC() || isDeveloper();
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // DEV / TEST DATA ISOLATION
+    // ──────────────────────────────────────────────────────────────────
+    function resourceIsDev() {
+      return resource != null && resource.data.isDevData == true;
+    }
+    function requestIsDev() {
+      return request.resource.data.isDevData == true;
+    }
+    // A document is visible to this user if it is NOT dev-tagged, or the
+    // user is CC / a developer account.
+    function canReadDevData() {
+      return !resourceIsDev() || canUseDevSandbox();
+    }
+    // A write is only permitted if:
+    //  • the incoming document is NOT dev-tagged (normal company data), or
+    //  • the writer is CC / a developer sandbox account.
+    // This prevents a regular user from either creating dev-tagged data or
+    // writing into the dev/test sandbox.
+    function canWriteDevData() {
+      return !requestIsDev() || canUseDevSandbox();
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // USER PROFILE PROTECTION
+    // ──────────────────────────────────────────────────────────────────
+    // Protected authorization fields. A normal user must never be able to
+    // escalate role / developer flag / active flag on themselves or others.
+    // D1 fix: assignedBatchIds (SO inspection scope) and customerId are also
+    // authorization fields — a user may NEVER grant themselves more batches
+    // or change subscription ownership. Only the CC branch (which bypasses
+    // this function) may set them via User Management.
+    function protectedUserFieldsUnchanged() {
+      return resource.data.role        == request.resource.data.role
+          && (resource.data.isDeveloper == true) == (request.resource.data.isDeveloper == true)
+          && (resource.data.isActive    == false) == (request.resource.data.isActive == false)
+          && resource.data.get('assignedBatchIds', []) == request.resource.data.get('assignedBatchIds', [])
+          && resource.data.get('customerId', null) == request.resource.data.get('customerId', null);
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // USERS COLLECTION
+    // ──────────────────────────────────────────────────────────────────
+    match /users/{userId} {
+      // Every authenticated staff member may read user profiles
+      // (needed for role lookups, staff lists, approvals).
+      allow read: if isStaff() && canReadDevData();
+
+      // First-run wizard: before setup has completed, the very first
+      // account may create its own Company Commander profile. The
+      // config/firstRun marker only exists AFTER a successful wizard run,
+      // so this path can never be re-used on a configured app.
+      // Otherwise, only CC may create new user profiles (User Management).
+      allow create: if
+        (isCC() && canWriteDevData())
+        ||
+        (signedIn() && firstRunOpen()
+          && request.resource.data.role == 'Company Commander');
+
+      // CC may update any profile (role changes, activation, deactivation).
+      // A user may update their OWN profile but NEVER the protected
+      // authorization fields (role / isDeveloper / isActive).
+      allow update: if
+        (isCC() && canWriteDevData())
+        ||
+        (isActive() && request.auth.uid == userId
+          && protectedUserFieldsUnchanged());
+
+      // Only CC may delete a Firestore profile document.
+      // (NOTE: deleting the Firestore doc does NOT delete the Firebase
+      // Authentication account — that requires Admin SDK / backend.)
+      allow delete: if isCC();
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // BATCHES  (lifecycle = CC / Clerk)
+    // ──────────────────────────────────────────────────────────────────
+    match /batches/{batchId} {
+      allow read: if isStaff() && canReadDevData();
+      // CC/Clerk create batches; only they may flip a dev-tagged batch.
+      allow create: if canManage() && canWriteDevData();
+      allow update: if canManage() && canWriteDevData()
+                    && (!requestIsDev() || canUseDevSandbox());
+      allow delete: if isCC();
+    }
+
+    match /config/{docId} {
+      allow read: if isStaff();
+      // activeBatch pointer is written by CC/Clerk batch lifecycle.
+      // The firstRun marker is written once by the setup wizard (allowed
+      // only while setup is still open).
+      allow write: if isCC() || isClerk()
+                   || (docId == 'firstRun' && signedIn() && firstRunOpen());
+    }
+
+    match /unitConfig/{docId} {
+      allow read: if isStaff();
+      allow write: if isCC() || (signedIn() && firstRunOpen());
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // STAFF DOMAIN
+    // ──────────────────────────────────────────────────────────────────
+    match /staff/{staffId} {
+      allow read: if isStaff() && canReadDevData();
+      allow create: if canManage() && canWriteDevData();
+      allow update: if canManage() && canWriteDevData();
+      allow delete: if isCC();
+    }
+
+    // Staff attendance — managed by CC/Clerk; Ustad may view.
+    match /staff_attendance/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+
+    // Staff duty roster — CC/Clerk manage; others view.
+    match /staff_duty/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+    match /duty_types/{id} {
+      allow read: if isStaff();
+      allow write: if canManage() && canWriteDevData();
+    }
+
+    // Deputation records — CC/Clerk manage.
+    match /deputation_records/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+    match /udhariRecords/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // STAFF LEAVE  — THE CRITICAL AUTHORIZATION RULE
+    // ──────────────────────────────────────────────────────────────────
+    // Business rule: ONLY Company Commander may approve / reject / return
+    // / finalize a leave application. Ustad and Clerk MUST NOT be able to
+    // change approval status — not from the UI and not via a direct
+    // Firestore write.
+    match /staff_leave/{leaveId} {
+      allow read: if isStaff() && canReadDevData();
+
+      // Creating a leave application: any active staff member may apply
+      // (self-apply or clerk applying on behalf). A brand-new application
+      // must start in 'pending' and must NOT carry approval fields.
+      allow create: if isActive()
+        && request.resource.data.status == 'pending'
+        && request.resource.data.approvedBy == ''
+        && request.resource.data.rejectionReason == ''
+        && (request.resource.data.approvalDate == null
+            || request.resource.data.approvalDate == '')
+        && canWriteDevData();
+
+      // UPDATES:
+      //  • CC: full control (approve / reject / cancel / record return).
+      //  • Others (Clerk/Ustad/QM): may only touch NON-approval fields
+      //    (e.g. remarks/cancel of their own application). They can NEVER
+      //    change status, approvedBy, approvalDate, rejectionReason.
+      allow update: if canWriteDevData() && (
+        isCC()
+        ||
+        ( isActive()
+          && resource.data.status == request.resource.data.status
+          && resource.data.approvedBy == request.resource.data.approvedBy
+          && (('approvalDate' in resource.data) == ('approvalDate' in request.resource.data))
+          && resource.data.rejectionReason == request.resource.data.rejectionReason )
+      );
+
+      // Only CC may delete a leave record.
+      allow delete: if isCC();
+    }
+
+    match /leave_types/{id} {
+      allow read: if isStaff();
+      allow write: if canManage() && canWriteDevData();
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // TRAINING / SUBJECT DOMAIN
+    // ──────────────────────────────────────────────────────────────────
     match /subject_master/{id} {
-      allow read: if signedIn();
-      allow create, update, delete: if canManage();
+      allow read: if isStaff();
+      allow write: if canManage() && canWriteDevData();
     }
     match /staff_subjects/{id} {
-      allow read: if signedIn();
-      allow create, update, delete: if canManage();
+      allow read: if isStaff();
+      allow write: if canManage() && canWriteDevData();
     }
-    match /activity_logs/{id} {
-      allow read: if signedIn();
-      allow create: if signedIn();
+    match /training_schedule/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
     }
 
-    // Existing ERP modules use many legacy collections. Keep the application
-    // operational for authenticated staff while those modules are migrated to
-    // collection-specific role rules.
+    // Test / FPT / weekly records — CC/Clerk manage, all staff view.
+    match /fptRecords/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+    match /weeklyTestRecords/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+    match /weeklyPrograms/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // TRAINEES
+    // ──────────────────────────────────────────────────────────────────
+    // Trainee master records. Clerk/CC create & edit (registration,
+    // documents, kit status). QM needs write for kit-issue updates.
+    // Ustad has read-only access (view for training).
+    match /trainees/{traineeId} {
+      allow read: if isStaff() && canReadDevData();
+      allow create: if (canManage() || canFinance()) && canWriteDevData();
+      allow update: if (canManage() || canFinance()) && canWriteDevData();
+      allow delete: if isCC();
+    }
+
+    // Absence / medical records — clerk operations; staff view.
+    match /absentRecords/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+    match /medicalRecords/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // FINANCE DOMAIN  — CC + Quarter Master only
+    // (mess / training / general / company-assets funds, vendors,
+    //  bills, transfers, recoveries, collections, expenses)
+    // ──────────────────────────────────────────────────────────────────
+    match /mess_fund_expenses/{id}    { allow read: if isStaff() && canReadDevData(); allow write: if canFinance() && canWriteDevData(); }
+    match /mess_fund_collections/{id} { allow read: if isStaff() && canReadDevData(); allow write: if canFinance() && canWriteDevData(); }
+    match /mess_custom_categories/{id} { allow read: if isStaff(); allow write: if canFinance() && canWriteDevData(); }
+    match /mess_boys/{id}             { allow read: if isStaff(); allow write: if canFinance() && canWriteDevData(); }
+    match /mess_boy_salaries/{id}     { allow read: if isStaff(); allow write: if canFinance() && canWriteDevData(); }
+
+    match /training_fund_expenses/{id}    { allow read: if isStaff() && canReadDevData(); allow write: if canFinance() && canWriteDevData(); }
+    match /training_fund_collections/{id} { allow read: if isStaff() && canReadDevData(); allow write: if canFinance() && canWriteDevData(); }
+    match /training_fund_recoveries/{id}  { allow read: if isStaff() && canReadDevData(); allow write: if canFinance() && canWriteDevData(); }
+    match /training_custom_items/{id}     { allow read: if isStaff(); allow write: if canFinance() && canWriteDevData(); }
+
+    match /general_fund_expenses/{id}    { allow read: if isStaff(); allow write: if canFinance() && canWriteDevData(); }
+    match /general_fund_collections/{id} { allow read: if isStaff(); allow write: if canFinance() && canWriteDevData(); }
+
+    match /company_assets_expenses/{id}      { allow read: if isStaff() && canReadDevData(); allow write: if canFinance() && canWriteDevData(); }
+    match /company_assets_collections/{id}   { allow read: if isStaff(); allow write: if canFinance() && canWriteDevData(); }
+    match /company_assets_custom_items/{id}  { allow read: if isStaff(); allow write: if canFinance() && canWriteDevData(); }
+
+    match /vendors/{id}         { allow read: if isStaff(); allow write: if canFinance() && canWriteDevData(); }
+    match /vendor_entries/{id}  { allow read: if isStaff() && canReadDevData(); allow write: if canFinance() && canWriteDevData(); }
+    match /vendor_payments/{id} { allow read: if isStaff(); allow write: if canFinance() && canWriteDevData(); }
+    match /bills/{id}           { allow read: if isStaff(); allow write: if canFinance() && canWriteDevData(); }
+
+    match /fund_transfers/{id}  { allow read: if isStaff(); allow write: if canFinance() && canWriteDevData(); }
+    match /collections/{id}     { allow read: if isStaff(); allow write: if canFinance() && canWriteDevData(); }
+    match /expenses/{id}        { allow read: if isStaff(); allow write: if canFinance() && canWriteDevData(); }
+    match /recoveries/{id}      { allow read: if isStaff(); allow write: if canFinance() && canWriteDevData(); }
+
+    // ──────────────────────────────────────────────────────────────────
+    // INVENTORY
+    // ──────────────────────────────────────────────────────────────────
+    // Item master = global catalog. Finance tier manages; staff view.
+    match /item_master/{id} {
+      allow read: if isStaff();
+      allow write: if canFinance() && canWriteDevData();
+    }
+    // Issue ledger — QM/CC create issues; all staff may view.
+    match /issue_records/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow create: if canFinance() && canWriteDevData();
+      allow update: if canFinance() && canWriteDevData();
+      allow delete: if isCC();
+    }
+
+    // Authoritative stock counters used for concurrent-issue protection.
+    // Maintained by the atomic issue transaction; CC/QM only. Balances may
+    // never be driven negative by an issue (the transaction enforces this).
+    match /stock_ledgers/{itemKey} {
+      allow read: if isStaff();
+      allow write: if canFinance()
+        && (request.resource.data.balance is number
+            && request.resource.data.balance >= 0);
+      match /sizes/{size} {
+        allow read: if isStaff();
+        allow write: if canFinance()
+          && (request.resource.data.balance is number
+              && request.resource.data.balance >= 0);
+      }
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // ACTIVITY LOGS
+    // ──────────────────────────────────────────────────────────────────
+    match /activity_logs/{id} {
+      allow read: if isStaff() && canReadDevData();
+      // Any active staff member may log an action they performed.
+      allow create: if isActive();
+      allow update, delete: if isCC();
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // SUBSCRIPTION / LICENSING  (master F-Coy owner tooling)
+    // ──────────────────────────────────────────────────────────────────
+    // The subscription STATE document is readable by everyone (the app
+    // shows a read-only license chip) but WRITABLE ONLY by CC.
+    // No secret owner key is stored in plaintext; the owner renewal flow
+    // verifies a salted hash (ownerKeyHash) that is not client-readable.
+    match /subscription/{docId} {
+      allow read: if isStaff();
+      allow write: if isCC()
+        || (signedIn() && firstRunOpen());
+    }
+    match /subscriptionHistory/{id} {
+      allow read: if isStaff();
+      allow create: if isCC()
+        || (signedIn() && firstRunOpen());
+      allow update, delete: if isCC();
+    }
+    match /subscriptionPlans/{id} {
+      allow read: if isStaff();
+      allow write: if isCC()
+        || (signedIn() && firstRunOpen());
+    }
+    // Master-app bridge records (cross-customer). Only CC of the master
+    // deployment touches these. apiKey fields live here and are NOT
+    // exposed to regular company users.
+    match /customers/{id} {
+      allow read, write: if isCC();
+    }
+    match /customerSubscriptions/{id} {
+      allow read: if isStaff();
+      allow write: if isCC();
+    }
+    match /companyBridges/{id} {
+      allow read, write: if isCC();
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // LEGACY / MISC collections used by existing screens
+    // ──────────────────────────────────────────────────────────────────
+    match /ustads/{id} {
+      allow read: if isStaff();
+      allow write: if canManage() && canWriteDevData();
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // SENIOR OFFICER / INSPECTOR — INSPECTION & SUPERVISION
+    // ──────────────────────────────────────────────────────────────────
+    // SO is a SUPERVISORY role. It inspects assigned batches, records
+    // findings, assigns/verifies corrective actions, and reports upward to
+    // the Company Commander. It is NOT another commander: it cannot approve
+    // leave, manage users, touch finance/inventory stock, or subscription.
+    //
+    // Batch security (enforced here, not only in the UI):
+    //   • CC     → all inspections/findings
+    //   • SO     → only documents whose batchId is in the SO's own
+    //              users/{uid}.assignedBatchIds
+    //
+    // Immutability: batchId / createdBy / inspectionId / verification
+    // ownership fields cannot be changed after creation.
+    function soAssignedBatchOk(batchId) {
+      return isCC()
+        || (isActive() && isSO()
+            && batchId in userDoc().assignedBatchIds);
+    }
+
+    match /inspections/{id} {
+      allow read: if isStaff() && canReadDevData();
+
+      // SO creates inspections only for an assigned batch.
+      allow create: if (isSO() || isCC())
+        && isActive()
+        && soAssignedBatchOk(request.resource.data.batchId)
+        && request.resource.data.inspectorId == request.auth.uid
+        && request.resource.data.createdBy == request.auth.uid
+        && canWriteDevData();
+
+      // SO edits inspections within assigned batches; ownership fields and
+      // batchId are immutable.
+      // D3 fix: once an inspection leaves 'draft' it must NEVER return to
+      // 'draft' (prevents submitted→draft→delete audit-trail erasure).
+      allow update: if isActive() && (isSO() || isCC())
+        && soAssignedBatchOk(resource.data.batchId)
+        && request.resource.data.batchId == resource.data.batchId
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.inspectorId == resource.data.inspectorId
+        && (resource.data.status == 'draft'
+            || request.resource.data.status != 'draft')
+        && canWriteDevData();
+
+      // Only the creating SO may delete its own DRAFT; CC may delete any.
+      // D3 fix: the no-draft-regression rule above means a submitted
+      // inspection can never be made draft, so it cannot be deleted here.
+      // Dev-tagged records may only be deleted by CC/developer accounts.
+      allow delete: if isCC()
+        || (isActive() && isSO()
+            && resource.data.batchId in userDoc().assignedBatchIds
+            && resource.data.createdBy == request.auth.uid
+            && resource.data.status == 'draft'
+            && (!resourceIsDev() || canUseDevSandbox()));
+    }
+
+    match /findings/{id} {
+      allow read: if isStaff() && canReadDevData();
+
+      // SO/CC create findings for an assigned batch.
+      allow create: if (isSO() || isCC())
+        && isActive()
+        && soAssignedBatchOk(request.resource.data.batchId)
+        && request.resource.data.createdBy == request.auth.uid
+        && canWriteDevData();
+
+      // Updates:
+      //  • CC: full control within inspection lifecycle.
+      //  • SO (assigned batch): may drive the lifecycle/verification fields,
+      //    but never change batchId/createdBy/inspectionId/ownership, and
+      //    D3: a CLOSED finding stays closed (no reopen/re-verify erasure).
+      //  • Assigned responsible role (Clerk/QM/Ustad): D2 fix — may ONLY
+      //    advance a finding they are assigned to through the response
+      //    lifecycle. They cannot reassign it, change severity/due date/
+      //    corrective action/title/description, set verification fields,
+      //    close it, or move it backwards (closed/reopened state locked).
+      allow update: if isActive() && canWriteDevData() && (
+        isCC()
+        ||
+        // SO / inspector on an assigned batch
+        ( isSO()
+          && soAssignedBatchOk(resource.data.batchId)
+          && request.resource.data.batchId == resource.data.batchId
+          && request.resource.data.createdBy == resource.data.createdBy
+          && request.resource.data.inspectionId == resource.data.inspectionId
+          // D3: once a finding is CLOSED it is terminal — status must stay
+          // 'closed' and the verification stamp (verifiedBy/verifiedAt) can
+          // never be cleared or rewritten (prevents closed→reopen→delete
+          // audit-trail erasure). Before closure the SO drives the normal
+          // lifecycle (open→in_progress→submitted→closed / submitted→rework).
+          && ( resource.data.status != 'closed'
+               || ( request.resource.data.status == 'closed'
+                    && request.resource.data.get('verifiedBy', '') == resource.data.get('verifiedBy', '')
+                    && request.resource.data.get('verifiedAt', '') == resource.data.get('verifiedAt', '') ) ) )
+        ||
+        // Assigned responsible staff (Clerk/QM/Ustad) — response only
+        ( !isSO() && !isCC()
+          && resource.data.assignedToRole == role()
+          // ownership / reassignment tampering locked
+          && request.resource.data.batchId == resource.data.batchId
+          && request.resource.data.createdBy == resource.data.createdBy
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.inspectionId == resource.data.inspectionId
+          && request.resource.data.assignedToRole == resource.data.assignedToRole
+          && request.resource.data.get('assignedToName', '') == resource.data.get('assignedToName', '')
+          // finding content / assignment terms locked
+          && request.resource.data.title == resource.data.title
+          && request.resource.data.description == resource.data.description
+          && request.resource.data.severity == resource.data.severity
+          && request.resource.data.responsibleArea == resource.data.responsibleArea
+          && request.resource.data.category == resource.data.category
+          && request.resource.data.dueDate == resource.data.dueDate
+          && request.resource.data.correctiveAction == resource.data.correctiveAction
+          // verification fields locked
+          && request.resource.data.get('verifiedBy', '') == resource.data.get('verifiedBy', '')
+          && request.resource.data.get('verifiedAt', '') == resource.data.get('verifiedAt', '')
+          && request.resource.data.get('verifiedByName', '') == resource.data.get('verifiedByName', '')
+          // lifecycle: only forward response transitions, no regression
+          && request.resource.data.status in ['in_progress', 'submitted']
+          && request.resource.data.status != 'closed'
+          && ( (resource.data.status == 'open'     && request.resource.data.status == 'in_progress')
+            || (resource.data.status == 'rework'   && request.resource.data.status == 'in_progress')
+            || (resource.data.status == 'in_progress' && request.resource.data.status == 'submitted')
+            || (resource.data.status == 'rework'   && request.resource.data.status == 'submitted') ) )
+      );
+
+      // SO may delete only its OWN open/rework finding in an assigned batch.
+      // D3: a closed finding can never be reverted to open/rework (above),
+      // so a verified finding cannot be deleted either. Dev-tagged records
+      // are restricted to CC/developer accounts.
+      allow delete: if isCC()
+        || (isActive() && isSO()
+            && resource.data.batchId in userDoc().assignedBatchIds
+            && resource.data.createdBy == request.auth.uid
+            && resource.data.status in ['open', 'rework']
+            && (!resourceIsDev() || canUseDevSandbox()));
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // DEFAULT DENY
+    // ──────────────────────────────────────────────────────────────────
+    // Any collection not explicitly matched above is DENIED to all
+    // non-admin clients. There is NO authenticated-user catch-all.
     match /{document=**} {
-      allow read, write: if signedIn();
+      allow read, write: if false;
     }
   }
 }

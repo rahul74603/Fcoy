@@ -1,0 +1,27 @@
+{
+  "name": "fcoy-functions",
+  "description": "FCOY Training-Command ERP — server-side AI proxy. Holds cloud AI secrets; the browser never sees them.",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "engines": {
+    "node": "20"
+  },
+  "scripts": {
+    "serve": "firebase emulators:start --only functions,firestore,storage,auth",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log",
+    "test": "npm run test:rules && npm run test:storage",
+    "test:rules": "firebase emulators:exec --project fcoy-test 'mocha test/firestore.rules.test.mjs'",
+    "test:storage": "firebase emulators:exec --project fcoy-test 'mocha test/storage.rules.test.mjs'"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.6.0",
+    "firebase-functions": "^5.1.1"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
+    "chai": "^5.1.1",
+    "mocha": "^10.7.3"
+  }
+}
