@@ -28,12 +28,16 @@
 
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+import { getAuth } from 'firebase-admin/auth';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { defineSecret } from 'firebase-functions/params';
 import * as logger from 'firebase-functions/logger';
 import {
   runGroqFailover, runGeminiFailover, geminiModelLadder,
 } from './aiFailover.mjs';
+import {
+  assertCallerIsCommander, normalizeStaffInput, provisionStaff, ProvisioningError,
+} from './staffProvisioning.mjs';
 
 // ───────────────────────────────────────────────────────────────────────
 // LAZY firebase-admin initialization.
@@ -52,11 +56,18 @@ import {
 // the same automatic credentials as before — nothing about auth changes.
 // ───────────────────────────────────────────────────────────────────────
 let _db = null;
+let _auth = null;
 function getDb() {
   if (_db) return _db;
   if (!getApps().length) initializeApp();
   _db = getFirestore();
   return _db;
+}
+function getAdminAuth() {
+  if (_auth) return _auth;
+  if (!getApps().length) initializeApp();
+  _auth = getAuth();
+  return _auth;
 }
 
 // ── Secrets (values live in Google Secret Manager, never in the repo) ──
@@ -340,6 +351,52 @@ export const aiPineconeUpsert = onCall(
     } catch (err) {
       if (err instanceof HttpsError) throw err;
       throw safeError('unavailable', 'RAG upsert failed.', err);
+    }
+  },
+);
+
+// ───────────────────────────────────────────────────────────────────────
+// 5) STAFF ACCOUNT PROVISIONING (CC-only, server-side Admin SDK)
+//    data: { name, email, password, role, phone?, designation?,
+//            assignedBatchIds?: string[] }
+//
+// Replaces client-side createUserWithEmailAndPassword: only a Company
+// Commander (active) can mint staff logins. The callable creates BOTH the
+// Auth account and the Firestore profile with Admin SDK, forces
+// isDeveloper=false, never trusts role/customerId from the client, and rolls
+// back the Auth user if the profile write fails. Operates only inside this
+// Firebase project (the company boundary).
+// ───────────────────────────────────────────────────────────────────────
+export const createStaffAccount = onCall(
+  { timeoutSeconds: 60, memory: '256MiB' },
+  async (request) => {
+    // assertAiAuthorized already enforces signed-in + active + CC and returns
+    // the caller identity; re-assert against the fetched profile.
+    const caller = await assertAiAuthorized(request);
+
+    try {
+      const callerSnap = await getDb().collection('users').doc(request.auth.uid).get();
+      assertCallerIsCommander(callerSnap.exists ? callerSnap.data() : null);
+
+      const input = normalizeStaffInput(request.data || {});
+      const result = await provisionStaff(getAdminAuth(), getDb(), { uid: caller.uid }, input);
+      // Only non-sensitive identity fields are returned — never password,
+      // tokens, customerId or internal flags.
+      return { uid: result.uid, email: result.email, role: result.role };
+    } catch (err) {
+      if (err instanceof HttpsError) throw err;
+      if (err instanceof ProvisioningError) {
+        // Map the domain error code to the matching callable status.
+        const statusByCode = {
+          'permission-denied': 'permission-denied',
+          'invalid-argument': 'invalid-argument',
+          'already-exists':    'already-exists',
+          'internal':          'internal',
+        };
+        throw new HttpsError(statusByCode[err.code] || 'internal', err.message);
+      }
+      logger.error('Staff provisioning failed', { uid: request.auth?.uid, err: String(err) });
+      throw new HttpsError('internal', 'Staff account create nahi ho paya.');
     }
   },
 );

@@ -14,12 +14,13 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { UserPlus, Shield, Search, Trash2, AlertTriangle, Eye, EyeOff, Loader2, KeyRound } from 'lucide-react';
-import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
+import { collection, getDocs, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { getAuth, sendPasswordResetEmail } from 'firebase/auth';
 import { getApps, initializeApp } from 'firebase/app';
 import { db, firebaseConfig } from '../../config/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBatch } from '../../contexts/BatchContext';
+import { createStaffAccount } from './api/staffProvisioning.client';
 import { Layers } from 'lucide-react';
 
 interface UserModel {
@@ -120,7 +121,7 @@ export const UserManagementPage = () => {
     );
   }, [users, search]);
 
-  // ── CREATE: REAL login-enabled staff account (session safe) ──
+  // ── CREATE: staff account via SERVER-SIDE callable (Admin SDK, CC-only) ──
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setMessage('');
@@ -131,38 +132,25 @@ export const UserManagementPage = () => {
     setCreating(true);
     const email = formData.email.trim().toLowerCase();
     try {
-      const staffAuth = provisionAuth();
-
-      // 1) Firebase Auth account — SECONDARY app pe (CC session untouched ✓)
-      const cred = await createUserWithEmailAndPassword(staffAuth, email, formData.password);
-
-      // 2) Firestore profile — Document ID = AUTH UID (yehi rule hai, tabhi login chalega)
-      await setDoc(doc(db, 'users', cred.user.uid), {
+      // Auth account + Firestore profile dono Cloud Function (Admin SDK) se
+      // bante hain. Server CC hi hone ka check karta hai aur
+      // isDeveloper/customerId ko client se trust nahi karta.
+      await createStaffAccount({
         name: formData.name,
         email,
+        password: formData.password,
         phone: formData.phone,
         designation: formData.designation,
         role: formData.role,
         assignedBatchIds: formData.role === 'Senior Officer / Inspector' ? soBatchIds : [],
-        isActive: true,
-        isDeveloper: false, // dev flag kabhi yahan se nahi
-        createdAt: new Date().toISOString(),
-        createdBy: user?.uid || 'System',
       });
-
-      await staffAuth.signOut();
 
       setMessage(`SUCCESS: ${email} ka LOGIN account ban gaya ✓ — password staff ko de do.`);
       setFormData({ name: '', email: '', password: '', phone: '', designation: '', role: 'Clerk' });
       setSoBatchIds([]);
       fetchUsers();
     } catch (err: any) {
-      let msg = `ERROR: ${err.message}`;
-      if (err.code === 'auth/email-already-in-use') msg = 'ERROR: Ye email pehle se registered hai.';
-      else if (err.code === 'auth/weak-password') msg = 'ERROR: Password kamzor hai (min 6 characters).';
-      else if (err.code === 'auth/invalid-email') msg = 'ERROR: Email format galat hai.';
-      else if (err.code === 'auth/operation-not-allowed') msg = 'ERROR: Firebase Console → Authentication → Email/Password enable karo.';
-      setMessage(msg);
+      setMessage(`ERROR: ${err.message}`);
     } finally {
       setCreating(false);
     }

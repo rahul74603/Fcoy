@@ -9,8 +9,6 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import {
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
   updatePassword,
   EmailAuthProvider,
   reauthenticateWithCredential,
@@ -24,6 +22,7 @@ import {
   auth as firebaseAuth,
   db
 } from '../../config/firebase';
+import { createStaffAccount } from './api/staffProvisioning.client';
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -114,10 +113,6 @@ export const SettingsScreen = () => {
 
   // ── Active Tab ──
   const [activeTab, setActiveTab] = useState<'profile' | 'security' | 'staff' | 'unit'>('profile');
-
-  // ── Commander re-auth password ──
-  const [cmdPassword, setCmdPassword] = useState('');
-  const [showCmdPw,   setShowCmdPw]   = useState(false);
 
   // ── CSS helpers ──
   const inputCls    = "w-full border border-slate-300 px-3 py-2 text-xs focus:outline-none focus:border-military-700 bg-white rounded";
@@ -283,54 +278,29 @@ export const SettingsScreen = () => {
       setError('Password minimum 6 characters ka hona chahiye');
       return;
     }
-    if (!cmdPassword) {
-      setError('Apna (Commander) password enter karo');
-      return;
-    }
-
     setCreateLoading(true);
     setError('');
     setSuccess('');
 
-    const commanderEmail    = user?.email ?? '';
-    const commanderPassword = cmdPassword;
-
     try {
-      const newUserCred = await createUserWithEmailAndPassword(
-        firebaseAuth, createForm.email, createForm.password
-      );
-
-      await setDoc(doc(db, 'users', newUserCred.user.uid), {
+      // Staff account server-side banta hai (Cloud Function + Admin SDK).
+      // CC ki session chhedi nahi jati; function khud CC-only authorize karta
+      // hai aur isDeveloper/customerId client se trust nahi karta.
+      await createStaffAccount({
         name:        createForm.name,
-        email:       createForm.email,
+        email:       createForm.email.trim().toLowerCase(),
+        password:    createForm.password,
         phone:       createForm.phone,
         designation: createForm.designation,
         role:        createForm.role,
-        isActive:    true,
-        createdBy:   user?.uid ?? '',
-        createdAt:   new Date().toISOString(),
       });
-
-      await signInWithEmailAndPassword(firebaseAuth, commanderEmail, commanderPassword);
 
       setSuccess(`✓ ${createForm.name} (${createForm.role}) ka account ban gaya!`);
       setCreateForm({ name: '', email: '', password: '', phone: '', designation: '', role: 'Clerk' });
-      setCmdPassword('');
       fetchStaff();
     } catch (err: any) {
       console.error(err);
-      if (err.code === 'auth/email-already-in-use') {
-        setError('Yeh email already registered hai');
-      } else if (err.code === 'auth/weak-password') {
-        setError('Password zyada strong chahiye (min 6 chars)');
-      } else if (err.code === 'auth/wrong-password') {
-        setError('Aapka (Commander) password galat hai');
-      } else {
-        setError(`Error: ${err.message}`);
-      }
-      try {
-        await signInWithEmailAndPassword(firebaseAuth, commanderEmail, commanderPassword);
-      } catch { /* already logged in */ }
+      setError(`Error: ${err.message}`);
     } finally {
       setCreateLoading(false);
     }
@@ -879,28 +849,6 @@ export const SettingsScreen = () => {
                         <option value="Quarter Master">Quarter Master (Inventory)</option>
                         <option value="Ustad">Ustad (Training)</option>
                       </select>
-                    </div>
-                  </div>
-
-                  {/* Commander re-auth password */}
-                  <div className="bg-amber-50 border border-amber-200 rounded p-3 mb-4">
-                    <label className="text-[10px] font-black text-amber-800 uppercase block mb-1.5">
-                      🔐 Aapka (Commander) Password — Account Create ke Baad Re-Login ke Liye *
-                    </label>
-                    <div className="relative max-w-xs">
-                      <input
-                        type={showCmdPw ? 'text' : 'password'}
-                        value={cmdPassword}
-                        onChange={e => setCmdPassword(e.target.value)}
-                        required
-                        className="w-full border border-amber-300 px-3 py-2 text-xs rounded focus:outline-none focus:border-amber-500 bg-white"
-                        placeholder="Apna current password dalein"
-                      />
-                      <button type="button"
-                        onClick={() => setShowCmdPw(!showCmdPw)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
-                        {showCmdPw ? <EyeOff size={13} /> : <Eye size={13} />}
-                      </button>
                     </div>
                   </div>
 
