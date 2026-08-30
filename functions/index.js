@@ -26,7 +26,7 @@
 //       ai.gemini_model=gemini-flash-latest
 // ═══════════════════════════════════════════════════════════════════════
 
-import { initializeApp } from 'firebase-admin/app';
+import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { defineSecret } from 'firebase-functions/params';
@@ -35,8 +35,29 @@ import {
   runGroqFailover, runGeminiFailover, geminiModelLadder,
 } from './aiFailover.mjs';
 
-initializeApp();
-const db = getFirestore();
+// ───────────────────────────────────────────────────────────────────────
+// LAZY firebase-admin initialization.
+//
+// The Functions emulator ANALYZES this module (imports it) to discover the
+// callable definitions. Doing initializeApp()/getFirestore() at top level
+// forces Application Default Credentials (ADC) discovery at import time.
+// ADC probes the Google metadata endpoint (169.254.169.254); on a developer
+// machine outside GCP that probe can hang on a black-holed route instead of
+// failing fast, blowing past the emulator's 10s analysis timeout
+// ("Cannot determine backend specification").
+//
+// Deferring init until the first actual invocation keeps module analysis
+// lightweight and makes NO outbound calls (no ADC probe, no Firestore, no
+// Groq/Gemini/Pinecone) during import. In production the runtime provides
+// the same automatic credentials as before — nothing about auth changes.
+// ───────────────────────────────────────────────────────────────────────
+let _db = null;
+function getDb() {
+  if (_db) return _db;
+  if (!getApps().length) initializeApp();
+  _db = getFirestore();
+  return _db;
+}
 
 // ── Secrets (values live in Google Secret Manager, never in the repo) ──
 // Multiple Groq/Gemini keys are supported for bounded server-side failover:
@@ -88,7 +109,7 @@ async function assertAiAuthorized(request) {
   const uid = request.auth.uid;
   let snap;
   try {
-    snap = await db.collection('users').doc(uid).get();
+    snap = await getDb().collection('users').doc(uid).get();
   } catch (err) {
     logger.error('AI proxy role lookup failed', { uid, err: String(err) });
     throw new HttpsError('internal', 'Authorization check failed.');
