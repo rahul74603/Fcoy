@@ -40,11 +40,15 @@ const QM    = { uid: 'qmUid',   email: 'qm@example.com' };
 const USTAD = { uid: 'ustadUid', email: 'ustad@example.com' };
 
 async function seedProfiles(env) {
-  const admin = env.firestoreAdmin();
-  await admin.doc('users/ccUid').set({ name: 'CC', email: CC.email, role: 'Company Commander', isActive: true });
-  await admin.doc('users/clerkUid').set({ name: 'Clerk', email: CLERK.email, role: 'Clerk', isActive: true });
-  await admin.doc('users/qmUid').set({ name: 'QM', email: QM.email, role: 'Quarter Master', isActive: true });
-  await admin.doc('users/ustadUid').set({ name: 'Ustad', email: USTAD.email, role: 'Ustad', isActive: true });
+  // rules-unit-testing v4 has no firestoreAdmin(); seed inside a single
+  // rules-disabled context (local emulator only, mock "owner" token).
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const admin = ctx.firestore();
+    await admin.doc('users/ccUid').set({ name: 'CC', email: CC.email, role: 'Company Commander', isActive: true });
+    await admin.doc('users/clerkUid').set({ name: 'Clerk', email: CLERK.email, role: 'Clerk', isActive: true });
+    await admin.doc('users/qmUid').set({ name: 'QM', email: QM.email, role: 'Quarter Master', isActive: true });
+    await admin.doc('users/ustadUid').set({ name: 'Ustad', email: USTAD.email, role: 'Ustad', isActive: true });
+  });
 }
 
 function authedStorage(env, auth) {
@@ -67,27 +71,27 @@ describe('Storage rules', () => {
     it('Clerk can upload a document', async () => {
       await assert.isFulfilled(
         authedStorage(testEnv, CLERK)
-          .bucket().file('documents/REG1/aadhar_1.png').save(PNG));
+          .ref('documents/REG1/aadhar_1.png').put(PNG, { contentType: 'image/png' }));
     });
     it('Ustad cannot upload a document', async () => {
       await assert.isRejected(
         authedStorage(testEnv, USTAD)
-          .bucket().file('documents/REG1/aadhar_1.png').save(PNG));
+          .ref('documents/REG1/aadhar_1.png').put(PNG, { contentType: 'image/png' }));
     });
     it('QM can upload a document', async () => {
       await assert.isFulfilled(
         authedStorage(testEnv, QM)
-          .bucket().file('documents/REG1/bill_1.png').save(PNG));
+          .ref('documents/REG1/bill_1.png').put(PNG, { contentType: 'image/png' }));
     });
     it('CC can delete a document; Clerk cannot', async () => {
       await authedStorage(testEnv, CLERK)
-        .bucket().file('documents/REG1/x.png').save(PNG);
+        .ref('documents/REG1/x.png').put(PNG, { contentType: 'image/png' });
       await assert.isRejected(
         authedStorage(testEnv, CLERK)
-          .bucket().file('documents/REG1/x.png').delete());
+          .ref('documents/REG1/x.png').delete());
       await assert.isFulfilled(
         authedStorage(testEnv, CC)
-          .bucket().file('documents/REG1/x.png').delete());
+          .ref('documents/REG1/x.png').delete());
     });
   });
 
@@ -95,17 +99,17 @@ describe('Storage rules', () => {
     it('unauthenticated cannot read', async () => {
       await assert.isRejected(
         testEnv.unauthenticatedContext().storage()
-          .bucket().file('documents/REG1/x.png').save(PNG));
+          .ref('documents/REG1/x.png').put(PNG, { contentType: 'image/png' }));
     });
     it('public write to an arbitrary path is denied', async () => {
       await assert.isRejected(
         testEnv.unauthenticatedContext().storage()
-          .bucket().file('public/shell.html').save(Buffer.from('<script>')));
+          .ref('public/shell.html').put(Buffer.from('<script>'), { contentType: 'text/html' }));
     });
     it('unmatched tree write is denied', async () => {
       await assert.isRejected(
         authedStorage(testEnv, CC)
-          .bucket().file('secrets/key.txt').save(Buffer.from('x')));
+          .ref('secrets/key.txt').put(Buffer.from('x'), { contentType: 'text/plain' }));
     });
   });
 });

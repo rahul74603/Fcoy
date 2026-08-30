@@ -43,28 +43,57 @@ const USTAD = { uid: 'ustadUid', email: 'ustad@example.com' };
 const SO    = { uid: 'soUid',   email: 'so@example.com' };
 
 async function seedProfiles(env) {
-  // Write profiles with admin (bypasses rules) so role lookups resolve.
-  const admin = env.firestoreAdmin();
-  await admin.doc('users/ccUid').set({
-    name: 'CC', email: CC.email, role: 'Company Commander',
-    isActive: true, isDeveloper: false,
+  // Write profiles with admin privileges (rules bypassed) so role lookups
+  // resolve. rules-unit-testing v4 has NO `firestoreAdmin()`; the supported
+  // bypass mechanism is withSecurityRulesDisabled(), whose context is valid
+  // ONLY inside its callback (eagerly cleaned up afterwards). We do all the
+  // seed writes inside ONE callback against that disabled-context Firestore.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const admin = ctx.firestore();
+    await admin.doc('users/ccUid').set({
+      name: 'CC', email: CC.email, role: 'Company Commander',
+      isActive: true, isDeveloper: false,
+    });
+    await admin.doc('users/clerkUid').set({
+      name: 'Clerk', email: CLERK.email, role: 'Clerk',
+      isActive: true, isDeveloper: false,
+    });
+    await admin.doc('users/qmUid').set({
+      name: 'QM', email: QM.email, role: 'Quarter Master',
+      isActive: true, isDeveloper: false,
+    });
+    await admin.doc('users/ustadUid').set({
+      name: 'Ustad', email: USTAD.email, role: 'Ustad',
+      isActive: true, isDeveloper: false,
+    });
+    await admin.doc('users/soUid').set({
+      name: 'SO', email: SO.email, role: 'Senior Officer / Inspector',
+      isActive: true, isDeveloper: false, assignedBatchIds: ['batchA'],
+    });
   });
-  await admin.doc('users/clerkUid').set({
-    name: 'Clerk', email: CLERK.email, role: 'Clerk',
-    isActive: true, isDeveloper: false,
-  });
-  await admin.doc('users/qmUid').set({
-    name: 'QM', email: QM.email, role: 'Quarter Master',
-    isActive: true, isDeveloper: false,
-  });
-  await admin.doc('users/ustadUid').set({
-    name: 'Ustad', email: USTAD.email, role: 'Ustad',
-    isActive: true, isDeveloper: false,
-  });
-  await admin.doc('users/soUid').set({
-    name: 'SO', email: SO.email, role: 'Senior Officer / Inspector',
-    isActive: true, isDeveloper: false, assignedBatchIds: ['batchA'],
-  });
+}
+
+/**
+ * Admin (rules-bypassing) Firestore handle for v4.
+ *
+ * `firestoreAdmin()` does not exist in @firebase/rules-unit-testing v4 — every
+ * privileged operation must run inside `withSecurityRulesDisabled`. This tiny
+ * compat shim preserves the existing `admin.doc(path).set(data)` seeding
+ * call-sites: each write is executed within its own disabled context. It
+ * targets the LOCAL EMULATOR ONLY (the context is a test client with the
+ * special "owner" mock token, never a production Admin SDK connection).
+ */
+function adminDb(env) {
+  const run = (op) => env.withSecurityRulesDisabled((ctx) => Promise.resolve(op(ctx.firestore())));
+  return {
+    doc: (path) => ({
+      set: (data, opts) => run((fs) => fs.doc(path).set(data, opts)),
+      update: (data) => run((fs) => fs.doc(path).update(data)),
+      delete: () => run((fs) => fs.doc(path).delete()),
+      // get() is never used for seeding; supported only for completeness.
+      get: () => run((fs) => fs.doc(path).get()),
+    }),
+  };
 }
 
 function authedDb(env, auth) {
@@ -83,7 +112,7 @@ describe('Firestore rules', () => {
   // ── LEAVE APPROVAL ──────────────────────────────────────────────────
   describe('staff_leave approval', () => {
     async function seedLeave(env) {
-      await env.firestoreAdmin().doc('staff_leave/leave1').set({
+      await adminDb(env).doc('staff_leave/leave1').set({
         leaveNumber: 'LV-2026-001', staffId: 's1', staffName: 'X',
         status: 'pending', approvedBy: '', approvedByName: '',
         approvalDate: null, rejectionReason: '', remarks: '',
@@ -191,10 +220,10 @@ describe('Firestore rules', () => {
   // ── DEVELOPER DATA ──────────────────────────────────────────────────
   describe('dev/test isolation', () => {
     beforeEach(async () => {
-      await testEnv.firestoreAdmin().doc('trainees/dev1').set({
+      await adminDb(testEnv).doc('trainees/dev1').set({
         name: 'Dev', chestNo: '9999', isDevData: true, batchId: 'b1',
       });
-      await testEnv.firestoreAdmin().doc('trainees/real1').set({
+      await adminDb(testEnv).doc('trainees/real1').set({
         name: 'Real', chestNo: '1', batchId: 'b1',
       });
     });
@@ -316,14 +345,14 @@ describe('Firestore rules', () => {
           .add({ ...findingA('soUid'), batchId: 'batchB' }));
     });
     it('CC sees and can create SO inspections (oversight)', async () => {
-      await testEnv.firestoreAdmin().doc('inspections/i1').set(inspectionA('soUid'));
+      await adminDb(testEnv).doc('inspections/i1').set(inspectionA('soUid'));
       await assert.isFulfilled(authedDb(testEnv, CC).doc('inspections/i1').get());
       await assert.isFulfilled(
         authedDb(testEnv, CC).collection('inspections')
           .add({ ...inspectionA('ccUid'), inspectorId: 'ccUid' }));
     });
     it('SO can verify-close a submitted finding in assigned batch', async () => {
-      await testEnv.firestoreAdmin().doc('findings/f1').set({
+      await adminDb(testEnv).doc('findings/f1').set({
         ...findingA('soUid'), status: 'submitted',
       });
       await assert.isFulfilled(
@@ -332,7 +361,7 @@ describe('Firestore rules', () => {
             verifiedByName: 'SO', verifiedAt: '2026-08-31T00:00:00Z' }));
     });
     it('SO CANNOT close a finding for an unassigned batch', async () => {
-      await testEnv.firestoreAdmin().doc('findings/f2').set({
+      await adminDb(testEnv).doc('findings/f2').set({
         ...findingA('soUid'), batchId: 'batchB', status: 'submitted',
       });
       await assert.isRejected(
@@ -340,7 +369,7 @@ describe('Firestore rules', () => {
           .update({ status: 'closed', verifiedBy: 'soUid' }));
     });
     it('Assigned Ustad can submit corrective action (submitted status)', async () => {
-      await testEnv.firestoreAdmin().doc('findings/f3').set({
+      await adminDb(testEnv).doc('findings/f3').set({
         ...findingA('soUid'), assignedToRole: 'Ustad', status: 'in_progress',
       });
       await assert.isFulfilled(
@@ -350,7 +379,7 @@ describe('Firestore rules', () => {
             updatedAt: '2026-08-31T00:00:00Z' }));
     });
     it('Ustad CANNOT close/verify a finding', async () => {
-      await testEnv.firestoreAdmin().doc('findings/f4').set({
+      await adminDb(testEnv).doc('findings/f4').set({
         ...findingA('soUid'), assignedToRole: 'Ustad', status: 'submitted',
       });
       await assert.isRejected(
@@ -358,7 +387,7 @@ describe('Firestore rules', () => {
           .update({ status: 'closed', verifiedBy: 'ustadUid' }));
     });
     it('Ustad cannot act on a finding assigned to another role', async () => {
-      await testEnv.firestoreAdmin().doc('findings/f5').set({
+      await adminDb(testEnv).doc('findings/f5').set({
         ...findingA('soUid'), assignedToRole: 'Clerk', status: 'open',
       });
       await assert.isRejected(
@@ -368,7 +397,7 @@ describe('Firestore rules', () => {
 
     // ── SO must NOT gain commander powers ──
     it('SO cannot approve leave', async () => {
-      await testEnv.firestoreAdmin().doc('staff_leave/lv1').set({
+      await adminDb(testEnv).doc('staff_leave/lv1').set({
         leaveNumber: 'LV-1', staffId: 's1', staffName: 'X',
         status: 'pending', approvedBy: '', approvedByName: '',
         approvalDate: null, rejectionReason: '', remarks: '',
@@ -379,7 +408,7 @@ describe('Firestore rules', () => {
             approvalDate: '2026-08-31' }));
     });
     it('SO cannot reject leave', async () => {
-      await testEnv.firestoreAdmin().doc('staff_leave/lv2').set({
+      await adminDb(testEnv).doc('staff_leave/lv2').set({
         leaveNumber: 'LV-2', staffId: 's1', staffName: 'X',
         status: 'pending', approvedBy: '', approvedByName: '',
         approvalDate: null, rejectionReason: '', remarks: '',
@@ -389,7 +418,7 @@ describe('Firestore rules', () => {
           .update({ status: 'rejected', rejectionReason: 'nope' }));
     });
     it('SO can add non-approval leave recommendation fields', async () => {
-      await testEnv.firestoreAdmin().doc('staff_leave/lv3').set({
+      await adminDb(testEnv).doc('staff_leave/lv3').set({
         leaveNumber: 'LV-3', staffId: 's1', staffName: 'X',
         status: 'pending', approvedBy: '', approvedByName: '',
         approvalDate: null, rejectionReason: '', remarks: '',
@@ -425,7 +454,7 @@ describe('Firestore rules', () => {
           .add({ amount: 100 }));
     });
     it('SO cannot delete another SO inspection (only creator draft / CC)', async () => {
-      await testEnv.firestoreAdmin().doc('inspections/i2').set(inspectionA('ccUid'));
+      await adminDb(testEnv).doc('inspections/i2').set(inspectionA('ccUid'));
       await assert.isRejected(authedDb(testEnv, SO).doc('inspections/i2').delete());
     });
 
@@ -453,7 +482,7 @@ describe('Firestore rules', () => {
 
     // ── D2: assigned staff cannot tamper with finding fields ──
     const seedFinding = async (id, over) => {
-      await testEnv.firestoreAdmin().doc(`findings/${id}`).set({
+      await adminDb(testEnv).doc(`findings/${id}`).set({
         ...findingA('soUid'), assignedToRole: 'Ustad', status: 'open',
         assignedToName: 'Ust. Ji', category: 'Training',
         responsibleArea: 'Training',
@@ -531,7 +560,7 @@ describe('Firestore rules', () => {
 
     // ── D3: audit-history regression protection ──
     it('D3: submitted inspection cannot be regressed to draft', async () => {
-      await testEnv.firestoreAdmin().doc('inspections/d3-1').set({
+      await adminDb(testEnv).doc('inspections/d3-1').set({
         ...inspectionA('soUid'), status: 'submitted',
       });
       await assert.isRejected(
@@ -539,7 +568,7 @@ describe('Firestore rules', () => {
           .update({ status: 'draft', updatedBy: 'soUid' }));
     });
     it('D3: SO cannot delete submitted inspection after revert attempt', async () => {
-      await testEnv.firestoreAdmin().doc('inspections/d3-2').set({
+      await adminDb(testEnv).doc('inspections/d3-2').set({
         ...inspectionA('soUid'), status: 'submitted',
       });
       // revert itself is denied
@@ -550,7 +579,7 @@ describe('Firestore rules', () => {
       await assert.isRejected(authedDb(testEnv, SO).doc('inspections/d3-2').delete());
     });
     it('D3: closed finding cannot be reopened (status)', async () => {
-      await testEnv.firestoreAdmin().doc('findings/d3-3').set({
+      await adminDb(testEnv).doc('findings/d3-3').set({
         ...findingA('soUid'), status: 'closed',
         verifiedBy: 'soUid', verifiedByName: 'SO', verifiedAt: '2026-08-30T00:00:00Z',
       });
@@ -562,7 +591,7 @@ describe('Firestore rules', () => {
           .update({ status: 'rework', updatedBy: 'soUid', reworkReason: 'x' }));
     });
     it('D3: closed finding verifiedBy cannot be removed', async () => {
-      await testEnv.firestoreAdmin().doc('findings/d3-4').set({
+      await adminDb(testEnv).doc('findings/d3-4').set({
         ...findingA('soUid'), status: 'closed',
         verifiedBy: 'soUid', verifiedByName: 'SO', verifiedAt: '2026-08-30T00:00:00Z',
       });
@@ -571,7 +600,7 @@ describe('Firestore rules', () => {
           .update({ verifiedBy: '', verifiedByName: '', verifiedAt: '' }));
     });
     it('D3: closed finding verifiedAt cannot be changed', async () => {
-      await testEnv.firestoreAdmin().doc('findings/d3-5').set({
+      await adminDb(testEnv).doc('findings/d3-5').set({
         ...findingA('soUid'), status: 'closed',
         verifiedBy: 'soUid', verifiedByName: 'SO', verifiedAt: '2026-08-30T00:00:00Z',
       });
@@ -580,7 +609,7 @@ describe('Firestore rules', () => {
           .update({ verifiedAt: '2020-01-01T00:00:00Z' }));
     });
     it('D3: SO cannot delete a closed finding after revert attempt', async () => {
-      await testEnv.firestoreAdmin().doc('findings/d3-6').set({
+      await adminDb(testEnv).doc('findings/d3-6').set({
         ...findingA('soUid'), status: 'closed',
         verifiedBy: 'soUid', verifiedByName: 'SO', verifiedAt: '2026-08-30T00:00:00Z',
       });
@@ -589,7 +618,7 @@ describe('Firestore rules', () => {
       await assert.isRejected(authedDb(testEnv, SO).doc('findings/d3-6').delete());
     });
     it('D3: legitimate submitted→rework→resubmitted→closed SO flow works', async () => {
-      await testEnv.firestoreAdmin().doc('findings/d3-7').set({
+      await adminDb(testEnv).doc('findings/d3-7').set({
         ...findingA('soUid'), status: 'submitted',
       });
       await assert.isFulfilled(
@@ -614,13 +643,13 @@ describe('Firestore rules', () => {
 
     // ── D4: dev-data isolation for inspections/findings ──
     it('D4: normal SO cannot read dev-tagged inspection', async () => {
-      await testEnv.firestoreAdmin().doc('inspections/d4-1').set({
+      await adminDb(testEnv).doc('inspections/d4-1').set({
         ...inspectionA('soUid'), isDevData: true,
       });
       await assert.isRejected(authedDb(testEnv, SO).doc('inspections/d4-1').get());
     });
     it('D4: normal SO cannot read dev-tagged finding', async () => {
-      await testEnv.firestoreAdmin().doc('findings/d4-2').set({
+      await adminDb(testEnv).doc('findings/d4-2').set({
         ...findingA('soUid'), isDevData: true,
       });
       await assert.isRejected(authedDb(testEnv, SO).doc('findings/d4-2').get());
@@ -636,7 +665,7 @@ describe('Firestore rules', () => {
           .add({ ...findingA('soUid'), isDevData: true }));
     });
     it('D4: CC CAN read dev-tagged inspection (sandbox authority)', async () => {
-      await testEnv.firestoreAdmin().doc('inspections/d4-3').set({
+      await adminDb(testEnv).doc('inspections/d4-3').set({
         ...inspectionA('ccUid'), isDevData: true, inspectorId: 'ccUid',
       });
       await assert.isFulfilled(authedDb(testEnv, CC).doc('inspections/d4-3').get());
