@@ -11,10 +11,10 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { assert } from 'chai';
-import {
-  initializeTestEnvironment,
-  RulesTestEnvironment,
-} from '@firebase/rules-unit-testing';
+// NOTE: `RulesTestEnvironment` is a TypeScript TYPE only in
+// @firebase/rules-unit-testing v4 — it is NOT a runtime export. The runtime
+// entry point is `initializeTestEnvironment`.
+import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
 import { readFileSync } from 'node:fs';
 
 const PROJECT_ID = 'fcoy-test';
@@ -26,10 +26,10 @@ async function makeEnv() {
   return initializeTestEnvironment({
     projectId: PROJECT_ID,
     firestore: {
-      rules: readFileSync(new URL('../../../firestore.rules', import.meta.url), 'utf8'),
+      rules: readFileSync(new URL('../../firestore.rules', import.meta.url), 'utf8'),
     },
     storage: {
-      rules: readFileSync(new URL('../../../storage.rules', import.meta.url), 'utf8'),
+      rules: readFileSync(new URL('../../storage.rules', import.meta.url), 'utf8'),
     },
   });
 }
