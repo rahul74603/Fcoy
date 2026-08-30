@@ -30,6 +30,18 @@ assert.isRejected = (p) => assertFails(p);
 
 const PROJECT_ID = 'training-command-erp';
 
+// Explicit emulator endpoints so the suite works when run directly with
+// mocha against an already-running emulator (no `emulators:exec` wrapper,
+// no reliance on FIREBASE_STORAGE_EMULATOR_HOST being set in the shell).
+// Env vars override if present.
+const hostPort = (envVar, fallback) => {
+  const v = process.env[envVar] || fallback;
+  const [host, port] = v.split(':');
+  return { host, port: Number(port) };
+};
+const FIRESTORE_EP = hostPort('FIRESTORE_EMULATOR_HOST', '127.0.0.1:8080');
+const STORAGE_EP   = hostPort('FIREBASE_STORAGE_EMULATOR_HOST', '127.0.0.1:9199');
+
 /** @type {RulesTestEnvironment} */
 let testEnv;
 
@@ -37,9 +49,11 @@ async function makeEnv() {
   return initializeTestEnvironment({
     projectId: PROJECT_ID,
     firestore: {
+      ...FIRESTORE_EP,
       rules: readFileSync(new URL('../../firestore.rules', import.meta.url), 'utf8'),
     },
     storage: {
+      ...STORAGE_EP,
       rules: readFileSync(new URL('../../storage.rules', import.meta.url), 'utf8'),
     },
   });

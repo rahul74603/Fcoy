@@ -55,6 +55,14 @@ let authContexts = {}; // key -> { uid, email, idToken }
 
 // Invoke the callable the same way the client SDK does:
 //   POST with { data } JSON, Authorization: Bearer <idToken>
+//
+// The Functions emulator (firebase-tools handleHttpsTrigger) answers a
+// request for an UNREGISTERED trigger with HTTP 404 and a plain-text body,
+// e.g. "Function us-central1-createStaffAccount does not exist, valid
+// functions are: us-central1-aiGroq, ...". That happens when the functions
+// emulator process was started BEFORE the function was added and has not
+// been reloaded/restarted — the trigger map simply does not contain it.
+// We surface that text verbatim instead of crashing inside JSON.parse.
 async function invokeCallable(idToken, data) {
   const res = await fetch(CALLABLE_URL, {
     method: 'POST',
@@ -64,7 +72,24 @@ async function invokeCallable(idToken, data) {
     },
     body: JSON.stringify({ data }),
   });
-  const body = await res.json();
+  const raw = await res.text();
+  let body;
+  try {
+    body = raw ? JSON.parse(raw) : {};
+  } catch {
+    body = {
+      error: {
+        status: 'NOT_CALLABLE_JSON',
+        message:
+          'Functions emulator returned a non-JSON (plain-text) response. ' +
+          'This means the function trigger is not registered in the running ' +
+          'functions emulator — restart the emulator ' +
+          '(firebase emulators:start) so it reloads index.js. Response was: ' +
+          raw,
+      },
+      plainText: raw,
+    };
+  }
   return { status: res.status, body };
 }
 
@@ -78,15 +103,37 @@ function expectDenied(r) {
   );
 }
 
+// Chai 5 ships no chai-as-promised (the plugin isn't installed in this
+// project). Resolve the lookup natively and assert on the value — same
+// semantics as assert.becomes(promise, expected) with zero new deps.
+async function authAccountExists(adminAuth, email) {
+  try {
+    await adminAuth.getUserByEmail(email);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 describe('createStaffAccount callable (live emulator)', function () {
   this.timeout(60000);
 
   before(async function () {
-    // Fail fast with a clear message if no emulator is running.
+    // Fail fast with a clear message if no emulator is running OR if the
+    // functions emulator is running but does not have createStaffAccount
+    // registered (stale process started before the function was added).
     try {
-      await fetch(`http://${FUNCTIONS_HOST}/${PROJECT_ID}/${REGION}/createStaffAccount`, {
+      const probe = await fetch(`http://${FUNCTIONS_HOST}/${PROJECT_ID}/${REGION}/createStaffAccount`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
       });
+      const probeText = await probe.text();
+      if (probeText.startsWith('Function ') && probeText.includes('does not exist')) {
+        console.log('\n  [SKIP] Functions emulator is running but createStaffAccount is not registered.');
+        console.log('         The functions emulator must be restarted so it reloads index.js:');
+        console.log('           stop (Ctrl+C) then: firebase emulators:start --only auth,firestore,functions');
+        console.log('         Emulator said: ' + probeText);
+        this.skip();
+      }
     } catch (e) {
       console.log('\n  [SKIP] Functions emulator not reachable (' + e.message + ').');
       console.log('         Start: firebase emulators:start --only auth,firestore,functions');
@@ -164,11 +211,8 @@ describe('createStaffAccount callable (live emulator)', function () {
       name: 'X', email, password: 'Password123!', role: 'Clerk',
     });
     expectDenied(r);
-    await assert.becomes(
-      adminAuth.getUserByEmail(email).then(() => 'EXISTS').catch(() => 'MISSING'),
-      'MISSING',
-      'no orphan auth account may exist after denial'
-    );
+    const exists = await authAccountExists(adminAuth, email);
+    assert.equal(exists, false, 'no orphan auth account may exist after denial');
   });
 
   it('QUARTER MASTER caller is denied', async () => {
@@ -241,10 +285,8 @@ describe('createStaffAccount callable (live emulator)', function () {
     assert.notEqual(r.status, 200);
     const status = r.body?.error?.status || r.body?.error?.code;
     assert.equal(status, 'INVALID_ARGUMENT', `got ${JSON.stringify(r.body.error)}`);
-    await assert.becomes(
-      adminAuth.getUserByEmail(email).then(() => 'EXISTS').catch(() => 'MISSING'),
-      'MISSING', 'no orphan auth account for invalid role'
-    );
+    const exists = await authAccountExists(adminAuth, email);
+    assert.equal(exists, false, 'no orphan auth account for invalid role');
   });
 
   it('duplicate email is rejected as already-exists', async () => {
