@@ -1,10 +1,6 @@
 # ═══════════════════════════════════════════════════════════
-# AUTO DEPLOY → Firebase Hosting + Cloud Functions
+# AUTO DEPLOY → Firebase Hosting + Cloud Functions + Rules
 # ───────────────────────────────────────────────────────────
-# Kab chalta hai:
-#   1. `main` branch par koi bhi push ho
-#   2. Manually — Actions tab → "Deploy to Firebase" → Run workflow
-#
 # PC ki zaroorat NAHI. GitHub Actions khud build + deploy karega.
 # ═══════════════════════════════════════════════════════════
 
@@ -36,101 +32,74 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      # ── 1. Code lao ──
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # ── 2. Node setup ──
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'npm'
 
-      # ── 3. Dependencies ──
       - name: Install dependencies
         run: npm ci
 
-      # ── 4. TypeScript check ──
       - name: TypeScript check
         if: ${{ !inputs.skip_typecheck }}
         run: npx tsc --noEmit -p tsconfig.json
 
-      # ── 5. Production build ──
       - name: Build
         env:
-          # Firebase
           VITE_FIREBASE_API_KEY:             ${{ secrets.VITE_FIREBASE_API_KEY }}
           VITE_FIREBASE_AUTH_DOMAIN:         ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
           VITE_FIREBASE_PROJECT_ID:          ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
           VITE_FIREBASE_STORAGE_BUCKET:      ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
           VITE_FIREBASE_APP_ID:              ${{ secrets.VITE_FIREBASE_APP_ID }}
-
-          # AI — Groq
-          VITE_GROQ_API_KEY:    ${{ secrets.VITE_GROQ_API_KEY }}
-          VITE_GROQ_API_KEY_2:  ${{ secrets.VITE_GROQ_API_KEY_2 }}
-          VITE_GROQ_API_KEY_3:  ${{ secrets.VITE_GROQ_API_KEY_3 }}
-          VITE_GROQ_MODEL:      ${{ secrets.VITE_GROQ_MODEL }}
-
-          # AI — Gemini
-          VITE_GEMINI_API_KEY:   ${{ secrets.VITE_GEMINI_API_KEY }}
-          VITE_GEMINI_API_KEY_2: ${{ secrets.VITE_GEMINI_API_KEY_2 }}
-          VITE_GEMINI_MODEL:     ${{ secrets.VITE_GEMINI_MODEL }}
-
-          # Optional — Pinecone
-          VITE_PINECONE_API_KEY: ${{ secrets.VITE_PINECONE_API_KEY }}
-          VITE_PINECONE_HOST:    ${{ secrets.VITE_PINECONE_HOST }}
-
-          # Feature flags
-          VITE_AI_ENABLE_LOCAL_ERP: ${{ vars.VITE_AI_ENABLE_LOCAL_ERP || 'true' }}
-          VITE_AI_ENABLE_CACHE:     ${{ vars.VITE_AI_ENABLE_CACHE     || 'true' }}
-          VITE_AI_ENABLE_GROQ:      ${{ vars.VITE_AI_ENABLE_GROQ      || 'true' }}
-          VITE_AI_ENABLE_GEMINI:    ${{ vars.VITE_AI_ENABLE_GEMINI    || 'true' }}
-          VITE_AI_ENABLE_PINECONE:  ${{ vars.VITE_AI_ENABLE_PINECONE  || 'false' }}
+          VITE_FIREBASE_VAPID_KEY:           ${{ secrets.VITE_FIREBASE_VAPID_KEY }}
           VITE_SUBSCRIPTION_ENABLED: 'true'
-
         run: npm run build
 
-      # ── 6. Build verify ──
       - name: Verify build output
         run: |
           if [ ! -f dist/index.html ]; then
-            echo "::error::dist/index.html nahi bana — build fail hui"
+            echo "::error::dist/index.html nahi bana"
             exit 1
           fi
+          echo "✅ Build ready"
 
-          SIZE=$(du -sk dist | cut -f1)
-
-          echo "✅ Build ready — ${SIZE} KB"
-
-          if [ "$SIZE" -lt 100 ]; then
-            echo "::warning::Build bahut chhoti hai (${SIZE} KB) — check karein"
-          fi
-
-      # ── 7. Cloud Functions deploy ──
-      # Backend PEHLE deploy hoga, Hosting uske baad.
       - name: Deploy Cloud Functions
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/sa.json
           GCLOUD_PROJECT: training-command-erp
-
         run: |
           set -euo pipefail
-
           printf '%s' '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > "$GOOGLE_APPLICATION_CREDENTIALS"
           chmod 600 "$GOOGLE_APPLICATION_CREDENTIALS"
-
           npm install --prefix functions
-
-          npx --yes -p firebase-tools@13 firebase deploy \
-            --only functions \
-            --project training-command-erp \
-            --non-interactive
-
+          npx --yes -p firebase-tools@13 firebase deploy --only functions --project training-command-erp --non-interactive
           rm -f "$GOOGLE_APPLICATION_CREDENTIALS"
 
-      # ── 8. Firebase Hosting deploy ──
+      - name: Deploy Storage Rules
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/sa.json
+        run: |
+          set -euo pipefail
+          printf '%s' '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > "$GOOGLE_APPLICATION_CREDENTIALS"
+          chmod 600 "$GOOGLE_APPLICATION_CREDENTIALS"
+          npx --yes -p firebase-tools@13 firebase deploy --only storage --project training-command-erp --non-interactive
+          rm -f "$GOOGLE_APPLICATION_CREDENTIALS"
+
+      - name: Deploy Firestore Rules
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/sa.json
+        run: |
+          set -euo pipefail
+          printf '%s' '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > "$GOOGLE_APPLICATION_CREDENTIALS"
+          chmod 600 "$GOOGLE_APPLICATION_CREDENTIALS"
+          npx --yes -p firebase-tools@13 firebase deploy --only firestore:rules --project training-command-erp --non-interactive
+          rm -f "$GOOGLE_APPLICATION_CREDENTIALS"
+
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
@@ -139,7 +108,6 @@ jobs:
           projectId: training-command-erp
           channelId: live
 
-      # ── 9. Summary ──
       - name: Deploy summary
         if: always()
         run: |
@@ -149,9 +117,8 @@ jobs:
             echo "| | |"
             echo "|---|---|"
             echo "| **Live URL** | https://training-command-erp.web.app |"
-            echo "| **Cloud Functions** | 5 Gen2 callables |"
-            echo "| **Region** | us-central1 |"
+            echo "| **Functions** | 4 (staff + backup) |"
+            echo "| **Storage Rules** | ✅ |"
+            echo "| **Firestore Rules** | ✅ |"
             echo "| **Commit** | \`${{ github.sha }}\` |"
-            echo "| **Trigger** | ${{ github.event_name }} |"
-            echo "| **By** | @${{ github.actor }} |"
           } >> $GITHUB_STEP_SUMMARY
