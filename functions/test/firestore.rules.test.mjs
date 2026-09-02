@@ -813,6 +813,10 @@ describe('Firestore rules', () => {
       await assert.isFulfilled(authedDb(testEnv, USTAD).doc('unitConfig/main').get());
       await assert.isFulfilled(authedDb(testEnv, USTAD).doc('config/activeBatch').get());
     });
+    it('signed-in user can read subscription/current (login listener)', async () => {
+      await adminDb(testEnv).doc('subscription/current').set({ planId: 'p1', status: 'active' });
+      await assert.isFulfilled(authedDb(testEnv, USTAD).doc('subscription/current').get());
+    });
     it('unauthenticated cannot read batches or unitConfig', async () => {
       await adminDb(testEnv).doc('batches/b1').set({ batchNumber: '1' });
       await adminDb(testEnv).doc('unitConfig/main').set({ companyName: 'F COY' });

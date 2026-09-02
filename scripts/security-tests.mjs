@@ -775,10 +775,11 @@ test('login bootstrap: own users/{uid} readable without already being isStaff', 
   assert.ok(/request\.auth\.token\.email/.test(rules), 'legacy email read');
   assert.ok(/function userDocExists\(\)/.test(rules), 'missing uid doc must not break helpers');
 });
-test('login bootstrap: batches / unitConfig / config readable when signed in', () => {
+test('login bootstrap: batches / unitConfig / config / subscription readable when signed in', () => {
   assert.match(rules, /match \/batches\/\{batchId\} \{[\s\S]*?allow read: if signedIn\(\)/);
   assert.match(rules, /match \/unitConfig\/\{docId\} \{[\s\S]*?allow read: if signedIn\(\)/);
   assert.match(rules, /match \/config\/\{docId\} \{[\s\S]*?allow read: if signedIn\(\)/);
+  assert.match(rules, /match \/subscription\/\{docId\} \{[\s\S]*?allow read: if signedIn\(\)/);
 });
 
 console.log('\n■ DOCUMENT UPLOAD FAKE-SUCCESS AUDIT');

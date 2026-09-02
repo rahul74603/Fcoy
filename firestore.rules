@@ -532,7 +532,9 @@ service cloud.firestore {
     // No secret owner key is stored in plaintext; the owner renewal flow
     // verifies a salted hash (ownerKeyHash) that is not client-readable.
     match /subscription/{docId} {
-      allow read: if isStaff();
+      // Login-time listener (SubscriptionContext). Do not require isStaff()
+      // or the green spinner never ends when role bootstrap is still loading.
+      allow read: if signedIn();
       allow write: if isCC()
         || (signedIn() && firstRunOpen());
     }
