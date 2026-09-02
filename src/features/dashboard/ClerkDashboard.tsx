@@ -15,6 +15,7 @@ import { db } from '../../config/firebase';
 import { useBatch } from '../../contexts/BatchContext';
 import { useNavigate } from 'react-router-dom';
 import { ReportButton } from '../../components/common/ReportButton';
+import { isOnStrength } from '../relegation/utils/relegation.utils';
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -298,7 +299,7 @@ const navigate = useNavigate();
       const tSnap = await getDocs(tq);
       const tList: TraineeBasic[] = [];
       tSnap.forEach(d => tList.push({ id: d.id, ...d.data() } as TraineeBasic));
-      setTrainees(tList);
+      setTrainees(tList.filter(isOnStrength));
 
       // 2. Fetch weekly programs — find current week's program
       const wpq = query(

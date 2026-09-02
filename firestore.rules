@@ -310,6 +310,15 @@ service cloud.firestore {
       allow write: if canManage() && canWriteDevData();
     }
 
+    // Relegation register — RelID lifecycle (awaiting_rejoin → rejoined).
+    // CC/Clerk write; all staff may read (strength / history). Delete = CC.
+    match /relegations/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow create: if canManage() && canWriteDevData();
+      allow update: if canManage() && canWriteDevData();
+      allow delete: if isCC();
+    }
+
     // ──────────────────────────────────────────────────────────────────
     // FINANCE DOMAIN  — CC + Quarter Master only
     // (mess / training / general / company-assets funds, vendors,

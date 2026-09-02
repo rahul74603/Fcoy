@@ -50,6 +50,7 @@ import { DocumentVerificationScreen } from './features/students/DocumentVerifica
 import { WelfareDemographicsScreen }  from './features/welfare/WelfareDemographicsScreen';
 import { WeeklyProgramScreen }        from './features/weekly/WeeklyProgramScreen';
 import { MedicalRegisterScreen }      from './features/medical/MedicalRegisterScreen';
+import { RelegationRegisterScreen }   from './features/relegation/screens/RelegationRegisterScreen';
 import { DeputationScreen } from './features/ustad/screens';
 // --- Senior Officer / Inspector ---
 import SODashboard from './features/inspection/screens/SODashboard';
@@ -322,6 +323,14 @@ function App() {
                 element={
                   <ProtectedRoute allowedRoles={CLERK_ROLES}>
                     <EnterpriseLayout><MedicalRegisterScreen /></EnterpriseLayout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/relegation"
+                element={
+                  <ProtectedRoute allowedRoles={CLERK_ROLES}>
+                    <EnterpriseLayout><RelegationRegisterScreen /></EnterpriseLayout>
                   </ProtectedRoute>
                 }
               />

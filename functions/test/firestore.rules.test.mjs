@@ -695,4 +695,58 @@ describe('Firestore rules', () => {
       await assert.isFulfilled(authedDb(testEnv, CC).doc('inspections/d4-3').get());
     });
   });
+
+  // ── RELEGATION / RelID ──────────────────────────────────────────────
+  describe('relegations collection', () => {
+    const rec = {
+      relegateId: 'REL-2026-25-K7M2',
+      status: 'awaiting_rejoin',
+      fromTraineeId: 't1',
+      fromBatchId: 'batchA',
+      fromChestNo: '25',
+      traineeName: 'RAM',
+      reason: 'Medical — Injury',
+      relegatedAt: '2026-09-02T00:00:00Z',
+    };
+    it('Clerk can create a relegation record', async () => {
+      await assert.isFulfilled(
+        authedDb(testEnv, CLERK).collection('relegations').add(rec));
+    });
+    it('CC can create a relegation record', async () => {
+      await assert.isFulfilled(
+        authedDb(testEnv, CC).collection('relegations').add(rec));
+    });
+    it('Ustad cannot write relegations', async () => {
+      await assert.isRejected(
+        authedDb(testEnv, USTAD).collection('relegations').add(rec));
+    });
+    it('QM cannot write relegations', async () => {
+      await assert.isRejected(
+        authedDb(testEnv, QM).collection('relegations').add(rec));
+    });
+    it('SO cannot write relegations', async () => {
+      await assert.isRejected(
+        authedDb(testEnv, SO).collection('relegations').add(rec));
+    });
+    it('staff can read relegations; Ustad cannot delete', async () => {
+      await adminDb(testEnv).doc('relegations/r1').set(rec);
+      await assert.isFulfilled(authedDb(testEnv, USTAD).doc('relegations/r1').get());
+      await assert.isRejected(authedDb(testEnv, USTAD).doc('relegations/r1').delete());
+    });
+    it('Clerk can update awaiting → rejoined (RelID admit)', async () => {
+      await adminDb(testEnv).doc('relegations/r2').set(rec);
+      await assert.isFulfilled(
+        authedDb(testEnv, CLERK).doc('relegations/r2').update({
+          status: 'rejoined',
+          toBatchId: 'batchB',
+          toChestNo: '25R',
+          rejoinedAt: '2026-09-02T12:00:00Z',
+        }));
+    });
+    it('only CC may delete a relegation record', async () => {
+      await adminDb(testEnv).doc('relegations/r3').set(rec);
+      await assert.isRejected(authedDb(testEnv, CLERK).doc('relegations/r3').delete());
+      await assert.isFulfilled(authedDb(testEnv, CC).doc('relegations/r3').delete());
+    });
+  });
 });

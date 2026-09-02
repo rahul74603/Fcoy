@@ -108,6 +108,10 @@ const GENERIC_WRITE_BLOCKED = new Set([
   // inspector/createdBy audit fields). Generic AI writes are blocked.
   'inspections',
   'findings',
+  // RelID relegation is a multi-doc atomic transaction (trainee freeze +
+  // RelID + later rejoin with chest+R). Generic AI writes would leave
+  // half-updated records — use the Relegation Register screen.
+  'relegations',
 ]);
 
 // Which tier may write to which collection (generic add/update/delete).
@@ -123,7 +127,7 @@ const FINANCE_COLLECTIONS = new Set([
   'item_master',
 ]);
 const STAFF_COLLECTIONS = new Set([
-  'trainees', 'absentRecords', 'medicalRecords',
+  'trainees', 'absentRecords', 'medicalRecords', 'relegations',
   'fptRecords', 'weeklyTestRecords', 'weeklyPrograms',
   'staff', 'staff_attendance', 'staff_duty', 'duty_types',
   'deputation_records', 'training_schedule',
