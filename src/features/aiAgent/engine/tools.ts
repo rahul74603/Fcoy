@@ -112,6 +112,9 @@ const GENERIC_WRITE_BLOCKED = new Set([
   // RelID + later rejoin with chest+R). Generic AI writes would leave
   // half-updated records — use the Relegation Register screen.
   'relegations',
+  'traineeAccounts',
+  'traineeNotices',
+  'staff_activity_logs',
 ]);
 
 // Which tier may write to which collection (generic add/update/delete).

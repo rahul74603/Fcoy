@@ -21,15 +21,37 @@ const COLLECTION = 'relegations';
 const todayISO = () => new Date().toISOString();
 const todayDate = () => new Date().toISOString().split('T')[0];
 
+function friendlyFsError(err: unknown, action: string): Error {
+  const e = err as { code?: string; message?: string };
+  const msg = String(e?.message || err);
+  if (e?.code === 'permission-denied' || /insufficient permissions/i.test(msg)) {
+    return new Error(
+      `PERMISSION: "${action}" block ho gaya. Firestore rules deploy nahi hui. ` +
+      `Terminal: firebase deploy --only firestore:rules`,
+    );
+  }
+  if (/requires an index/i.test(msg)) {
+    return new Error(
+      `INDEX: "${action}" ke liye Firestore index chahiye. ` +
+      `Terminal: firebase deploy --only firestore:indexes`,
+    );
+  }
+  return err instanceof Error ? err : new Error(msg);
+}
+
 async function uniqueRelegateId(chestNo: string): Promise<string> {
   for (let i = 0; i < 8; i += 1) {
     const id = generateRelegateId(chestNo);
-    const snap = await getDocs(query(
-      collection(db, COLLECTION),
-      where('relegateId', '==', id),
-      limit(1),
-    ));
-    if (snap.empty) return id;
+    try {
+      const snap = await getDocs(query(
+        collection(db, COLLECTION),
+        where('relegateId', '==', id),
+        limit(1),
+      ));
+      if (snap.empty) return id;
+    } catch (err) {
+      throw friendlyFsError(err, 'RelID lookup');
+    }
   }
   return `${generateRelegateId(chestNo)}${Date.now().toString(36).toUpperCase().slice(-2)}`;
 }
@@ -58,13 +80,17 @@ function stampDev(data: Record<string, unknown>, fromDoc?: Record<string, unknow
 export async function lookupByRelegateId(rawId: string): Promise<RelegationRecord | null> {
   const relegateId = normalizeRelegateId(rawId);
   if (!relegateId) return null;
-  const snap = await getDocs(query(
-    collection(db, COLLECTION),
-    where('relegateId', '==', relegateId),
-    limit(1),
-  ));
-  if (snap.empty) return null;
-  return { id: snap.docs[0].id, ...snap.docs[0].data() } as RelegationRecord;
+  try {
+    const snap = await getDocs(query(
+      collection(db, COLLECTION),
+      where('relegateId', '==', relegateId),
+      limit(1),
+    ));
+    if (snap.empty) return null;
+    return { id: snap.docs[0].id, ...snap.docs[0].data() } as RelegationRecord;
+  } catch (err) {
+    throw friendlyFsError(err, 'RelID lookup');
+  }
 }
 
 export async function listAwaitingRejoin(): Promise<RelegationRecord[]> {
@@ -97,12 +123,15 @@ export async function listByToBatch(batchId: string): Promise<RelegationRecord[]
 }
 
 export async function listAllRelegations(max = 200): Promise<RelegationRecord[]> {
-  const snap = await getDocs(query(
-    collection(db, COLLECTION),
-    orderBy('relegatedAt', 'desc'),
-    limit(max),
-  ));
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as RelegationRecord));
+  try {
+    // No orderBy — single-field auto-index not required; sort client-side.
+    const snap = await getDocs(query(collection(db, COLLECTION), limit(max)));
+    return snap.docs
+      .map((d) => ({ id: d.id, ...d.data() } as RelegationRecord))
+      .sort((a, b) => String(b.relegatedAt || '').localeCompare(String(a.relegatedAt || '')));
+  } catch (err) {
+    throw friendlyFsError(err, 'Relegation list');
+  }
 }
 
 /**
@@ -192,7 +221,11 @@ export async function relegateTrainee(
       });
     }
   }
-  await batch.commit();
+  try {
+    await batch.commit();
+  } catch (err) {
+    throw friendlyFsError(err, 'Relegate');
+  }
 
   try {
     await addDoc(collection(db, 'activity_logs'), stampDev({
@@ -349,7 +382,11 @@ export async function rejoinByRelegateId(
     });
   }
 
-  await batch.commit();
+  try {
+    await batch.commit();
+  } catch (err) {
+    throw friendlyFsError(err, 'RelID rejoin');
+  }
 
   try {
     await addDoc(collection(db, 'activity_logs'), stampDev({
@@ -419,7 +456,11 @@ export async function cancelRelegation(
       });
     }
   }
-  await batch.commit();
+  try {
+    await batch.commit();
+  } catch (err) {
+    throw friendlyFsError(err, 'Cancel RelID');
+  }
 }
 
 export { isOnStrength };

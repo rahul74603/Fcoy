@@ -319,6 +319,85 @@ service cloud.firestore {
       allow delete: if isCC();
     }
 
+    // FPT / weekly tests live in training_tests (Test Records screen).
+    match /training_tests/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+    match /batch_progress/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+    match /staff_activity_logs/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow create: if isActive();
+      allow update, delete: if isCC();
+    }
+
+    // Extra trainee-ops collections used by the full training suite.
+    // Same policy as medical/absent: staff read, CC/Clerk write, CC delete.
+    match /disciplineRecords/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+    match /movementRecords/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+    match /leaveApplications/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+    match /periodAttendance/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+    match /trainingSyllabus/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+    match /trainingSessions/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+    match /finalResults/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+    match /clearanceRecords/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+    match /joiningRecords/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+    match /documentVerifications/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+    match /kitAllocations/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if (canManage() || canFinance()) && canWriteDevData();
+    }
+    match /auditLogs/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow create: if isActive();
+      allow update, delete: if isCC();
+    }
+    match /traineeAccounts/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+    match /traineeNotices/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+    match /traineeUpdates/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+
     // ──────────────────────────────────────────────────────────────────
     // FINANCE DOMAIN  — CC + Quarter Master only
     // (mess / training / general / company-assets funds, vendors,

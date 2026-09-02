@@ -764,6 +764,11 @@ test('firestore rules govern relegations (CC/Clerk write, default-deny intact)',
   assert.ok(/allow delete: if isCC\(\)/.test(block[0]));
   assert.ok(/allow\s+read\s*,\s+write\s*:\s+if\s+false/.test(rules));
 });
+test('firestore rules govern training_tests / staff_activity_logs (were missing)', () => {
+  assert.ok(/match \/training_tests\/\{id\}/.test(rules));
+  assert.ok(/match \/staff_activity_logs\/\{id\}/.test(rules));
+  assert.ok(/match \/batch_progress\/\{id\}/.test(rules));
+});
 
 console.log('\n■ DOCUMENT UPLOAD FAKE-SUCCESS AUDIT');
 

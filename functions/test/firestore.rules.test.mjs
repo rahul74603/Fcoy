@@ -749,4 +749,23 @@ describe('Firestore rules', () => {
       await assert.isFulfilled(authedDb(testEnv, CC).doc('relegations/r3').delete());
     });
   });
+
+  describe('training_tests / staff_activity_logs (were missing rules)', () => {
+    it('Clerk can write training_tests; Ustad cannot', async () => {
+      await assert.isFulfilled(
+        authedDb(testEnv, CLERK).collection('training_tests').add({ batchId: 'batchA', type: 'fpt' }));
+      await assert.isRejected(
+        authedDb(testEnv, USTAD).collection('training_tests').add({ batchId: 'batchA', type: 'fpt' }));
+    });
+    it('staff can create activity logs; Ustad cannot delete', async () => {
+      await assert.isFulfilled(
+        authedDb(testEnv, USTAD).collection('staff_activity_logs').add({ action: 'view', userId: 'u' }));
+      await adminDb(testEnv).doc('staff_activity_logs/l1').set({ action: 'view' });
+      await assert.isRejected(authedDb(testEnv, USTAD).doc('staff_activity_logs/l1').delete());
+    });
+    it('Clerk can write disciplineRecords used by full suite', async () => {
+      await assert.isFulfilled(
+        authedDb(testEnv, CLERK).collection('disciplineRecords').add({ traineeId: 't1', reason: 'x' }));
+    });
+  });
 });

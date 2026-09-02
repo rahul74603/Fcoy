@@ -80,9 +80,15 @@ export const RelegationRegisterScreen: React.FC = () => {
 
   const load = useCallback(async () => {
     setLoading(true);
+    const errors: string[] = [];
     try {
       const all = await listAllRelegations();
       setRecords(all);
+    } catch (err: any) {
+      setRecords([]);
+      errors.push(err.message || 'Relegation list fail');
+    }
+    try {
       if (activeBatch) {
         const tq = query(collection(db, 'trainees'), where('batchId', '==', activeBatch.id));
         const tSnap = await getDocs(tq);
@@ -93,10 +99,11 @@ export const RelegationRegisterScreen: React.FC = () => {
         setTrainees([]);
       }
     } catch (err: any) {
-      setMessage(`ERROR: ${err.message || 'Load fail'}`);
-    } finally {
-      setLoading(false);
+      setTrainees([]);
+      errors.push(err.message || 'Trainee list fail');
     }
+    setMessage(errors.length ? `ERROR: ${errors.join(' | ')}` : '');
+    setLoading(false);
   }, [activeBatch]);
 
   useEffect(() => { load(); }, [load]);
