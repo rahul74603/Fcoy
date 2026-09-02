@@ -160,14 +160,24 @@ const SUBJECTS = [
 const WRITE_ALL_CHUNK = async (docs: DocOp[], onProgress?: ProgressCb): Promise<void> => {
   let done = 0;
   for (let i = 0; i < docs.length; i += CHUNK) {
+    const chunk = docs.slice(i, i + CHUNK);
     const wb = writeBatch(db);
-    docs.slice(i, i + CHUNK).forEach(op => {
+    chunk.forEach(op => {
       const ref = op.id ? doc(db, op.col, op.id) : doc(collection(db, op.col));
       wb.set(ref, op.data);
     });
-    await wb.commit();
+    try {
+      await wb.commit();
+    } catch (err) {
+      const cols = [...new Set(chunk.map(op => op.col))];
+      const fbMsg = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `Seed batch failed — collections in chunk: [${cols.join(', ')}]. `
+        + `Firebase: ${fbMsg}`
+      );
+    }
     done += Math.min(CHUNK, docs.length - i);
-    onProgress?.({ step: `Writing: ${docs[Math.min(i, docs.length - 1)].col}`, done, total: docs.length });
+    onProgress?.({ step: `Writing: ${chunk[0].col}`, done, total: docs.length });
   }
 };
 

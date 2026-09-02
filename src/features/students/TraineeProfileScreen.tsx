@@ -5,13 +5,15 @@ import {
   Search, UserSquare, Activity, ShieldAlert, Crosshair, Save, Package,
   AlertCircle, CheckCircle2, FileText, User, Shield, Heart, Phone, Award,
   Briefcase, Edit3, X, MapPin, RefreshCw, TrendingUp, Minus,
-  Users, Camera, Upload, Loader2, Layers, Hash
+  Users, Camera, Upload, Loader2, Layers, Hash, ChevronUp, ChevronDown,
+  ArrowRightLeft, Plane, UserPlus, ClipboardCheck
 } from 'lucide-react';
 import {
   collection, addDoc, getDocs, query, where, doc, updateDoc,
   onSnapshot
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
+import { uploadTraineePhoto, deleteFromStorage } from '../shared/storage.utils';
 
 import { useTraineeSearch } from '../../hooks/useTraineeSearch';
 import type { TraineeSearchResult } from '../../hooks/useTraineeSearch';
@@ -56,6 +58,26 @@ const QM_FIXED_ITEMS = [
 const normalizeName = (v: string) =>
   (v || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
+
+// T-162: Grade calculation engine
+const calcGrade = (pct: number): string => {
+  if (pct >= 90) return 'A+';
+  if (pct >= 80) return 'A';
+  if (pct >= 70) return 'B+';
+  if (pct >= 60) return 'B';
+  if (pct >= 50) return 'C';
+  if (pct >= 40) return 'D';
+  return 'F';
+};
+const gradeColor = (grade: string): string => {
+  if (grade === 'A+') return 'bg-yellow-100 text-yellow-800 border-yellow-300';
+  if (grade === 'A') return 'bg-green-100 text-green-800 border-green-300';
+  if (grade === 'B+') return 'bg-blue-100 text-blue-800 border-blue-300';
+  if (grade === 'B') return 'bg-cyan-100 text-cyan-800 border-cyan-300';
+  if (grade === 'C') return 'bg-amber-100 text-amber-800 border-amber-300';
+  if (grade === 'D') return 'bg-orange-100 text-orange-800 border-orange-300';
+  return 'bg-red-100 text-red-800 border-red-300';
+};
 const isAssetLike = (category?: string, name?: string) => {
   const c = (category || '').toLowerCase();
   const n = (name     || '').toLowerCase();
@@ -101,6 +123,8 @@ const compressImageToBase64 = (
 interface PhotoUploadProps {
   traineeId: string;
   traineeName: string;
+  traineeRegNo?: string;
+  traineeChestNo?: string;
   currentPhotoURL?: string;
   currentPhotoPath?: string;
   onUploadComplete: (url: string, path: string) => void;
@@ -109,7 +133,7 @@ interface PhotoUploadProps {
 }
 
 const PhotoUpload: React.FC<PhotoUploadProps> = ({
-  traineeId, traineeName, currentPhotoURL,
+  traineeId, traineeName, traineeRegNo, traineeChestNo, currentPhotoURL,
   onUploadComplete, onDeleteComplete, compact = false,
 }) => {
   const fileInputRef              = useRef<HTMLInputElement>(null);
@@ -139,14 +163,21 @@ const PhotoUpload: React.FC<PhotoUploadProps> = ({
     try {
       const localURL = URL.createObjectURL(file);
       setPreview(localURL); setProgress(30);
-      const base64 = await compressImageToBase64(file);
-      setProgress(60);
+
+      // Upload to Firebase Storage (NOT base64 in Firestore)
+      // Use regNo or chestNo for readable folder name
+      const folderName = traineeRegNo || traineeChestNo || traineeId;
+      const result = await uploadTraineePhoto(file, folderName);
+      setProgress(80);
+
+      // Save download URL to Firestore
       await updateDoc(doc(db, 'trainees', traineeId), {
-        photoURL: base64, photoPath: `base64_${traineeId}`,
+        photoURL: result.downloadUrl,
+        photoPath: result.storagePath,
         updatedAt: new Date().toISOString(),
       });
-      setProgress(100); setPreview(base64);
-      onUploadComplete(base64, `base64_${traineeId}`);
+      setProgress(100); setPreview(result.downloadUrl);
+      onUploadComplete(result.downloadUrl, result.storagePath);
       setSuccess('Photo saved!');
       setTimeout(() => { setSuccess(''); setProgress(0); }, 2000);
     } catch (err: any) {
@@ -162,6 +193,10 @@ const PhotoUpload: React.FC<PhotoUploadProps> = ({
     if (!preview || !window.confirm('Photo delete karna hai?')) return;
     setDeleting(true); setError('');
     try {
+      // Delete from Storage if we have a path
+      if (currentPhotoPath && !currentPhotoPath.startsWith('base64_')) {
+        try { await deleteFromStorage(currentPhotoPath); } catch { /* ignore */ }
+      }
       await updateDoc(doc(db, 'trainees', traineeId), {
         photoURL: '', photoPath: '', updatedAt: new Date().toISOString(),
       });
@@ -332,6 +367,10 @@ export const TraineeProfileScreen = () => {
   } = useTraineeSearch();
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [showAllTrainees, setShowAllTrainees] = useState(false);
+  const [allTraineesList, setAllTraineesList] = useState<any[]>([]);
+  const [traineesListLoading, setTraineesListLoading] = useState(false);
+  const [traineeFilter, setTraineeFilter] = useState('ALL');
 
   // ✅ QM Catalog — combined fixed + custom items
   const [qmCatalog,        setQmCatalog]        = useState<QMCatalogItem[]>([]);
@@ -345,9 +384,19 @@ export const TraineeProfileScreen = () => {
   const [formSuccess,          setFormSuccess]           = useState(false);
   const [editMessage,          setEditMessage]           = useState('');
   const [editLoading,          setEditLoading]           = useState(false);
-  const [activeProfileTab,     setActiveProfileTab]      = useState<
-    'overview' | 'kit' | 'docs' | 'personal' | 'exams'
-  >('overview');
+  const [activeProfileTab, setActiveProfileTab] = useState<string>('personal');
+
+  // ── NEW: Detailed exam records ──
+  const [fptRecordsList, setFptRecordsList] = useState<any[]>([]);
+  const [weeklyTestsList, setWeeklyTestsList] = useState<any[]>([]);
+  const [allTestsList, setAllTestsList] = useState<any[]>([]);  // ALL test types from training_tests
+  const [examRecordsLoading, setExamRecordsLoading] = useState(false);
+  const [expandedFptId, setExpandedFptId] = useState<string | null>(null);
+  const [expandedTestId, setExpandedTestId] = useState<string | null>(null);
+  const [expandedTestId2, setExpandedTestId2] = useState<string | null>(null);
+  const [medicalRecordsList, setMedicalRecordsList] = useState<any[]>([]);
+  const [absentRecordsList, setAbsentRecordsList] = useState<any[]>([]);
+  const [periodAttendanceList, setPeriodAttendanceList] = useState<any[]>([]);
 
   const getEmptyForm = () => ({
     batchId: activeBatch?.id || '', batchNumber: activeBatch?.batchNumber || '',
@@ -460,6 +509,120 @@ export const TraineeProfileScreen = () => {
     return () => unsub();
   }, [searchedTraineeId]);
 
+  // ── Fetch ALL data when trainee selected ──
+  useEffect(() => {
+    if (!searchedTraineeId || !activeBatch) {
+      setFptRecordsList([]); setWeeklyTestsList([]); setMedicalRecordsList([]); setAbsentRecordsList([]);
+      return;
+    }
+
+    const fetchAllData = async () => {
+      setExamRecordsLoading(true);
+      try {
+        // Try indexed queries first (needs Firestore indexes)
+        const tryQuery = async (col: string) => {
+          try {
+            const snap = await getDocs(query(
+              collection(db, col),
+              where('batchId', '==', activeBatch.id),
+              where('traineeId', '==', searchedTraineeId)
+            ));
+            const list: any[] = [];
+            snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+            return list;
+          } catch {
+            // Fallback: fetch all + client filter (works without indexes)
+            try {
+              const allSnap = await getDocs(query(collection(db, col), where('batchId', '==', activeBatch.id)));
+              const list: any[] = [];
+              allSnap.forEach(d => {
+                const data = d.data() as any;
+                if (data.traineeId === searchedTraineeId) list.push({ id: d.id, ...data });
+              });
+              return list;
+            } catch { return []; }
+          }
+        };
+
+        const [fptList, testList, medList, absList, trainingTestsList, periodAttnList] = await Promise.all([
+          tryQuery('fptRecords'),
+          tryQuery('weeklyTestRecords'),
+          tryQuery('medicalRecords'),
+          tryQuery('absentRecords'),
+          tryQuery('training_tests'),
+          tryQuery('periodAttendance'),
+        ]);
+
+        // ── Extract per-trainee results from training_tests (master source) ──
+        const fptFromMaster: any[] = [];
+        const weeklyFromMaster: any[] = [];
+        const allFromMaster: any[] = [];
+        for (const test of trainingTestsList) {
+          const results = Array.isArray(test.results) ? test.results : [];
+          const myResult = results.find((r: any) => r.traineeId === searchedTraineeId);
+          if (!myResult || myResult.status === 'absent') continue;
+
+          const totalMarks = test.totalMarks || 100;
+          const passingMarks = test.passingMarks || 40;
+          const pct = totalMarks > 0 ? Math.round((myResult.marks / totalMarks) * 100) : 0;
+          const entry = {
+            id: test.id,
+            testName: test.testName || '',
+            testType: test.testType || 'custom',
+            testDate: test.testDate?.toDate?.()?.toISOString?.()?.split('T')?.[0] || test.testDate || '',
+            weekNumber: test.weekNumber || 0,
+            obtainedMarks: myResult.marks ?? 0,
+            totalMarks,
+            passingMarks,
+            percentage: pct,
+            result: myResult.status === 'pass' ? 'Pass' : 'Fail',
+            remarks: myResult.remarks || '',
+            subject: test.subjectCode || test.testType || '',
+            events: test.fptEvents || myResult.events || [],
+            eventsPassed: myResult.eventsPassed || 0,
+            eventsFailed: myResult.eventsFailed || 0,
+            totalPassingMarks: passingMarks,
+            // Firing Practice specific
+            firingDetails: test.firingDetails || myResult.firingDetails || null,
+            venue: test.venue || '',
+            instructorName: test.instructorName || '',
+          };
+
+          allFromMaster.push(entry);
+          if (test.testType === 'fpt') {
+            fptFromMaster.push(entry);
+          } else {
+            weeklyFromMaster.push(entry);
+          }
+        }
+
+        // ── Merge: prefer dedicated collections, fallback to training_tests ──
+        const mergedFpt = fptList.length > 0 ? fptList : fptFromMaster;
+        const mergedWeekly = testList.length > 0 ? testList : weeklyFromMaster;
+
+        mergedFpt.sort((a, b) => (b.weekNumber || 0) - (a.weekNumber || 0));
+        setFptRecordsList(mergedFpt);
+        mergedWeekly.sort((a, b) => (b.weekNumber || 0) - (a.weekNumber || 0));
+        setWeeklyTestsList(mergedWeekly);
+        allFromMaster.sort((a, b) => (b.weekNumber || 0) - (a.weekNumber || 0));
+        setAllTestsList(allFromMaster);
+        medList.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+        setMedicalRecordsList(medList);
+        absList.sort((a, b) => (b.fromDate || '').localeCompare(a.fromDate || ''));
+        setAbsentRecordsList(absList);
+        // T-130: Period Attendance data
+        periodAttnList.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+        setPeriodAttendanceList(periodAttnList);
+      } catch (err) {
+        console.error('Data fetch error:', err);
+      } finally {
+        setExamRecordsLoading(false);
+      }
+    };
+
+    fetchAllData();
+  }, [searchedTraineeId, activeBatch]);
+
   // ── Age ──
   const calculateAge = (dob: string): string => {
     if (!dob) return '';
@@ -484,6 +647,38 @@ export const TraineeProfileScreen = () => {
     if (!searchQuery.trim()) return;
     await searchTrainee(searchQuery);
   };
+
+  // ── Fetch ALL trainees for the list view ──
+  const fetchAllTrainees = async () => {
+    if (!activeBatch) return;
+    setTraineesListLoading(true);
+    try {
+      const snap = await getDocs(query(collection(db, 'trainees'), where('batchId', '==', activeBatch.id)));
+      const list: any[] = [];
+      snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+      list.sort((a, b) => (a.chestNo || '').localeCompare(b.chestNo || ''));
+      setAllTraineesList(list);
+    } catch (err) {
+      console.error('Fetch all trainees error:', err);
+    } finally {
+      setTraineesListLoading(false);
+    }
+  };
+
+  // ── Filtered trainee list based on selected filter ──
+  const filteredTraineesList = allTraineesList.filter(t => {
+    if (traineeFilter === 'ALL') return true;
+    if (traineeFilter === 'FPT_FAIL') return t.fptResult === 'Fail';
+    if (traineeFilter === 'FPT_PASS') return t.fptResult === 'Pass';
+    if (traineeFilter === 'TEST_FAIL') return t.weeklyExamResult === 'Fail';
+    if (traineeFilter === 'TEST_PASS') return t.weeklyExamResult === 'Pass';
+    if (traineeFilter === 'DOCS_PENDING') return !t.docsComplete;
+    if (traineeFilter === 'KIT_PENDING') return !t.issuedKitItems || t.issuedKitItems.length < qmCatalog.length;
+    if (traineeFilter === 'MEDICAL') return t.attn === 'S' || t.attn === 'H';
+    if (traineeFilter === 'LEAVE') return t.attn === 'L';
+    if (traineeFilter === 'ABSENT') return t.attn === 'A';
+    return true;
+  });
 
   useEffect(() => {
     if (searchedTrainee) {
@@ -719,34 +914,122 @@ export const TraineeProfileScreen = () => {
       )}
 
       {/* Search Bar */}
-      <div className="bg-white border border-slate-300 shadow-flat p-3 flex justify-between items-center">
-        <div className="flex items-center space-x-3 w-1/2">
-          <span className="text-sm font-bold uppercase text-military-900 whitespace-nowrap">Search</span>
-          <div className="relative w-full">
-            <input
-              type="text"
-              placeholder={hasBatch ? "Chest No / Reg No..." : "Pehle batch select karo..."}
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleSearch()}
-              disabled={!hasBatch}
-              className="w-full pl-9 pr-3 py-1.5 text-sm border border-slate-300 focus:outline-none focus:border-military-700 font-mono font-bold disabled:bg-slate-100 disabled:cursor-not-allowed"
-            />
-            <Search className="absolute left-2.5 top-2 text-slate-400" size={16} />
+      <div className="bg-white border border-slate-300 shadow-flat p-3 space-y-3">
+        <div className="flex justify-between items-center">
+          <div className="flex items-center space-x-3 w-1/2">
+            <span className="text-sm font-bold uppercase text-military-900 whitespace-nowrap">Search</span>
+            <div className="relative w-full">
+              <input
+                type="text"
+                placeholder={hasBatch ? "Name / Chest No / Reg No..." : "Pehle batch select karo..."}
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleSearch()}
+                disabled={!hasBatch}
+                className="w-full pl-9 pr-3 py-1.5 text-sm border border-slate-300 focus:outline-none focus:border-military-700 font-mono font-bold disabled:bg-slate-100 disabled:cursor-not-allowed"
+              />
+              <Search className="absolute left-2.5 top-2 text-slate-400" size={16} />
+            </div>
+            <button onClick={handleSearch} disabled={searchLoading || !hasBatch}
+              className="bg-military-800 text-white px-4 py-1.5 text-xs font-bold uppercase hover:bg-military-900 disabled:opacity-50 disabled:cursor-not-allowed">
+              {searchLoading ? <Loader2 size={14} className="animate-spin" /> : 'Fetch'}
+            </button>
           </div>
-          <button onClick={handleSearch} disabled={searchLoading || !hasBatch}
-            className="bg-military-800 text-white px-4 py-1.5 text-xs font-bold uppercase hover:bg-military-900 disabled:opacity-50 disabled:cursor-not-allowed">
-            {searchLoading ? <Loader2 size={14} className="animate-spin" /> : 'Fetch'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => { setShowAllTrainees(!showAllTrainees); if (!showAllTrainees) fetchAllTrainees(); }}
+              disabled={!hasBatch}
+              className="bg-blue-700 text-white px-4 py-1.5 text-xs font-bold uppercase hover:bg-blue-800 flex items-center gap-2 disabled:opacity-50">
+              <Users size={13} /> {showAllTrainees ? 'Hide List' : 'All Trainees'}
+            </button>
+            <button
+              onClick={() => { setShowRegistrationForm(!showRegistrationForm); setCurrentStep(1); setFormMessage(''); }}
+              className="bg-military-700 text-white px-4 py-1.5 text-xs font-bold uppercase hover:bg-military-800 flex items-center gap-2">
+              {showRegistrationForm
+                ? <><X size={13} /> Close</>
+                : <><FileText size={13} /> New Rangroot Registration</>}
+            </button>
+          </div>
         </div>
-        <button
-          onClick={() => { setShowRegistrationForm(!showRegistrationForm); setCurrentStep(1); setFormMessage(''); }}
-          className="bg-military-700 text-white px-4 py-1.5 text-xs font-bold uppercase hover:bg-military-800 flex items-center gap-2">
-          {showRegistrationForm
-            ? <><X size={13} /> Close</>
-            : <><FileText size={13} /> New Rangroot Registration</>}
-        </button>
+
+        {/* Filter Tabs — only show when trainee list is visible */}
+        {showAllTrainees && (
+          <div className="flex gap-1.5 overflow-x-auto flex-wrap border-t border-slate-200 pt-3">
+            {[
+              { key: 'ALL', label: `All (${allTraineesList.length})`, color: 'bg-military-700' },
+              { key: 'FPT_FAIL', label: 'FPT Fail', color: 'bg-red-600' },
+              { key: 'FPT_PASS', label: 'FPT Pass', color: 'bg-green-600' },
+              { key: 'TEST_FAIL', label: 'Test Fail', color: 'bg-orange-600' },
+              { key: 'TEST_PASS', label: 'Test Pass', color: 'bg-emerald-600' },
+              { key: 'DOCS_PENDING', label: 'Docs Incomplete', color: 'bg-amber-600' },
+              { key: 'KIT_PENDING', label: 'Kit Not Issued', color: 'bg-purple-600' },
+              { key: 'MEDICAL', label: 'Medical/Sick', color: 'bg-red-500' },
+              { key: 'LEAVE', label: 'On Leave', color: 'bg-blue-600' },
+              { key: 'ABSENT', label: 'Absent', color: 'bg-slate-600' },
+            ].map(tab => (
+              <button key={tab.key} onClick={() => setTraineeFilter(tab.key)}
+                className={`px-2.5 py-1.5 text-[9px] font-black uppercase rounded-lg whitespace-nowrap transition-all ${traineeFilter === tab.key ? `${tab.color} text-white shadow-md` : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
+
+      {/* All Trainees List */}
+      {showAllTrainees && (
+        <div className="bg-white border border-slate-300 shadow-flat">
+          <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+            <span className="text-[10px] font-black text-slate-600 uppercase">
+              {filteredTraineesList.length} trainees shown
+            </span>
+            <span className="text-[9px] text-slate-400">Click any row to view full profile</span>
+          </div>
+          <div className="max-h-[400px] overflow-y-auto">
+            {traineesListLoading ? (
+              <div className="p-8 text-center"><Loader2 size={20} className="animate-spin text-military-600 mx-auto" /></div>
+            ) : filteredTraineesList.length === 0 ? (
+              <div className="p-8 text-center text-sm text-slate-400">No trainees found</div>
+            ) : (
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-slate-900 text-white z-10">
+                  <tr>
+                    {['#', 'Chest', 'Name', 'Platoon', 'Status', 'FPT', 'Tests', 'Docs', 'Kit'].map(h => (
+                      <th key={h} className="px-3 py-2.5 text-left text-[9px] font-black uppercase whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {filteredTraineesList.map((t, idx) => {
+                    const attnCode = t.attn || 'P';
+                    const attnCls = attnCode === 'P' ? 'bg-green-100 text-green-700'
+                      : attnCode === 'A' ? 'bg-red-100 text-red-700'
+                      : attnCode === 'S' ? 'bg-orange-100 text-orange-700'
+                      : attnCode === 'H' ? 'bg-purple-100 text-purple-700'
+                      : attnCode === 'L' ? 'bg-blue-100 text-blue-700'
+                      : attnCode === 'R' ? 'bg-indigo-100 text-indigo-700'
+                      : 'bg-teal-100 text-teal-700';
+                    return (
+                      <tr key={t.id} className="hover:bg-blue-50 cursor-pointer transition-colors"
+                        onClick={() => { setSearchQuery(t.chestNo || t.regNo || t.name); searchTrainee(t.chestNo || t.regNo || t.name); setShowAllTrainees(false); }}>
+                        <td className="px-3 py-2 text-slate-400 font-mono">{idx + 1}</td>
+                        <td className="px-3 py-2"><span className="font-mono font-black text-military-800 bg-military-50 border border-military-100 px-2 py-0.5 rounded">{t.chestNo || '—'}</span></td>
+                        <td className="px-3 py-2 font-semibold text-slate-800">{t.name}</td>
+                        <td className="px-3 py-2 text-slate-500">{t.platoon || '—'}</td>
+                        <td className="px-3 py-2"><span className={`text-[9px] font-black px-2 py-0.5 rounded-lg ${attnCls}`}>{attnCode}</span></td>
+                        <td className="px-3 py-2">{t.fptResult === 'Pass' ? <span className="text-green-600">✅</span> : t.fptResult === 'Fail' ? <span className="text-red-600">❌</span> : <span className="text-slate-300">—</span>}</td>
+                        <td className="px-3 py-2">{t.weeklyExamResult === 'Pass' ? <span className="text-green-600">✅</span> : t.weeklyExamResult === 'Fail' ? <span className="text-red-600">❌</span> : <span className="text-slate-300">—</span>}</td>
+                        <td className="px-3 py-2">{t.docsComplete ? <CheckCircle2 size={13} className="text-green-500" /> : <AlertCircle size={13} className="text-amber-400" />}</td>
+                        <td className="px-3 py-2">{(t.issuedKitItems?.length ?? 0) >= qmCatalog.length ? <CheckCircle2 size={13} className="text-green-500" /> : <span className="text-red-500 text-[9px]">{t.issuedKitItems?.length ?? 0}/{qmCatalog.length}</span>}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* REGISTRATION FORM */}
       {showRegistrationForm && (
@@ -1012,6 +1295,8 @@ export const TraineeProfileScreen = () => {
                   <PhotoUpload
                     traineeId={searchedTraineeId}
                     traineeName={searchedTrainee.name || ''}
+                    traineeRegNo={searchedTrainee.regNo}
+                    traineeChestNo={searchedTrainee.chestNo}
                     currentPhotoURL={searchedTrainee.photoURL}
                     currentPhotoPath={searchedTrainee.photoPath}
                     onUploadComplete={handlePhotoUploadComplete}
@@ -1057,407 +1342,557 @@ export const TraineeProfileScreen = () => {
             </div>
           </div>
 
-          {/* Tabs */}
-          <div className="flex space-x-1 bg-slate-100 p-1 border border-slate-300">
-            {[
-              { id: 'overview', label: 'Overview',   icon: Activity   },
-              { id: 'kit',      label: 'Kit / QM',   icon: Package    },
-              { id: 'docs',     label: 'Documents',  icon: FileText   },
-              { id: 'personal', label: 'Personal',   icon: User       },
-              { id: 'exams',    label: 'PT / Exams', icon: TrendingUp },
-            ].map(tab => {
-              const Icon = tab.icon;
-              return (
-                <button key={tab.id} onClick={() => setActiveProfileTab(tab.id as any)}
-                  className={`flex-1 flex items-center justify-center py-1.5 text-[10px] font-bold uppercase ${
-                    activeProfileTab === tab.id ? 'bg-military-800 text-white' : 'text-slate-600 hover:bg-slate-200'
-                  }`}>
-                  <Icon size={12} className="mr-1" />{tab.label}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Tab Content */}
+          {/* ═══ TABBED PROFILE ═══ */}
           <div className="bg-white border border-slate-300 shadow-flat">
-
-            {/* OVERVIEW TAB */}
-            {activeProfileTab === 'overview' && (
-              <div className="p-4">
-                <div className="bg-blue-50 border border-blue-200 p-3 mb-4 grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <div><p className="text-[9px] font-black text-blue-500 uppercase">Batch No</p><p className="text-sm font-black text-blue-900">{searchedTrainee.batchNumber || '--'}</p></div>
-                  <div><p className="text-[9px] font-black text-blue-500 uppercase">Batch Name</p><p className="text-sm font-bold text-blue-800">{searchedTrainee.batchName || '--'}</p></div>
-                  <div><p className="text-[9px] font-black text-amber-500 uppercase">Chest No</p><p className="text-sm font-black text-amber-900">{searchedTrainee.chestNo || 'NOT ISSUED'}</p></div>
-                  <div><p className="text-[9px] font-black text-blue-500 uppercase">Reg No</p><p className="text-sm font-mono font-bold text-blue-800">{searchedTrainee.regNo || '--'}</p></div>
-                </div>
-                {(() => {
-                  const ks = getKitStatusV2(searchedTrainee);
-                  const ds = getDocStatus(searchedTrainee);
-                  const issues: string[] = [];
-                  if (!searchedTrainee.batchNumber) issues.push('Batch not assigned!');
-                  if (!searchedTrainee.chestNo)     issues.push('Chest Number not issued');
-                  if (!searchedTrainee.photoURL)    issues.push('Profile photo not uploaded');
-                  if (ks.pending.length > 0)        issues.push(`${ks.pending.length} Kit items pending`);
-                  if (ds.pending.length > 0)        issues.push(`${ds.pending.length} Documents pending`);
-                  return issues.length > 0 ? (
-                    <div className="bg-red-50 border border-red-200 p-3 mb-4">
-                      <p className="text-[10px] font-black text-red-800 uppercase flex items-center mb-2">
-                        <AlertCircle size={14} className="mr-2" />⚠ {issues.length} Pending
-                      </p>
-                      <ul className="space-y-1">
-                        {issues.map((i, idx) => (
-                          <li key={idx} className="text-[11px] text-red-700 font-semibold flex items-center">
-                            <span className="w-1.5 h-1.5 bg-red-500 rounded-full mr-2" />{i}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : (
-                    <div className="bg-green-50 border border-green-200 p-3 mb-4 flex items-center">
-                      <CheckCircle2 size={14} className="text-green-600 mr-2" />
-                      <p className="text-[11px] font-bold text-green-700 uppercase">All Clear</p>
-                    </div>
-                  );
-                })()}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {[
-                    { title: 'Personal', icon: User,   fields: [['Father', searchedTrainee.fatherName], ['Mother', searchedTrainee.motherName], ['DOB', searchedTrainee.dob], ['Gender', searchedTrainee.gender], ['Religion', searchedTrainee.religion]] },
-                    { title: 'Contact',  icon: Phone,  fields: [['Mobile', searchedTrainee.mobileNo], ['Emergency', searchedTrainee.emergencyContact], ['District', searchedTrainee.district], ['State', searchedTrainee.state]] },
-                    { title: 'Training', icon: Shield, fields: [['Batch', searchedTrainee.batchNumber], ['Chest', searchedTrainee.chestNo || 'PENDING'], ['Platoon', searchedTrainee.platoon], ['Section', searchedTrainee.section]] },
-                  ].map(s => {
-                    const I = s.icon;
-                    return (
-                      <div key={s.title} className="border border-slate-200 p-3">
-                        <h4 className="text-[10px] font-black uppercase text-military-900 border-b border-slate-200 pb-1 mb-2 flex items-center">
-                          <I size={12} className="mr-1.5" />{s.title}
-                        </h4>
-                        <div className="space-y-1.5">
-                          {s.fields.map(([l, v]) => (
-                            <div key={l} className="flex justify-between text-[10px]">
-                              <span className="text-slate-400 font-semibold">{l}</span>
-                              <span className="font-bold text-slate-700">{(v as string) || '--'}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* ═══════════════════════════════════════ */}
-            {/* ✅ KIT TAB — Fully synced with QM      */}
-            {/* ═══════════════════════════════════════ */}
-            {activeProfileTab === 'kit' && (
-              <div className="p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <BatchChestBadge batchNumber={searchedTrainee.batchNumber} chestNo={searchedTrainee.chestNo} />
-                  <button onClick={fetchQMCatalog} disabled={qmCatalogLoading}
-                    className="text-[10px] font-bold text-military-700 flex items-center gap-1 border border-slate-300 px-2 py-1 hover:bg-slate-50">
-                    <RefreshCw size={12} className={qmCatalogLoading ? 'animate-spin' : ''} />Refresh QM
+            {/* Tab Bar */}
+            <div className="flex overflow-x-auto border-b border-slate-200 bg-slate-50">
+              {[
+                { id: 'personal', label: '👤 Personal', icon: User },
+                { id: 'contact', label: '📞 Contact', icon: Phone },
+                { id: 'education', label: '🎓 Education', icon: Award },
+                { id: 'training', label: '🏋️ Training', icon: Shield },
+                { id: 'weapon', label: '🔫 Weapon', icon: Crosshair },
+                { id: 'tests', label: '📝 Tests/Results', icon: TrendingUp },
+                { id: 'attendance', label: '📊 Attendance', icon: Users },
+                { id: 'medical', label: '🏥 Medical', icon: Heart },
+                { id: 'documents', label: '📄 Documents', icon: FileText },
+                { id: 'kit', label: '📦 Kit', icon: Package },
+                { id: 'discipline', label: '⚖️ Anushasan', icon: Shield },
+                { id: 'movement', label: '🚶 Sthanantar', icon: ArrowRightLeft },
+                { id: 'leave', label: '✈️ Chhutti', icon: Plane },
+                { id: 'joining', label: '🚶 Bharti', icon: UserPlus },
+                { id: 'clearance', label: '📋 Klirans', icon: ClipboardCheck },
+              ].map(tab => {
+                const Icon = tab.icon;
+                return (
+                  <button key={tab.id} onClick={() => setActiveProfileTab(tab.id)}
+                    className={`flex items-center gap-1 px-3 py-2.5 text-[10px] font-bold uppercase whitespace-nowrap border-b-2 transition-all ${
+                      activeProfileTab === tab.id ? 'border-military-700 text-military-900 bg-white' : 'border-transparent text-slate-400 hover:text-slate-600'
+                    }`}>
+                    <Icon size={12} />{tab.label}
                   </button>
-        <ReportButton />
-                </div>
+                );
+              })}
+            </div>
 
-                {(() => {
-                  const ks = getKitStatusV2(searchedTrainee);
-                  const pct = ks.total > 0
-                    ? Math.round((ks.issued.length / ks.total) * 100)
-                    : 0;
+            {/* Tab Content */}
+            <div className="p-4">
 
-                  return (
-                    <>
-                      {/* Summary bar */}
-                      <div className="bg-slate-50 border border-slate-200 p-3 mb-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <h3 className="text-xs font-black text-military-900 uppercase flex items-center">
-                            <Package size={14} className="mr-2" />
-                            Training Essentials — QM Sync
-                          </h3>
-                          <span className="text-xs font-bold text-slate-700">
-                            {ks.issued.length} / {ks.total} received ({pct}%)
-                          </span>
-                        </div>
-                        <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
-                          <div className="h-full bg-green-500 transition-all duration-500"
-                            style={{ width: `${pct}%` }} />
-                        </div>
-                        {searchedTrainee.lastKitIssueDate && (
-                          <p className="text-[9px] text-slate-500 mt-1.5">
-                            Last issue: {formatDate(searchedTrainee.lastKitIssueDate)}
-                          </p>
-                        )}
-                      </div>
-
-                      {/* 2-Column layout: Issued | Pending */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-                        {/* ── ISSUED COLUMN ── */}
-                        <div className="border border-green-200 bg-green-50 rounded">
-                          <div className="bg-green-100 border-b border-green-200 px-3 py-2 flex items-center justify-between">
-                            <h4 className="text-[11px] font-black text-green-800 uppercase flex items-center gap-1.5">
-                              <CheckCircle2 size={13} />
-                              Issued ({ks.issued.length})
-                            </h4>
-                            <span className="text-[9px] font-bold text-green-700">From QM</span>
-                          </div>
-                          <div className="p-2 max-h-96 overflow-y-auto">
-                            {ks.issued.length === 0 ? (
-                              <p className="text-[10px] text-green-600 italic text-center py-4">
-                                Abhi tak koi item issue nahi hua
-                              </p>
-                            ) : (
-                              <div className="space-y-1.5">
-                                {ks.issued.map((row, idx) => (
-                                  <div key={`${row.name}_${idx}`}
-                                    className="flex items-center justify-between bg-white border border-green-100 rounded px-2 py-1.5">
-                                    <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                                      <CheckCircle2 size={11} className="text-green-500 flex-shrink-0" />
-                                      <span className="text-[11px] font-bold text-slate-700 truncate">
-                                        {row.emoji} {row.name}
-                                      </span>
-                                    </div>
-                                    <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
-                                      {row.size && (
-                                        <span className="text-[9px] font-mono bg-slate-100 border border-slate-200 px-1 rounded">
-                                          {row.size}
-                                        </span>
-                                      )}
-                                      <span className="text-[9px] font-bold bg-green-600 text-white px-1.5 py-0.5 rounded">
-                                        ×{row.quantity}
-                                      </span>
-                                      {row.issueCount > 1 && (
-                                        <span className="text-[9px] font-bold bg-amber-100 text-amber-700 border border-amber-200 px-1 rounded">
-                                          {row.issueCount}× issued
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* ── PENDING COLUMN ── */}
-                        <div className="border border-red-200 bg-red-50 rounded">
-                          <div className="bg-red-100 border-b border-red-200 px-3 py-2 flex items-center justify-between">
-                            <h4 className="text-[11px] font-black text-red-800 uppercase flex items-center gap-1.5">
-                              <AlertCircle size={13} />
-                              Pending ({ks.pending.length})
-                            </h4>
-                            <span className="text-[9px] font-bold text-red-700">QM se issue karo</span>
-                          </div>
-                          <div className="p-2 max-h-96 overflow-y-auto">
-                            {ks.pending.length === 0 ? (
-                              <div className="flex flex-col items-center py-4">
-                                <CheckCircle2 size={20} className="text-green-500 mb-1" />
-                                <p className="text-[10px] text-green-600 font-bold uppercase">
-                                  All Items Issued!
-                                </p>
-                              </div>
-                            ) : (
-                              <div className="space-y-1.5">
-                                {ks.pending.map((row, idx) => (
-                                  <div key={`${row.name}_${idx}`}
-                                    className="flex items-center justify-between bg-white border border-red-100 rounded px-2 py-1.5">
-                                    <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                                      <Minus size={11} className="text-red-400 flex-shrink-0" />
-                                      <span className="text-[11px] font-bold text-slate-600 truncate">
-                                        {row.emoji} {row.name}
-                                      </span>
-                                    </div>
-                                    <span className="text-[9px] font-bold text-red-600 uppercase flex-shrink-0">
-                                      Pending
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Detailed Issue History (if any duplicates) */}
-                      {searchedTrainee.issuedKitItems && (searchedTrainee.issuedKitItems as any[]).length > 0 && (
-                        <div className="mt-4 border border-slate-200 rounded">
-                          <div className="bg-slate-100 border-b border-slate-200 px-3 py-2 flex items-center justify-between">
-                            <h4 className="text-[10px] font-black text-slate-700 uppercase flex items-center gap-1.5">
-                              <FileText size={12} />
-                              Full Issue History ({(searchedTrainee.issuedKitItems as any[]).length} entries)
-                            </h4>
-                          </div>
-                          <div className="max-h-48 overflow-y-auto">
-                            <table className="w-full text-[10px]">
-                              <thead className="bg-slate-50 sticky top-0">
-                                <tr>
-                                  <th className="text-left px-3 py-1.5 font-black uppercase text-slate-500">Item</th>
-                                  <th className="text-center px-2 py-1.5 font-black uppercase text-slate-500">Size</th>
-                                  <th className="text-center px-2 py-1.5 font-black uppercase text-slate-500">Qty</th>
-                                  <th className="text-left px-3 py-1.5 font-black uppercase text-slate-500">Date</th>
-                                  <th className="text-left px-3 py-1.5 font-black uppercase text-slate-500">By</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {[...(searchedTrainee.issuedKitItems as any[])]
-                                  .sort((a, b) =>
-                                    (b.issueDate || '').localeCompare(a.issueDate || '')
-                                  )
-                                  .map((it, idx) => (
-                                    <tr key={`${it.id}_${idx}`} className="border-t border-slate-100 hover:bg-slate-50">
-                                      <td className="px-3 py-1.5 font-bold text-slate-700">{it.itemName}</td>
-                                      <td className="px-2 py-1.5 text-center font-mono text-slate-500">
-                                        {it.assignedSize && it.assignedSize !== 'N/A' ? it.assignedSize : '—'}
-                                      </td>
-                                      <td className="px-2 py-1.5 text-center font-bold text-slate-700">
-                                        {it.quantity ?? 1}
-                                      </td>
-                                      <td className="px-3 py-1.5 text-slate-500">{formatDate(it.issueDate)}</td>
-                                      <td className="px-3 py-1.5 text-slate-500 truncate max-w-[140px]">
-                                        {it.issuedBy ?? '—'}
-                                      </td>
-                                    </tr>
-                                  ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  );
-                })()}
-              </div>
-            )}
-
-            {/* DOCS TAB */}
-            {activeProfileTab === 'docs' && (
-              <div className="p-4">
-                <BatchChestBadge batchNumber={searchedTrainee.batchNumber} chestNo={searchedTrainee.chestNo} />
-                <h3 className="text-xs font-black uppercase text-military-900 my-4 flex items-center">
-                  <FileText size={14} className="mr-2" />Documents
-                </h3>
-                {!searchedTrainee.documents ? (
-                  <div className="bg-red-50 border border-red-200 p-4 text-center">
-                    <AlertCircle size={24} className="text-red-500 mx-auto mb-2" />
-                    <p className="text-xs font-bold text-red-700">No Documents Uploaded</p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    {Object.entries(searchedTrainee.documents).map(([key, val]: [string, any]) => {
-                      if (!val || typeof val !== 'object') return null;
-                      return (
-                        <div key={key} className={`flex items-center justify-between p-2 border text-[10px] ${
-                          val.status === 'Verified' ? 'border-green-200 bg-green-50' :
-                          val.status === 'Uploaded' ? 'border-blue-200 bg-blue-50' : 'border-slate-200 bg-slate-50'
-                        }`}>
-                          <p className="font-bold text-slate-700 capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</p>
-                          <span className={`text-[9px] font-bold px-1.5 py-0.5 ${
-                            val.status === 'Verified' ? 'bg-green-600 text-white' :
-                            val.status === 'Uploaded' ? 'bg-blue-600 text-white' : 'bg-slate-300 text-slate-600'
-                          }`}>{val.status || 'Pending'}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* PERSONAL TAB */}
-            {activeProfileTab === 'personal' && (
-              <div className="p-4">
-                <div className="bg-blue-50 border border-blue-200 p-3 mb-4 grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <div><p className="text-[9px] font-black text-blue-500 uppercase">Batch</p><p className="text-sm font-black text-blue-900">{searchedTrainee.batchNumber || '--'}</p></div>
-                  <div><p className="text-[9px] font-black text-blue-500 uppercase">Batch Name</p><p className="text-sm font-bold text-blue-800">{searchedTrainee.batchName || '--'}</p></div>
-                  <div><p className="text-[9px] font-black text-amber-500 uppercase">Chest No</p><p className="text-sm font-black text-amber-900">{searchedTrainee.chestNo || 'NOT ISSUED'}</p></div>
-                  <div><p className="text-[9px] font-black text-blue-500 uppercase">Photo</p><p className="text-sm font-bold">{searchedTrainee.photoURL ? '✓ Uploaded' : '✗ Missing'}</p></div>
-                </div>
+              {/* ═══ PERSONAL TAB ═══ */}
+              {activeProfileTab === 'personal' && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {[
-                    { title: 'Personal Information', icon: User, fields: [
-                      ['Name', searchedTrainee.name], ['Father', searchedTrainee.fatherName],
-                      ['Mother', searchedTrainee.motherName], ['DOB', searchedTrainee.dob],
-                      ['Age', searchedTrainee.age ? `${searchedTrainee.age} Yrs` : '--'],
-                      ['Gender', searchedTrainee.gender], ['Blood', searchedTrainee.bloodGroup],
-                      ['Religion', searchedTrainee.religion], ['Category', searchedTrainee.category],
-                      ['Marital', searchedTrainee.maritalStatus],
-                    ]},
-                    { title: 'Identification & Batch', icon: Shield, fields: [
-                      ['Batch No', searchedTrainee.batchNumber || 'NOT ASSIGNED'],
-                      ['Batch Name', searchedTrainee.batchName || '--'],
-                      ['Chest No', searchedTrainee.chestNo || 'NOT ISSUED'],
-                      ['Reg No', searchedTrainee.regNo],
-                      ['Aadhar', searchedTrainee.aadharNo ? `XXXX-${String(searchedTrainee.aadharNo).slice(-4)}` : '--'],
-                      ['Weapon', searchedTrainee.weaponNo || 'Not Issued'],
-                    ]},
-                    { title: 'Contact', icon: Phone, fields: [
-                      ['Mobile', searchedTrainee.mobileNo], ['Emergency', searchedTrainee.emergencyContact],
-                      ['Em Name', searchedTrainee.emergencyContactName], ['Village', searchedTrainee.village],
-                      ['District', searchedTrainee.district], ['State', searchedTrainee.state],
-                      ['PIN', searchedTrainee.pinCode],
-                    ]},
-                    { title: 'Physical & Medical', icon: Heart, fields: [
-                      ['Height', searchedTrainee.height ? `${searchedTrainee.height} cm` : '--'],
-                      ['Weight', searchedTrainee.weight ? `${searchedTrainee.weight} kg` : '--'],
-                      ['Chest', searchedTrainee.chest || '--'],
-                      ['Shoe', searchedTrainee.shoeSize || '--'], ['Dress', searchedTrainee.dressSize || '--'],
-                      ['Med Status', searchedTrainee.medStat], ['Remarks', searchedTrainee.medRemarks || 'NIL'],
-                    ]},
-                  ].map(section => {
-                    const I = section.icon;
-                    return (
-                      <div key={section.title} className="border border-slate-200">
-                        <div className="bg-military-900 px-3 py-2 flex items-center">
-                          <I size={12} className="text-white mr-2" />
-                          <h4 className="text-[10px] font-black text-white uppercase">{section.title}</h4>
-                        </div>
-                        <div className="p-3 space-y-1.5">
-                          {section.fields.map(([l, v]) => (
-                            <div key={l} className="flex justify-between text-[10px]">
-                              <span className="text-slate-400 font-semibold">{l}</span>
-                              <span className="font-bold text-slate-700 text-right ml-2">{(v as string) || '--'}</span>
-                            </div>
-                          ))}
-                        </div>
+                    { title: '👤 Personal Info', fields: [['Name', searchedTrainee.name], ['Father', searchedTrainee.fatherName], ['Mother', searchedTrainee.motherName], ['DOB', searchedTrainee.dob], ['Age', searchedTrainee.age ? `${searchedTrainee.age} Yrs` : '--'], ['Gender', searchedTrainee.gender], ['Blood Group', searchedTrainee.bloodGroup], ['Religion', searchedTrainee.religion], ['Category', searchedTrainee.category], ['Marital', searchedTrainee.maritalStatus]] },
+                    { title: '🔄 Lifecycle Timeline', fields: [['Status', searchedTrainee.completionStatus || 'Training'], ['Joined', searchedTrainee.joinDate || '--'], ['Batch', searchedTrainee.batchNumber || '--'], ['FPT', searchedTrainee.fptResult || 'Not Done'], ['Weekly Exam', searchedTrainee.weeklyExamResult || 'Not Given'], ['Firing', searchedTrainee.firingResult || 'Not Done'], ['Medical', searchedTrainee.medStat || 'SHAPE-1'], ['Attendance', searchedTrainee.attn === 'P' ? '✅ Present' : searchedTrainee.attn || 'P']] },
+                    { title: '📊 Performance', fields: [['PT Score', searchedTrainee.ptScore || '--'], ['FPT Result', searchedTrainee.fptResult || 'Not Done'], ['FPT Score', searchedTrainee.fptScore || '--'], ['Weekly Exam', searchedTrainee.weeklyExamResult || 'Not Given'], ['Exam Marks', searchedTrainee.weeklyExamMarks || '--'], ['Punishments', searchedTrainee.punishments || '0'], ['Status', searchedTrainee.attn === 'P' ? '✅ Present' : searchedTrainee.attn === 'A' ? '🚫 Absent' : searchedTrainee.attn === 'L' ? '✈️ Leave' : searchedTrainee.attn === 'S' ? '🤒 Sick' : searchedTrainee.attn === 'H' ? '🏥 Hospital' : searchedTrainee.attn === 'R' ? '🛌 Rest' : searchedTrainee.attn || 'P'], ['Remarks', searchedTrainee.remarks || 'NIL']] },
+                  ].map(section => (
+                    <div key={section.title} className="border border-slate-200 rounded-xl overflow-hidden">
+                      <div className="bg-military-900 px-3 py-2"><h4 className="text-[10px] font-black text-white uppercase">{section.title}</h4></div>
+                      <div className="p-3 space-y-1.5">
+                        {section.fields.map(([l, v]) => (
+                          <div key={l} className="flex justify-between text-[10px] border-b border-slate-50 pb-1 last:border-0">
+                            <span className="text-slate-400 font-semibold">{l}</span>
+                            <span className="font-bold text-slate-700 text-right ml-2">{(v as string) || '--'}</span>
+                          </div>
+                        ))}
                       </div>
-                    );
-                  })}
+                    </div>
+                  ))}
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* EXAMS TAB */}
-            {activeProfileTab === 'exams' && (
-              <div className="p-4">
-                <BatchChestBadge batchNumber={searchedTrainee.batchNumber} chestNo={searchedTrainee.chestNo} />
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-                  {[
-                    { label: 'PT Score',    value: searchedTrainee.ptScore || '--',              icon: Activity,    color: 'border-t-military-600', sub: 'Physical Training' },
-                    { label: 'FPT',         value: searchedTrainee.fptResult || 'Not Done',      icon: TrendingUp,  color: searchedTrainee.fptResult === 'Fail' ? 'border-t-red-500' : 'border-t-green-500', sub: `Score: ${searchedTrainee.fptScore || 'N/A'}` },
-                    { label: 'Weekly Exam', value: searchedTrainee.weeklyExamResult || 'Not Given', icon: FileText, color: searchedTrainee.weeklyExamResult === 'Fail' ? 'border-t-red-500' : 'border-t-blue-500', sub: `Marks: ${searchedTrainee.weeklyExamMarks || 'N/A'}` },
-                    { label: 'Weapon',      value: searchedTrainee.weaponQual || '--',           icon: Crosshair,   color: 'border-t-green-500', sub: 'Firing' },
-                    { label: 'Punishments', value: searchedTrainee.punishments || '0',           icon: ShieldAlert, color: 'border-t-red-500',   sub: (!searchedTrainee.punishments || searchedTrainee.punishments === '0') ? 'Clean' : 'Action Required' },
-                    { label: 'Attendance',  value: searchedTrainee.attn || 'P',                  icon: Users,       color: 'border-t-amber-500', sub: 'Status' },
-                  ].map(card => {
-                    const I = card.icon;
-                    return (
-                      <div key={card.label} className={`bg-white border border-slate-300 p-3 border-t-2 ${card.color}`}>
-                        <div className="flex justify-between">
-                          <span className="text-[10px] font-bold text-slate-500 uppercase">{card.label}</span>
-                          <I size={16} className="text-slate-400" />
-                        </div>
-                        <p className={`text-2xl font-black mt-1 ${card.value === 'Fail' ? 'text-red-600' : 'text-military-900'}`}>
-                          {card.value}
-                        </p>
-                        <p className="text-[10px] text-slate-500 mt-0.5">{card.sub}</p>
-                      </div>
-                    );
-                  })}
+              {/* ═══ CONTACT TAB ═══ */}
+              {activeProfileTab === 'contact' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="border border-slate-200 rounded-xl overflow-hidden">
+                    <div className="bg-military-900 px-3 py-2"><h4 className="text-[10px] font-black text-white uppercase">📞 Contact Info</h4></div>
+                    <div className="p-3 space-y-1.5">
+                      {[['Mobile', searchedTrainee.mobileNo], ['Emergency Contact', searchedTrainee.emergencyContact], ['Emergency Name', searchedTrainee.emergencyContactName], ['Relationship', searchedTrainee.relationship]].map(([l, v]) => (
+                        <div key={l} className="flex justify-between text-[10px] border-b border-slate-50 pb-1"><span className="text-slate-400 font-semibold">{l}</span><span className="font-bold text-slate-700">{(v as string) || '--'}</span></div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="border border-slate-200 rounded-xl overflow-hidden">
+                    <div className="bg-military-900 px-3 py-2"><h4 className="text-[10px] font-black text-white uppercase">📍 Address</h4></div>
+                    <div className="p-3 space-y-1.5">
+                      {[['Village', searchedTrainee.village], ['Tehsil', searchedTrainee.tehsil], ['District', searchedTrainee.district], ['State', searchedTrainee.state], ['PIN Code', searchedTrainee.pinCode]].map(([l, v]) => (
+                        <div key={l} className="flex justify-between text-[10px] border-b border-slate-50 pb-1"><span className="text-slate-400 font-semibold">{l}</span><span className="font-bold text-slate-700">{(v as string) || '--'}</span></div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+
+              {/* ═══ EDUCATION TAB ═══ */}
+              {activeProfileTab === 'education' && (
+                <div className="border border-slate-200 rounded-xl overflow-hidden max-w-md">
+                  <div className="bg-military-900 px-3 py-2"><h4 className="text-[10px] font-black text-white uppercase">🎓 Education</h4></div>
+                  <div className="p-3 space-y-1.5">
+                    {[['Qualification', searchedTrainee.education], ['Board/University', searchedTrainee.boardUniversity], ['Passing Year', searchedTrainee.passingYear], ['Percentage', searchedTrainee.percentage]].map(([l, v]) => (
+                      <div key={l} className="flex justify-between text-[10px] border-b border-slate-50 pb-1"><span className="text-slate-400 font-semibold">{l}</span><span className="font-bold text-slate-700">{(v as string) || '--'}</span></div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ═══ TRAINING TAB ═══ */}
+              {activeProfileTab === 'training' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="border border-slate-200 rounded-xl overflow-hidden">
+                    <div className="bg-military-900 px-3 py-2"><h4 className="text-[10px] font-black text-white uppercase">🏋️ Physical</h4></div>
+                    <div className="p-3 space-y-1.5">
+                      {[['Height', searchedTrainee.height ? `${searchedTrainee.height} cm` : '--'], ['Weight', searchedTrainee.weight ? `${searchedTrainee.weight} kg` : '--'], ['Chest', searchedTrainee.chest || '--'], ['Shoe Size', searchedTrainee.shoeSize || '--'], ['Dress Size', searchedTrainee.dressSize || '--']].map(([l, v]) => (
+                        <div key={l} className="flex justify-between text-[10px] border-b border-slate-50 pb-1"><span className="text-slate-400 font-semibold">{l}</span><span className="font-bold text-slate-700">{(v as string) || '--'}</span></div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="border border-slate-200 rounded-xl overflow-hidden">
+                    <div className="bg-military-900 px-3 py-2"><h4 className="text-[10px] font-black text-white uppercase">🎖️ Recruitment</h4></div>
+                    <div className="p-3 space-y-1.5">
+                      {[['Recruitment Center', searchedTrainee.recruitmentCenter || '--'], ['Joining Date', searchedTrainee.joinDate || '--'], ['Platoon', searchedTrainee.platoon || '--'], ['Section', searchedTrainee.section || '--'], ['Batch', searchedTrainee.batchNumber || '--'], ['Chest No', searchedTrainee.chestNo || 'PENDING']].map(([l, v]) => (
+                        <div key={l} className="flex justify-between text-[10px] border-b border-slate-50 pb-1"><span className="text-slate-400 font-semibold">{l}</span><span className="font-bold text-slate-700">{(v as string) || '--'}</span></div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ═══ WEAPON TAB ═══ */}
+              {activeProfileTab === 'weapon' && (
+                <div className="border border-slate-200 rounded-xl overflow-hidden max-w-md">
+                  <div className="bg-military-900 px-3 py-2"><h4 className="text-[10px] font-black text-white uppercase">🔫 Weapon & Firing</h4></div>
+                  <div className="p-3 space-y-1.5">
+                    {[['Weapon No', searchedTrainee.weaponNo || 'Not Issued'], ['Rifle No', searchedTrainee.rifleNo || 'Not Issued'], ['Weapon Qual', searchedTrainee.weaponQual || 'Not Done'], ['Firing Result', searchedTrainee.firingResult || 'Not Done'], ['Firing Score', searchedTrainee.firingScore || '--']].map(([l, v]) => (
+                      <div key={l} className="flex justify-between text-[10px] border-b border-slate-50 pb-1"><span className="text-slate-400 font-semibold">{l}</span><span className="font-bold text-slate-700">{(v as string) || '--'}</span></div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ═══ TESTS/RESULTS TAB — ALL TYPES ═══ */}
+              {activeProfileTab === 'tests' && (
+                <div className="space-y-4">
+                  {examRecordsLoading ? <div className="p-6 text-center"><Loader2 size={20} className="animate-spin text-military-600 mx-auto" /></div>
+                  : allTestsList.length === 0 ? (
+                    <div className="bg-slate-50 border border-slate-200 p-6 text-center rounded-xl">
+                      <Crosshair size={28} className="mx-auto text-slate-300 mb-2" />
+                      <p className="text-xs font-bold text-slate-400">Abhi tak koi test record nahi</p>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Summary Cards */}
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
+                        {(() => {
+                          const typeMap: Record<string, { label: string; icon: string; color: string }> = {
+                            fpt: { label: 'FPT', icon: '⚡', color: 'bg-green-50 border-green-300 text-green-800' },
+                            firing: { label: 'Firing', icon: '🎯', color: 'bg-orange-50 border-orange-300 text-orange-800' },
+                            drill: { label: 'Drill', icon: '🎖️', color: 'bg-purple-50 border-purple-300 text-purple-800' },
+                            weapon: { label: 'Weapon', icon: '🔫', color: 'bg-red-50 border-red-300 text-red-800' },
+                            pt: { label: 'PT', icon: '🏋️', color: 'bg-blue-50 border-blue-300 text-blue-800' },
+                            weekly: { label: 'Weekly', icon: '📅', color: 'bg-indigo-50 border-indigo-300 text-indigo-800' },
+                            map_reading: { label: 'Map', icon: '🗺️', color: 'bg-cyan-50 border-cyan-300 text-cyan-800' },
+                            field_craft: { label: 'Field', icon: '⛺', color: 'bg-amber-50 border-amber-300 text-amber-800' },
+                            battle_craft: { label: 'Battle', icon: '⚔️', color: 'bg-pink-50 border-pink-300 text-pink-800' },
+                            first_aid: { label: 'First Aid', icon: '🏥', color: 'bg-rose-50 border-rose-300 text-rose-800' },
+                            custom: { label: 'Custom', icon: '📝', color: 'bg-slate-50 border-slate-300 text-slate-800' },
+                          };
+                          const grouped: Record<string, any[]> = {};
+                          allTestsList.forEach(t => { const k = t.testType || 'custom'; (grouped[k] = grouped[k] || []).push(t); });
+                          return Object.entries(grouped).map(([type, tests]) => {
+                            const info = typeMap[type] || typeMap.custom;
+                            const passed = tests.filter(t => t.result === 'Pass').length;
+                            return (
+                              <div key={type} className={`rounded-xl border-2 p-2.5 text-center ${info.color}`}>
+                                <p className="text-lg">{info.icon}</p>
+                                <p className="text-lg font-black">{tests.length}</p>
+                                <p className="text-[8px] font-black uppercase">{info.label}</p>
+                                <p className="text-[7px] opacity-60">{passed}P/{tests.length - passed}F</p>
+                              </div>
+                            );
+                          });
+                        })()}
+                      </div>
+
+                      {/* T-161: Subject-wise Marks Summary */}
+                      {(() => {
+                        const subjectMap: Record<string, { total: number; obtained: number; count: number; best: number; latest: number }> = {};
+                        allTestsList.forEach(t => {
+                          const subj = t.subject || t.testType || 'General';
+                          if (!subjectMap[subj]) subjectMap[subj] = { total: 0, obtained: 0, count: 0, best: 0, latest: 0 };
+                          subjectMap[subj].total += (t.totalMarks || 100);
+                          subjectMap[subj].obtained += (t.obtainedMarks || 0);
+                          subjectMap[subj].count++;
+                          subjectMap[subj].best = Math.max(subjectMap[subj].best, t.percentage || 0);
+                          subjectMap[subj].latest = t.percentage || 0;
+                        });
+                        if (Object.keys(subjectMap).length <= 1) return null;
+                        return (
+                          <div className="bg-indigo-50 border-2 border-indigo-200 rounded-xl p-4">
+                            <h3 className="text-xs font-black text-indigo-900 uppercase mb-3">📊 Subject-wise Summary (T-161)</h3>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                              {Object.entries(subjectMap).map(([subj, data]) => {
+                                const avgPct = data.count > 0 ? Math.round(data.obtained / data.total * 100) : 0;
+                                const grade = calcGrade(avgPct);
+                                return (
+                                  <div key={subj} className="bg-white rounded-lg border border-indigo-200 p-2.5 text-center">
+                                    <p className="text-[9px] font-black text-indigo-700 uppercase truncate">{subj}</p>
+                                    <p className="text-lg font-black text-slate-800">{avgPct}%</p>
+                                    <span className={`text-[8px] font-black px-1.5 py-0.5 rounded border ${gradeColor(grade)}`}>{grade}</span>
+                                    <p className="text-[7px] text-slate-400 mt-0.5">{data.count} tests · Best: {data.best}%</p>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* All Tests List — grouped by type */}
+                      {(() => {
+                        const typeMap: Record<string, { label: string; icon: string }> = {
+                          fpt: { label: 'FPT (Field Physical Test)', icon: '⚡' },
+                          firing: { label: 'Firing Practice', icon: '🎯' },
+                          drill: { label: 'Drill Test', icon: '🎖️' },
+                          weapon: { label: 'Weapon Training', icon: '🔫' },
+                          pt: { label: 'PT Test', icon: '🏋️' },
+                          weekly: { label: 'Weekly Written Test', icon: '📅' },
+                          map_reading: { label: 'Map Reading', icon: '🗺️' },
+                          field_craft: { label: 'Field Craft', icon: '⛺' },
+                          battle_craft: { label: 'Battle Craft', icon: '⚔️' },
+                          first_aid: { label: 'First Aid', icon: '🏥' },
+                          custom: { label: 'Custom Test', icon: '📝' },
+                        };
+                        const grouped: Record<string, any[]> = {};
+                        allTestsList.forEach(t => { const k = t.testType || 'custom'; (grouped[k] = grouped[k] || []).push(t); });
+                        return Object.entries(grouped).map(([type, tests]) => {
+                          const info = typeMap[type] || typeMap.custom;
+                          return (
+                            <div key={type}>
+                              <h3 className="text-xs font-black uppercase text-military-900 mb-2 flex items-center gap-2">
+                                <span>{info.icon}</span> {info.label} — {tests.length} test(s)
+                              </h3>
+                              <div className="space-y-2">
+                                {tests.map((r: any, idx: number) => {
+                                  const rowId = String(r.id || `${type}-${idx}`);
+                                  const isOpen = expandedTestId2 === rowId;
+                                  const pass = r.result === 'Pass';
+                                  const events = Array.isArray(r.events) ? r.events : [];
+                                  const isFpt = type === 'fpt';
+                                  const isFiring = type === 'firing';
+                                  return (
+                                    <div key={rowId} className={`rounded-xl border overflow-hidden ${pass ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                                      <button type="button" onClick={() => setExpandedTestId2(isOpen ? null : rowId)} className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-white/50">
+                                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                                          {isOpen ? <ChevronUp size={14} className="text-slate-500" /> : <ChevronDown size={14} className="text-slate-500" />}
+                                          <span className="text-[10px] font-black bg-blue-100 text-blue-700 px-2 py-1 rounded-lg">W{r.weekNumber || '—'}</span>
+                                          <div className="min-w-0">
+                                            <p className="text-[11px] font-black text-slate-800 truncate">{r.testName || info.label}</p>
+                                            <p className="text-[9px] text-slate-500">{r.testDate || '—'} · {r.obtainedMarks ?? 0}/{r.totalMarks ?? '—'} · {r.venue || ''}</p>
+                                          </div>
+                                        </div>
+                                        <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg flex-shrink-0 ${pass ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>{r.percentage ?? 0}% {pass ? 'PASS' : 'FAIL'}</span>
+                                      </button>
+                                      {isOpen && (
+                                        <div className="border-t border-white/70 bg-white px-4 py-3">
+                                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+                                            {[['Result', r.result || '—'], ['Obtained', `${r.obtainedMarks ?? 0}/${r.totalMarks ?? '—'}`], ['Percentage', `${r.percentage ?? 0}%`], ['Passing', r.passingMarks ?? '—'], ['Date', r.testDate || '—'], ['Venue', r.venue || '—'], ['Instructor', r.instructorName || '—'], ['Remarks', r.remarks || '—']].map(([l, v]) => (
+                                              <div key={l} className="rounded-lg border border-slate-100 bg-slate-50 px-2 py-1.5"><p className="text-[8px] font-black text-slate-400 uppercase">{l}</p><p className="text-[10px] font-bold text-slate-800 mt-0.5">{String(v)}</p></div>
+                                            ))}
+                                          </div>
+                                          {isFpt && events.length > 0 && (
+                                            <div className="space-y-1.5 mt-3">
+                                              <p className="text-[9px] font-black text-slate-500 uppercase">Event-wise Performance</p>
+                                              {events.map((ev: any, ei: number) => (
+                                                <div key={ei} className={`flex items-center justify-between rounded-lg border px-3 py-2 ${ev.passed ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                                                  <div><p className="text-[10px] font-black text-slate-800">{ev.name || `Event ${ei + 1}`}</p><p className="text-[9px] text-slate-500">Pass: {ev.passingMarks ?? '—'} · Max: {ev.maxMarks ?? '—'}{ev.runningGrade ? ` · ${ev.runningGrade}` : ''}</p></div>
+                                                  <span className={`text-[10px] font-black px-2 py-1 rounded-lg ${ev.passed ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>{ev.marks ?? 0}/{ev.maxMarks ?? '—'} {ev.passed ? 'PASS' : 'FAIL'}</span>
+                                                </div>
+                                              ))}
+                                              <div className="flex gap-3 mt-2">
+                                                <span className="text-[9px] font-bold text-green-600">✅ {r.eventsPassed ?? 0} Passed</span>
+                                                <span className="text-[9px] font-bold text-red-600">❌ {r.eventsFailed ?? 0} Failed</span>
+                                              </div>
+                                            </div>
+                                          )}
+                                          {isFiring && (
+                                            <div className="mt-3 space-y-3">
+                                              <p className="text-[9px] font-black text-orange-600 uppercase">🎯 BSF Firing Range Register</p>
+                                              {r.firingDetails?.ringValues && r.firingDetails.ringValues.length > 0 ? (
+                                                <div className="space-y-2">
+                                                  {/* Ring Values — Shot by Shot */}
+                                                  <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                                                    <p className="text-[9px] font-black text-orange-700 mb-1.5">Shot Values (प्रत्येक शॉट का रिंग वैल्यू)</p>
+                                                    <div className="flex flex-wrap gap-1.5">
+                                                      {r.firingDetails.ringValues.map((rv: number, i: number) => (
+                                                        <span key={i} className={`text-sm font-black px-2.5 py-1 rounded-lg ${rv >= 8 ? 'bg-green-600 text-white' : rv >= 5 ? 'bg-amber-500 text-white' : rv > 0 ? 'bg-red-600 text-white' : 'bg-slate-400 text-white'}`}>{rv || 'M'}</span>
+                                                      ))}
+                                                    </div>
+                                                  </div>
+                                                  {/* Score Summary */}
+                                                  <div className="grid grid-cols-2 gap-2">
+                                                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-2 text-center">
+                                                      <p className="text-[8px] font-black text-blue-600 uppercase">Actual Score</p>
+                                                      <p className="text-lg font-black text-blue-900">{r.firingDetails.actualScore ?? 0}/{r.firingDetails.maxScore ?? '—'}</p>
+                                                    </div>
+                                                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-2 text-center">
+                                                      <p className="text-[8px] font-black text-purple-600 uppercase">Rounds</p>
+                                                      <p className="text-lg font-black text-purple-900">{r.firingDetails.totalRounds ?? r.firingDetails.ringValues.length}</p>
+                                                    </div>
+                                                  </div>
+                                                  {/* Classification Badge */}
+                                                  {r.firingDetails.classification && (
+                                                    <div className={`rounded-xl p-3 text-center border-2 ${
+                                                      r.firingDetails.classification.includes('Marksman') ? 'border-yellow-400 bg-yellow-50' :
+                                                      r.firingDetails.classification.includes('First Class') ? 'border-green-400 bg-green-50' :
+                                                      r.firingDetails.classification.includes('Sharpshooter') ? 'border-blue-400 bg-blue-50' :
+                                                      'border-red-400 bg-red-50'
+                                                    }`}>
+                                                      <p className="text-[9px] font-black text-slate-500 uppercase">Classification (वर्गीकरण)</p>
+                                                      <p className="text-xl font-black text-slate-800">{r.firingDetails.classification}</p>
+                                                    </div>
+                                                  )}
+                                                  {/* Lane No */}
+                                                  {r.firingDetails.laneNo && (
+                                                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 flex justify-between">
+                                                      <span className="text-[9px] font-bold text-slate-500">Lane / Target No</span>
+                                                      <span className="text-xs font-black text-slate-800">{r.firingDetails.laneNo}</span>
+                                                    </div>
+                                                  )}
+                                                  {/* Group Size */}
+                                                  {r.firingDetails.groupSize && (
+                                                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 flex justify-between">
+                                                      <span className="text-[9px] font-bold text-slate-500">Group Size</span>
+                                                      <span className="text-xs font-black text-slate-800">{r.firingDetails.groupSize} mm</span>
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              ) : (
+                                                <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 text-center">
+                                                  <p className="text-[10px] font-bold text-orange-600">Firing details abhi enter nahi hue</p>
+                                                  <p className="text-[9px] text-orange-400 mt-1">Test Records page se score enter karo — ring values, classification sab yaha dikhenge</p>
+                                                </div>
+                                              )}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        });
+                      })()}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* ═══ ATTENDANCE TAB ═══ */}
+              {activeProfileTab === 'attendance' && (
+                <div className="space-y-4">
+                  {/* T-130: Period Attendance Summary */}
+                  {periodAttendanceList.length > 0 && (() => {
+                    const totalPeriods = periodAttendanceList.length;
+                    const presentPeriods = periodAttendanceList.filter(r => r.status === 'Present' || r.present).length;
+                    const absentPeriods = totalPeriods - presentPeriods;
+                    const pct = totalPeriods > 0 ? Math.round((presentPeriods / totalPeriods) * 100) : 0;
+                    // Subject-wise breakdown
+                    const subjectMap: Record<string, { total: number; present: number }> = {};
+                    periodAttendanceList.forEach(r => {
+                      const subj = r.subject || r.subjectName || 'General';
+                      if (!subjectMap[subj]) subjectMap[subj] = { total: 0, present: 0 };
+                      subjectMap[subj].total++;
+                      if (r.status === 'Present' || r.present) subjectMap[subj].present++;
+                    });
+                    return (
+                      <>
+                        <div className="bg-blue-50 border-2 border-blue-300 rounded-xl p-4">
+                          <h3 className="text-xs font-black text-blue-900 uppercase mb-3 flex items-center gap-2">
+                            📊 Kaksha Upasthiti (Period-wise Attendance)
+                          </h3>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            <div className="bg-white rounded-lg p-3 text-center border border-blue-200">
+                              <p className="text-2xl font-black text-blue-900">{totalPeriods}</p>
+                              <p className="text-[8px] font-bold text-blue-600 uppercase">Total Periods</p>
+                            </div>
+                            <div className="bg-green-50 rounded-lg p-3 text-center border border-green-200">
+                              <p className="text-2xl font-black text-green-700">{presentPeriods}</p>
+                              <p className="text-[8px] font-bold text-green-600 uppercase">Present</p>
+                            </div>
+                            <div className="bg-red-50 rounded-lg p-3 text-center border border-red-200">
+                              <p className="text-2xl font-black text-red-700">{absentPeriods}</p>
+                              <p className="text-[8px] font-bold text-red-600 uppercase">Absent</p>
+                            </div>
+                            <div className={`rounded-lg p-3 text-center border ${pct >= 75 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                              <p className={`text-2xl font-black ${pct >= 75 ? 'text-green-700' : 'text-red-700'}`}>{pct}%</p>
+                              <p className={`text-[8px] font-bold uppercase ${pct >= 75 ? 'text-green-600' : 'text-red-600'}`}>Attendance %</p>
+                            </div>
+                          </div>
+                          {/* Subject-wise */}
+                          {Object.keys(subjectMap).length > 0 && (
+                            <div className="mt-3 space-y-1.5">
+                              <p className="text-[9px] font-black text-blue-700 uppercase">Subject-wise Breakdown</p>
+                              {Object.entries(subjectMap).map(([subj, data]) => {
+                                const sPct = data.total > 0 ? Math.round((data.present / data.total) * 100) : 0;
+                                return (
+                                  <div key={subj} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-blue-100">
+                                    <span className="text-[10px] font-bold text-slate-700">{subj}</span>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[9px] text-slate-500">{data.present}/{data.total}</span>
+                                      <span className={`text-[9px] font-black px-2 py-0.5 rounded-lg ${sPct >= 75 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{sPct}%</span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    );
+                  })()}
+                  {(() => {
+                    const b = {
+                      absent: absentRecordsList.filter(r => r.type === 'A').reduce((s, r) => s + (r.totalDays || 1), 0),
+                      leave: absentRecordsList.filter(r => r.type === 'L').reduce((s, r) => s + (r.totalDays || 1), 0),
+                      sick: absentRecordsList.filter(r => r.type === 'S').reduce((s, r) => s + (r.totalDays || 1), 0),
+                      hospital: absentRecordsList.filter(r => r.type === 'H').reduce((s, r) => s + (r.totalDays || 1), 0),
+                      bRest: absentRecordsList.filter(r => r.type === 'R').reduce((s, r) => s + (r.totalDays || 1), 0),
+                      medAppt: absentRecordsList.filter(r => r.type === 'M').reduce((s, r) => s + (r.totalDays || 1), 0),
+                    };
+                    return <>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+                        {[
+                          { label: 'Absent', value: b.absent, icon: '🚫', color: 'bg-red-50 border-red-300 text-red-800' },
+                          { label: 'Leave', value: b.leave, icon: '✈️', color: 'bg-amber-50 border-amber-300 text-amber-800' },
+                          { label: 'Sick', value: b.sick, icon: '🤒', color: 'bg-orange-50 border-orange-300 text-orange-800' },
+                          { label: 'Hospital', value: b.hospital, icon: '🏥', color: 'bg-purple-50 border-purple-300 text-purple-800' },
+                          { label: 'B/C Rest', value: b.bRest, icon: '🛌', color: 'bg-blue-50 border-blue-300 text-blue-800' },
+                          { label: 'Med Appt', value: b.medAppt, icon: '🩺', color: 'bg-teal-50 border-teal-300 text-teal-800' },
+                        ].map(card => (
+                          <div key={card.label} className={`rounded-xl border-2 p-3 text-center ${card.color}`}>
+                            <p className="text-xl mb-1">{card.icon}</p>
+                            <p className="text-2xl font-black">{card.value}</p>
+                            <p className="text-[9px] font-bold uppercase opacity-70">{card.label}</p>
+                            <p className="text-[8px] opacity-50">days</p>
+                          </div>
+                        ))}
+                      </div>
+                      {absentRecordsList.length > 0 && <div className="border border-slate-200 rounded-xl overflow-hidden">
+                        <div className="bg-slate-100 px-3 py-2 border-b border-slate-200"><p className="text-[10px] font-black text-slate-600 uppercase">Full History ({absentRecordsList.length})</p></div>
+                        <div className="max-h-64 overflow-y-auto"><table className="w-full text-[10px]"><thead className="bg-slate-50 sticky top-0"><tr>{['Type', 'Reason', 'From', 'To', 'Days', 'Status'].map(h => <th key={h} className="px-3 py-1.5 text-left font-black uppercase text-slate-500">{h}</th>)}</tr></thead><tbody className="divide-y divide-slate-50">
+                          {absentRecordsList.map((r: any) => { const m: Record<string, { l: string; i: string; c: string }> = { 'A': { l: 'Absent', i: '🚫', c: 'bg-red-100 text-red-700' }, 'L': { l: 'Leave', i: '✈️', c: 'bg-amber-100 text-amber-700' }, 'S': { l: 'Sick', i: '🤒', c: 'bg-orange-100 text-orange-700' }, 'H': { l: 'Hospital', i: '🏥', c: 'bg-purple-100 text-purple-700' }, 'R': { l: 'Rest', i: '🛌', c: 'bg-blue-100 text-blue-700' }, 'M': { l: 'Med', i: '🩺', c: 'bg-teal-100 text-teal-700' } }; const t = m[r.type] || { l: r.type, i: '❓', c: 'bg-slate-100 text-slate-700' }; return <tr key={r.id} className="hover:bg-slate-50"><td className="px-3 py-1.5"><span className={`text-[9px] font-black px-2 py-0.5 rounded-lg ${t.c}`}>{t.i} {t.l}</span></td><td className="px-3 py-1.5 font-bold text-slate-700 max-w-[150px] truncate">{r.reason || '—'}</td><td className="px-3 py-1.5 font-mono text-slate-500">{r.fromDate || '—'}</td><td className="px-3 py-1.5 font-mono text-slate-500">{r.toDate || '—'}</td><td className="px-3 py-1.5 font-black text-red-600">{r.totalDays || 1}d</td><td className="px-3 py-1.5"><span className={`text-[9px] font-bold px-2 py-0.5 rounded-lg ${r.status === 'Active' ? 'bg-red-600 text-white' : 'bg-green-600 text-white'}`}>{r.status || '—'}</span></td></tr>; })}
+                        </tbody></table></div>
+                      </div>}
+                    </>;
+                  })()}
+                </div>
+              )}
+
+              {/* ═══ MEDICAL TAB ═══ */}
+              {activeProfileTab === 'medical' && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg ${searchedTrainee.medStat === 'SHAPE-1' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>{searchedTrainee.medStat || 'SHAPE-1'}</span>
+                    <span className="text-[10px] text-slate-500">{searchedTrainee.medRemarks || 'NIL'}</span>
+                  </div>
+                  {medicalRecordsList.length === 0 ? <div className="bg-green-50 border border-green-200 p-4 text-center rounded-xl"><p className="text-xs font-bold text-green-600">Medically Fit! ✅</p></div>
+                  : medicalRecordsList.map((r: any) => (
+                    <div key={r.id} className={`px-4 py-3 rounded-xl border flex items-center justify-between ${r.status === 'Active' ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}>
+                      <div><p className="text-[11px] font-bold text-slate-800">{r.category || 'Medical'}: {r.diagnosis || '—'}</p><p className="text-[9px] text-slate-500 mt-0.5">{r.date || '—'} {r.remarks ? `· ${r.remarks}` : ''}</p></div>
+                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded-lg ${r.status === 'Active' ? 'bg-red-600 text-white' : 'bg-green-600 text-white'}`}>{r.status === 'Active' ? '● Active' : '✓ Resolved'}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* ═══ DOCUMENTS TAB ═══ */}
+              {activeProfileTab === 'documents' && (
+                !searchedTrainee.documents ? <div className="bg-red-50 border border-red-200 p-4 text-center rounded-xl"><p className="text-xs font-bold text-red-600">No Documents Uploaded</p></div>
+                : <div className="grid grid-cols-1 md:grid-cols-2 gap-2">{Object.entries(searchedTrainee.documents).map(([key, val]: [string, any]) => {
+                  if (!val || typeof val !== 'object') return null;
+                  return <div key={key} className={`flex items-center justify-between p-2 border text-[10px] ${val.status === 'Verified' ? 'border-green-200 bg-green-50' : val.status === 'Uploaded' ? 'border-blue-200 bg-blue-50' : 'border-slate-200 bg-slate-50'}`}>
+                    <p className="font-bold text-slate-700 capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</p>
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 ${val.status === 'Verified' ? 'bg-green-600 text-white' : val.status === 'Uploaded' ? 'bg-blue-600 text-white' : 'bg-slate-300 text-slate-600'}`}>{val.status || 'Pending'}</span>
+                  </div>;
+                })}</div>
+              )}
+
+              {/* ═══ KIT TAB ═══ */}
+              {activeProfileTab === 'kit' && (() => {
+                const ks = getKitStatusV2(searchedTrainee);
+                const pct = ks.total > 0 ? Math.round((ks.issued.length / ks.total) * 100) : 0;
+                return <div className="space-y-3">
+                  <div className="h-2 bg-slate-200 rounded-full overflow-hidden"><div className="h-full bg-green-500 transition-all" style={{ width: `${pct}%` }} /></div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="border border-green-200 bg-green-50 rounded-xl p-3"><p className="text-[10px] font-black text-green-800 mb-2">✅ Issued ({ks.issued.length})</p><div className="space-y-1 max-h-40 overflow-y-auto">{ks.issued.map((row, i) => <div key={i} className="text-[10px] font-bold text-slate-700 flex items-center gap-1"><CheckCircle2 size={10} className="text-green-500" />{row.emoji} {row.name} {row.size && <span className="text-[8px] bg-slate-100 px-1 rounded">{row.size}</span>} <span className="text-[8px] bg-green-600 text-white px-1 rounded">×{row.quantity}</span></div>)}</div></div>
+                    <div className="border border-red-200 bg-red-50 rounded-xl p-3"><p className="text-[10px] font-black text-red-800 mb-2">❌ Pending ({ks.pending.length})</p><div className="space-y-1 max-h-40 overflow-y-auto">{ks.pending.length === 0 ? <p className="text-[10px] text-green-600 font-bold">All Issued! ✅</p> : ks.pending.map((row, i) => <div key={i} className="text-[10px] font-bold text-slate-600 flex items-center gap-1"><Minus size={10} className="text-red-400" />{row.emoji} {row.name}</div>)}</div></div>
+                  </div>
+                </div>
+              })()}
+
+              {/* ═══ JOINING TAB ═══ */}
+              {activeProfileTab === 'joining' && (
+                <div className="space-y-3">
+                  <p className="text-[10px] text-slate-500">Joining lifecycle yaha dikhega — Bharti Prakriya se linked</p>
+                  <div className="bg-slate-50 border border-slate-200 p-4 text-center rounded-xl">
+                    <UserPlus size={28} className="mx-auto text-slate-300 mb-2" />
+                    <p className="text-xs font-bold text-slate-400">Joining records Bharti Prakriya se aayenge</p>
+                  </div>
+                </div>
+              )}
+
+              {/* ═══ CLEARANCE TAB ═══ */}
+              {activeProfileTab === 'clearance' && (
+                <div className="space-y-3">
+                  <p className="text-[10px] text-slate-500">Clearance checklist yaha dikhega — Klirans Prabandhan se linked</p>
+                  <div className="bg-slate-50 border border-slate-200 p-4 text-center rounded-xl">
+                    <ClipboardCheck size={28} className="mx-auto text-slate-300 mb-2" />
+                    <p className="text-xs font-bold text-slate-400">Clearance records Klirans Prabandhan se aayenge</p>
+                  </div>
+                </div>
+              )}
+
+              {/* ═══ LEAVE TAB ═══ */}
+              {activeProfileTab === 'leave' && (
+                <div className="space-y-3">
+                  <p className="text-[10px] text-slate-500">Leave records yaha dikhenge — Chhutti Prabandhan se linked</p>
+                  <div className="bg-slate-50 border border-slate-200 p-4 text-center rounded-xl">
+                    <Plane size={28} className="mx-auto text-slate-300 mb-2" />
+                    <p className="text-xs font-bold text-slate-400">Leave records Chhutti Prabandhan se aayenge</p>
+                    <p className="text-[10px] text-slate-400 mt-1">Sidebar → Chhutti Prabandhan se apply karo</p>
+                  </div>
+                </div>
+              )}
+
+              {/* ═══ MOVEMENT TAB ═══ */}
+              {activeProfileTab === 'movement' && (
+                <div className="space-y-3">
+                  <p className="text-[10px] text-slate-500">Movement/Transfer records yaha dikhenge — Sthanantar Register se linked</p>
+                  <div className="bg-slate-50 border border-slate-200 p-4 text-center rounded-xl">
+                    <ArrowRightLeft size={28} className="mx-auto text-slate-300 mb-2" />
+                    <p className="text-xs font-bold text-slate-400">Movement records Sthanantar Register se aayenge</p>
+                    <p className="text-[10px] text-slate-400 mt-1">Sidebar → Sthanantar Register se add karo</p>
+                  </div>
+                </div>
+              )}
+
+              {/* ═══ DISCIPLINE TAB ═══ */}
+              {activeProfileTab === 'discipline' && (
+                <div className="space-y-3">
+                  <p className="text-[10px] text-slate-500">Anushasan records yaha dikhenge — Discipline Register se linked</p>
+                  <div className="bg-slate-50 border border-slate-200 p-4 text-center rounded-xl">
+                    <Shield size={28} className="mx-auto text-slate-300 mb-2" />
+                    <p className="text-xs font-bold text-slate-400">Discipline records Anushasan Register se aayenge</p>
+                    <p className="text-[10px] text-slate-400 mt-1">Sidebar → Anushasan Register se add karo</p>
+                  </div>
+                </div>
+              )}
+
+            </div>
           </div>
+
         </div>
       ) : (
         !searchLoading && !searchError && (
@@ -1478,6 +1913,8 @@ export const TraineeProfileScreen = () => {
                 <PhotoUpload compact
                   traineeId={searchedTraineeId}
                   traineeName={editData?.name || ''}
+                  traineeRegNo={editData?.regNo}
+                  traineeChestNo={editData?.chestNo}
                   currentPhotoURL={editData?.photoURL}
                   currentPhotoPath={editData?.photoPath}
                   onUploadComplete={handlePhotoUploadComplete}
@@ -1585,7 +2022,14 @@ export const TraineeProfileScreen = () => {
                 <div><label className={labelCls}>Weekly Exam</label><select value={editData?.weeklyExamResult || ''} onChange={e => setEditData(p => ({ ...p, weeklyExamResult: e.target.value }))} className={selectCls}><option value="">Not Given</option><option value="Pass">Pass</option><option value="Fail">Fail</option></select></div>
                 <div><label className={labelCls}>Exam Marks</label><input type="text" value={editData?.weeklyExamMarks || ''} onChange={e => setEditData(p => ({ ...p, weeklyExamMarks: e.target.value }))} className={inputCls} placeholder="72/100" /></div>
                 <div><label className={labelCls}>Punishments</label><input type="number" min="0" value={editData?.punishments || '0'} onChange={e => setEditData(p => ({ ...p, punishments: e.target.value }))} className={inputCls} /></div>
-                <div><label className={labelCls}>Attendance</label><select value={editData?.attn || 'P'} onChange={e => setEditData(p => ({ ...p, attn: e.target.value }))} className={selectCls}><option value="P">P — Present</option>
+                <div>
+                        <label className={labelCls}>Completion Status</label>
+                        <select value={editData?.completionStatus || ''} onChange={e => setEditData(p => ({ ...p, completionStatus: e.target.value }))} className={selectCls}>
+                          <option value="">-- Not Set --</option>
+                          {['Joined','Training','On Leave','Medical','Under Training','Failed','Re-test','Passed','Withheld','Withdrawn','Discharged','Posted','Relieved'].map(s => <option key={s}>{s}</option>)}
+                        </select>
+                      </div>
+                      <div><label className={labelCls}>Attendance</label><select value={editData?.attn || 'P'} onChange={e => setEditData(p => ({ ...p, attn: e.target.value }))} className={selectCls}><option value="P">P — Present</option>
 <option value="A">A — Absent</option>
 <option value="L">L — Leave</option>
 <option value="S">S — Sick / MI Room</option>

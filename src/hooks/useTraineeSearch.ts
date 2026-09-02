@@ -74,7 +74,7 @@ export interface TraineeSearchResult {
 // ─────────────────────────────────────────────
 // SEARCH FIELDS - Jin fields se search hogi
 // ─────────────────────────────────────────────
-const SEARCH_FIELDS = ['chestNo', 'regNo'] as const;
+const SEARCH_FIELDS = ['chestNo', 'regNo', 'name'] as const;
 
 // ═══════════════════════════════════════════════════════════
 // HOOK: useTraineeSearch
@@ -129,6 +129,24 @@ export const useTraineeSearch = () => {
           setTrainee({ id: docId, ...data } as TraineeSearchResult);
           setTraineeId(docId);
           found = true;
+        }
+      }
+
+      if (!found) {
+        // ── FALLBACK: Client-side name search (partial + case-insensitive) ──
+        const allSnap = await getDocs(
+          query(collection(db, 'trainees'), where('batchId', '==', activeBatch.id))
+        );
+        const q_lower = searchQuery.trim().toLowerCase();
+        for (const d of allSnap.docs) {
+          const data = d.data();
+          const traineeName = (data.name || '').toLowerCase();
+          if (traineeName.includes(q_lower) || q_lower.includes(traineeName)) {
+            setTrainee({ id: d.id, ...data } as TraineeSearchResult);
+            setTraineeId(d.id);
+            found = true;
+            break;
+          }
         }
       }
 

@@ -574,15 +574,19 @@ export const CompanyAssetsFundScreen: React.FC = () => {
 
     setExpLoading(true);
     try {
-      let billBase64 = '', billFileName = '', billFileType = '', billFileSize = 0;
+      let billBase64 = '', billFileName = '', billFileType = '', billFileSize = 0, billDownloadUrl = '', billStoragePath = '';
       if (expBillFile) {
-        const result = await processBillFile(expBillFile);
+        const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+        const tempId = `assets_${dateStr}_${Date.now()}`;
+        const result = await processBillFile(expBillFile, 'company_assets', tempId);
         if (result.error) { setErrorMsg(result.error); setExpLoading(false); return; }
         if (result.data) {
           billBase64    = result.data.billBase64;
           billFileName  = result.data.billFileName;
           billFileType  = result.data.billFileType;
           billFileSize  = result.data.billFileSize;
+          billDownloadUrl = result.data.billDownloadUrl ?? '';
+          billStoragePath = result.data.billStoragePath ?? '';
         }
       }
 
@@ -612,6 +616,7 @@ export const CompanyAssetsFundScreen: React.FC = () => {
         transactionId: (expPayNow !== 'none' || !expVendorId) ? getPaymentRef(expPaymentMode, expCheckNumber, expTransactionId) : '',
         billStatus:    billBase64 ? 'Received' : expBillStatus,
         billBase64, billFileName, billFileType, billFileSize,
+        billDownloadUrl, billStoragePath,
         assetStatus:   'Active',
         paidAmount,
         dueAmount,
@@ -734,7 +739,9 @@ export const CompanyAssetsFundScreen: React.FC = () => {
 
       const bills: BillAttachment[] = [];
       if (veBillFile) {
-        const result = await processBillFile(veBillFile);
+        const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+        const tempId = `vendor_${dateStr}_${Date.now()}`;
+        const result = await processBillFile(veBillFile, 'company_assets', tempId);
         if (result.error) { setErrorMsg(result.error); setVeLoading(false); return; }
         if (result.data) {
           bills.push({
@@ -745,6 +752,8 @@ export const CompanyAssetsFundScreen: React.FC = () => {
             fileSize:   result.data.billFileSize,
             uploadedAt: new Date().toISOString(),
             uploadedBy: recordedBy,
+            downloadUrl: result.data.billDownloadUrl ?? '',
+            storagePath: result.data.billStoragePath ?? '',
           });
         }
       }

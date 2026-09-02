@@ -580,10 +580,12 @@ export const GeneralFundScreen: React.FC = () => {
 
     setExpLoading(true);
     try {
-      let billBase64 = '', billFileName = '', billFileType = '', billFileSize = 0;
+      let billBase64 = '', billFileName = '', billFileType = '', billFileSize = 0, billDownloadUrl = '', billStoragePath = '';
 
       if (expBillFile) {
-        const result = await processBillFile(expBillFile);
+        const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+        const tempId = `general_${dateStr}_${Date.now()}`;
+        const result = await processBillFile(expBillFile, 'general_fund', tempId);
         if (result.error) {
           setErrorMsg(result.error);
           setExpLoading(false);
@@ -594,6 +596,8 @@ export const GeneralFundScreen: React.FC = () => {
           billFileName = result.data.billFileName;
           billFileType = result.data.billFileType;
           billFileSize = result.data.billFileSize;
+          billDownloadUrl = result.data.billDownloadUrl ?? '';
+          billStoragePath = result.data.billStoragePath ?? '';
         }
       }
 
@@ -641,6 +645,8 @@ export const GeneralFundScreen: React.FC = () => {
         billFileName,
         billFileType,
         billFileSize,
+        billDownloadUrl,
+        billStoragePath,
         paidAmount,
         dueAmount,
         recordedBy,

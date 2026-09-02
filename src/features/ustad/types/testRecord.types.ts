@@ -79,6 +79,20 @@ export interface TraineeResult {
   events?: FPTEventResult[];      // For FPT tests
   eventsPassed?: number;
   eventsFailed?: number;
+
+  // Firing Practice specific (BSF Register Pattern)
+  firingDetails?: {
+    laneNo?: string;              // Lane / Target No
+    ringValues?: number[];        // Per-shot ring values [10, 9, 8, 7, ...]
+    totalRounds?: number;         // Rounds fired
+    actualScore?: number;         // Sum of ring values
+    maxScore?: number;            // Max possible (rounds × 10)
+    groupSize?: number;           // Group size in mm
+    mpi?: { x: number; y: number }; // Mean Point of Impact
+    coordinates?: string;         // X-Y coordinates string
+    classification?: string;      // MM (Marksman) / FC (First Class) / SS (Sharpshooter) / FAIL
+    targetPhotoURL?: string;      // Photo of physical target paper
+  };
 }
 
 // ─── Test Record (Unified) ───────────────────
@@ -108,6 +122,16 @@ export interface TestRecord {
   // FPT-specific
   fptEvents?: FPTEvent[];         // Only for FPT
   overallPassPercent?: number;
+
+  // Firing Practice specific
+  firingConfig?: {
+    weaponType: string;
+    exerciseName: string;
+    exerciseNo?: string;
+    distance: string;
+    targetType: string;
+    totalRounds: number;
+  };
 
     // Instructors (Multiple - Support for large batches)
   instructorId: string;              // Primary (backward compat)
@@ -156,6 +180,16 @@ export interface TestFormData {
   // FPT-specific
   fptEvents?: FPTEvent[];
   overallPassPercent?: number;
+
+  // Firing Practice specific (BSF Register Pattern)
+  firingConfig?: {
+    weaponType: string;           // INSAS, 9mm Pistol, AK, SLR, LMG
+    exerciseName: string;         // Grouping Practice, Application Fire, Classification Fire
+    exerciseNo?: string;
+    distance: string;             // 25 Mtrs, 50 Mtrs, 100 Mtrs
+    targetType: string;           // Figure 11, Figure 12, Ring Target
+    totalRounds: number;          // 5 or 10 rounds per firer
+  };
 }
 
 export const DEFAULT_TEST_FORM: TestFormData = {

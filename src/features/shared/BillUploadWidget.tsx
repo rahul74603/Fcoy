@@ -6,15 +6,24 @@ import {
   FileText, FileImage, Eye, Trash2, ZoomIn, ZoomOut,
   RotateCw, Download, Maximize2
 } from 'lucide-react';
+import {
+  uploadBillToStorage,
+  deleteFromStorage,
+  validateFileForStorage,
+  formatStorageFileSize,
+} from './storage.utils';
 
 // ─────────────────────────────────────────────
 // TYPES
 // ─────────────────────────────────────────────
 export interface BillData {
-  billBase64: string;
+  billBase64: string;       // DEPRECATED — kept for backward compat with old data
   billFileName: string;
   billFileType: string;
   billFileSize: number;
+  // NEW: Storage fields
+  billDownloadUrl?: string;
+  billStoragePath?: string;
 }
 
 interface BillUploadWidgetProps {
@@ -30,6 +39,10 @@ interface BillUploadWidgetProps {
   compact?: boolean;
   /** Disable interactions */
   disabled?: boolean;
+  /** Storage category: 'mess_fund', 'training_fund', 'general_fund', 'company_assets', 'vendors' */
+  storageCategory?: string;
+  /** Entity ID (expenseId or entryId) for Storage path */
+  entityId?: string;
 }
 
 // ─────────────────────────────────────────────
@@ -111,7 +124,7 @@ const BillPreviewModal: React.FC<{
   fileName: string;
   fileType: string;
   onClose: () => void;
-}> = ({ base64, fileName, fileType, onClose }) => {
+}> = ({ base64: url, fileName, fileType, onClose }) => {
   const [zoom, setZoom]         = useState(1);
   const [rotation, setRotation] = useState(0);
 
@@ -120,7 +133,7 @@ const BillPreviewModal: React.FC<{
 
   const handleDownload = () => {
     const link = document.createElement('a');
-    link.href = base64;
+    link.href = url;
     link.download = fileName;
     document.body.appendChild(link);
     link.click();
@@ -134,8 +147,8 @@ const BillPreviewModal: React.FC<{
         <html><head><title>${fileName}</title></head>
         <body style="margin:0;background:#000;display:flex;align-items:center;justify-content:center;min-height:100vh">
           ${isPdf
-            ? `<iframe src="${base64}" style="width:100%;height:100vh;border:none"></iframe>`
-            : `<img src="${base64}" style="max-width:100%;max-height:100vh" />`
+            ? `<iframe src="${url}" style="width:100%;height:100vh;border:none"></iframe>`
+            : `<img src="${url}" style="max-width:100%;max-height:100vh" />`
           }
         </body></html>
       `);
@@ -228,7 +241,7 @@ const BillPreviewModal: React.FC<{
           />
         ) : (
           <img
-            src={base64}
+            src={url}
             alt={fileName}
             className="max-w-full max-h-full rounded shadow-2xl transition-transform duration-200"
             style={{ transform: `scale(${zoom}) rotate(${rotation}deg)` }}
@@ -260,6 +273,8 @@ export const BillUploadWidget: React.FC<BillUploadWidgetProps> = ({
   label = 'Bill Upload',
   compact = false,
   disabled = false,
+  storageCategory,
+  entityId,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -270,9 +285,11 @@ export const BillUploadWidget: React.FC<BillUploadWidgetProps> = ({
   const [dragOver, setDragOver]     = useState(false);
 
   // Derived
-  const hasBill   = !!(currentBill?.billBase64);
+  const hasBill   = !!(currentBill?.billBase64 || currentBill?.billDownloadUrl);
   const isPdf     = currentBill?.billFileType === 'application/pdf' ||
                     currentBill?.billFileName?.toLowerCase().endsWith('.pdf');
+  // Use Storage URL if available, fall back to base64 for old data
+  const displayUrl = currentBill?.billDownloadUrl || currentBill?.billBase64 || '';
 
   // ── PROCESS FILE ──
   const processFile = async (file: File) => {
@@ -294,44 +311,56 @@ export const BillUploadWidget: React.FC<BillUploadWidgetProps> = ({
     setProgress(10);
 
     try {
-      let base64: string;
-
-      if (file.type === 'application/pdf') {
+      // NEW: Upload to Firebase Storage if category/entityId provided
+      if (storageCategory && entityId) {
         setProgress(30);
-        // PDF size check
-        if (file.size > MAX_BASE64_SIZE) {
-          setError(`PDF ${formatFileSize(file.size)} hai. Max 800KB allowed. Chhoti PDF use karo.`);
+        const result = await uploadBillToStorage(file, storageCategory, entityId);
+        setProgress(90);
+        setProgress(100);
+
+        onBillReady({
+          billBase64: '', // No base64 — using Storage
+          billFileName: result.billFileName,
+          billFileType: result.billFileType,
+          billFileSize: result.billFileSize,
+          billDownloadUrl: result.billDownloadUrl,
+          billStoragePath: result.billStoragePath,
+        });
+      } else {
+        // FALLBACK: Legacy base64 mode (for screens that haven't migrated yet)
+        let base64: string;
+
+        if (file.type === 'application/pdf') {
+          setProgress(30);
+          if (file.size > MAX_BASE64_SIZE) {
+            setError(`PDF ${formatFileSize(file.size)} hai. Max 800KB allowed. Chhoti PDF use karo.`);
+            setProcessing(false);
+            return;
+          }
+          base64 = await fileToBase64(file);
+          setProgress(80);
+        } else {
+          setProgress(40);
+          base64 = await compressImage(file, 700);
+          setProgress(80);
+        }
+
+        const base64SizeBytes = Math.round((base64.length * 3) / 4);
+        if (base64SizeBytes > MAX_BASE64_SIZE) {
+          setError(`Compress ke baad bhi ${formatFileSize(base64SizeBytes)} hai. Aur chhoti file dein.`);
           setProcessing(false);
           return;
         }
-        base64 = await fileToBase64(file);
-        setProgress(80);
-      } else {
-        // Image — compress
-        setProgress(40);
-        base64 = await compressImage(file, 700);
-        setProgress(80);
+
+        setProgress(100);
+
+        onBillReady({
+          billBase64: base64,
+          billFileName: file.name,
+          billFileType: file.type,
+          billFileSize: file.size,
+        });
       }
-
-      // Final size check
-      const base64SizeBytes = Math.round((base64.length * 3) / 4);
-      if (base64SizeBytes > MAX_BASE64_SIZE) {
-        setError(
-          `Compress ke baad bhi ${formatFileSize(base64SizeBytes)} hai. Aur chhoti file dein.`
-        );
-        setProcessing(false);
-        return;
-      }
-
-      setProgress(100);
-
-      // Callback
-      onBillReady({
-        billBase64:   base64,
-        billFileName: file.name,
-        billFileType: file.type,
-        billFileSize: file.size,
-      });
     } catch (err) {
       console.error(err);
       setError(`File process nahi hua: ${String(err)}`);
@@ -371,7 +400,11 @@ export const BillUploadWidget: React.FC<BillUploadWidgetProps> = ({
     if (file) processFile(file);
   };
 
-  const handleRemove = () => {
+  const handleRemove = async () => {
+    // Delete from Storage if we have a path
+    if (currentBill?.billStoragePath) {
+      try { await deleteFromStorage(currentBill.billStoragePath); } catch { /* ignore */ }
+    }
     if (onBillRemove) onBillRemove();
   };
 
@@ -474,7 +507,7 @@ export const BillUploadWidget: React.FC<BillUploadWidgetProps> = ({
         {/* Preview Modal */}
         {preview && currentBill?.billBase64 && (
           <BillPreviewModal
-            base64={currentBill.billBase64}
+            base64={displayUrl}
             fileName={currentBill.billFileName}
             fileType={currentBill.billFileType}
             onClose={() => setPreview(false)}
@@ -620,7 +653,7 @@ export const BillUploadWidget: React.FC<BillUploadWidgetProps> = ({
       {/* Preview Modal */}
       {preview && currentBill?.billBase64 && (
         <BillPreviewModal
-          base64={currentBill.billBase64}
+          base64={displayUrl}
           fileName={currentBill.billFileName}
           fileType={currentBill.billFileType}
           onClose={() => setPreview(false)}

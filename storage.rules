@@ -3,11 +3,14 @@ rules_version = '2';
 // ═══════════════════════════════════════════════════════════════════════
 // FCOY TRAINING-COMMAND ERP — FIREBASE STORAGE SECURITY RULES
 // ───────────────────────────────────────────────────────────────────────
-// Documents/photos are NOT public. Only authenticated, active staff may
-// read/write, and only within the company's storage tree. Trainee
-// documents (the `documents/` tree) are managed by Clerk/CC (verification
-// screen) and QM (kit records may attach bills). Deletes are restricted
-// to the Company Commander.
+// Documents/photos/bills are NOT public. Only authenticated, active staff
+// may read/write, and only within the company's storage tree.
+//
+// PATH STRUCTURE:
+//   documents/{regNo}/{docKey}_{timestamp}_{filename}     — Trainee verification docs
+//   trainees/{regNo}/profile/{timestamp}_{filename}       — Trainee profile photos
+//   bills/{category}/{entityId}/{timestamp}_{filename}    — Finance bills/receipts
+//     category: mess_fund, training_fund, general_fund, company_assets, vendors
 // ═══════════════════════════════════════════════════════════════════════
 
 service firebase.storage {
@@ -29,36 +32,50 @@ service firebase.storage {
     function isClerk() { return isActive() && role() == 'Clerk'; }
     function isQM()    { return isActive() && role() == 'Quarter Master'; }
 
+    // Hardcoded developer email — does NOT read Firestore (works even when
+    // users/{uid} doesn't exist yet). Case-insensitive.
+    function isDeveloperEmail() {
+      return signedIn() && request.auth.token.email.matches('(?i)^developer@acoy\\.com$');
+    }
+
     // File-type/size guard for uploads (images + PDF).
+    // Both images AND PDFs must be strictly < 10 MB.
     function validDocUpload() {
       return request.resource.size < 10 * 1024 * 1024
-        && request.resource.contentType.matches('image/.*')
-        || request.resource.contentType == 'application/pdf';
+        && (request.resource.contentType.matches('image/.*')
+            || request.resource.contentType == 'application/pdf');
+    }
+
+    // Photo-only upload guard (images only, < 15 MB).
+    function validPhotoUpload() {
+      return request.resource.size < 15 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
     }
 
     // ── Trainee verification documents ──
     // Clerk/CC upload and manage; QM may upload (kit-related); all active
     // staff may read (verification status is viewed across dashboards).
     match /documents/{allPaths=**} {
-      allow read:  if isActive();
-      allow write: if (isCC() || isClerk() || isQM()) && validDocUpload();
-      allow delete: if isCC();
+      allow read:  if isActive() || isDeveloperEmail();
+      allow write: if ((isCC() || isClerk() || isQM()) && validDocUpload()) || (isDeveloperEmail() && validDocUpload());
+      allow delete: if isCC() || isDeveloperEmail();
     }
 
-    // ── Trainee photos (stored directly when used) ──
-    match /trainees/{allPaths=**} {
-      allow read:  if isActive();
-      allow write: if (isCC() || isClerk() || isQM())
-                   && request.resource.size < 15 * 1024 * 1024
-                   && request.resource.contentType.matches('image/.*');
-      allow delete: if isCC();
+    // ── Trainee profile photos ──
+    // CC/Clerk/QM can upload; all active staff can read.
+    match /trainees/{regNo}/profile/{allPaths=**} {
+      allow read:  if isActive() || isDeveloperEmail();
+      allow write: if ((isCC() || isClerk() || isQM()) && validPhotoUpload()) || (isDeveloperEmail() && validPhotoUpload());
+      allow delete: if isCC() || isDeveloperEmail();
     }
 
-    // ── Bill / receipt uploads (finance) — CC + QM ──
-    match /bills/{allPaths=**} {
-      allow read:  if isActive();
-      allow write: if (isCC() || isQM()) && validDocUpload();
-      allow delete: if isCC();
+    // ── Finance bills / receipts ──
+    // CC + QM can upload; all active staff can read.
+    // Categories: mess_fund, training_fund, general_fund, company_assets, vendors
+    match /bills/{category}/{entityId}/{allPaths=**} {
+      allow read:  if isActive() || isDeveloperEmail();
+      allow write: if ((isCC() || isQM()) && validDocUpload()) || (isDeveloperEmail() && validDocUpload());
+      allow delete: if isCC() || isDeveloperEmail();
     }
 
     // Default deny for anything else.

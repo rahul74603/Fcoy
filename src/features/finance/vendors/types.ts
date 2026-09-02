@@ -20,12 +20,15 @@ export interface VendorItem {
 
 export interface BillAttachment {
   id: string;
-  base64: string;
+  base64: string;       // DEPRECATED — kept for backward compat
   fileName: string;
   fileType: string;
   fileSize: number;
   uploadedAt: string;
   uploadedBy: string;
+  // NEW: Storage fields
+  downloadUrl?: string;
+  storagePath?: string;
 }
 
 export interface VendorEntry {

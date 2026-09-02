@@ -285,6 +285,7 @@ export const UserManagementPage = () => {
                 <option value="Clerk">Clerk</option>
                 <option value="Ustad">Ustad</option>
                 <option value="Senior Officer / Inspector">Senior Officer / Inspector</option>
+                <option value="Trainee">🎓 Trainee</option>
               </select>
               <p className="text-[9px] text-slate-400 mt-1 leading-snug">
                 Company Commander accounts yahan nahi bante — wo sirf <strong>App Owner</strong> banata hai (Owner Panel → Customers).
