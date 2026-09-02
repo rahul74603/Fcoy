@@ -768,4 +768,67 @@ describe('Firestore rules', () => {
         authedDb(testEnv, CLERK).collection('disciplineRecords').add({ traineeId: 't1', reason: 'x' }));
     });
   });
+
+  // ── LOGIN BOOTSTRAP (must not chicken-and-egg on isStaff) ───────────
+  describe('login bootstrap', () => {
+    it('signed-in user can read own users/{uid} even with short role alias', async () => {
+      await adminDb(testEnv).doc('users/aliasUid').set({
+        name: 'Alias CC', email: 'alias@example.com', role: 'CC', isActive: true,
+      });
+      const ALIAS = { uid: 'aliasUid', email: 'alias@example.com' };
+      await assert.isFulfilled(authedDb(testEnv, ALIAS).doc('users/aliasUid').get());
+    });
+    it('legacy profile keyed by random id is readable via email query', async () => {
+      await adminDb(testEnv).doc('users/randomLegacyId').set({
+        name: 'Legacy', email: 'legacy@example.com',
+        role: 'Company Commander', isActive: true,
+      });
+      const LEGACY = { uid: 'authUidNoDoc', email: 'legacy@example.com' };
+      await assert.isFulfilled(authedDb(testEnv, LEGACY).doc('users/authUidNoDoc').get());
+      const snap = await authedDb(testEnv, LEGACY).collection('users')
+        .where('email', '==', 'legacy@example.com').get();
+      assert.equal(snap.empty, false);
+    });
+    it('signed-in stranger cannot read another user profile', async () => {
+      const STRANGER = { uid: 'strangerUid', email: 'stranger@example.com' };
+      await assert.isRejected(authedDb(testEnv, STRANGER).doc('users/clerkUid').get());
+    });
+    it('unauthenticated cannot read users', async () => {
+      await assert.isRejected(
+        testEnv.unauthenticatedContext().firestore().doc('users/ccUid').get());
+    });
+    it('signed-in user can list mixed real+dev batches (login listener)', async () => {
+      await adminDb(testEnv).doc('batches/b1').set({
+        batchNumber: '1', status: 'active', createdAt: '2026-01-01',
+      });
+      await adminDb(testEnv).doc('batches/dev').set({
+        batchNumber: 'TEST', status: 'active', createdAt: '2026-01-02', isDevData: true,
+      });
+      const snap = await authedDb(testEnv, CLERK).collection('batches').get();
+      assert.ok(snap.docs.length >= 2);
+    });
+    it('signed-in user can read unitConfig/main and config/activeBatch', async () => {
+      await adminDb(testEnv).doc('unitConfig/main').set({ companyName: 'F COY' });
+      await adminDb(testEnv).doc('config/activeBatch').set({ batchId: 'b1' });
+      await assert.isFulfilled(authedDb(testEnv, USTAD).doc('unitConfig/main').get());
+      await assert.isFulfilled(authedDb(testEnv, USTAD).doc('config/activeBatch').get());
+    });
+    it('unauthenticated cannot read batches or unitConfig', async () => {
+      await adminDb(testEnv).doc('batches/b1').set({ batchNumber: '1' });
+      await adminDb(testEnv).doc('unitConfig/main').set({ companyName: 'F COY' });
+      const anon = testEnv.unauthenticatedContext().firestore();
+      await assert.isRejected(anon.doc('batches/b1').get());
+      await assert.isRejected(anon.doc('unitConfig/main').get());
+    });
+    it('role alias CC is treated as Company Commander for writes', async () => {
+      await adminDb(testEnv).doc('users/aliasUid').set({
+        name: 'Alias CC', email: 'alias@example.com', role: 'CC', isActive: true,
+      });
+      const ALIAS = { uid: 'aliasUid', email: 'alias@example.com' };
+      await assert.isFulfilled(
+        authedDb(testEnv, ALIAS).collection('relegations').add({
+          relegateId: 'REL-2026-1-AAAA', status: 'awaiting_rejoin',
+        }));
+    });
+  });
 });

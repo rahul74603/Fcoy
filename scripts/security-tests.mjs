@@ -770,6 +770,17 @@ test('firestore rules govern training_tests / staff_activity_logs (were missing)
   assert.ok(/match \/batch_progress\/\{id\}/.test(rules));
 });
 
+test('login bootstrap: own users/{uid} readable without already being isStaff', () => {
+  assert.ok(/request\.auth\.uid == userId/.test(rules), 'own-uid read');
+  assert.ok(/request\.auth\.token\.email/.test(rules), 'legacy email read');
+  assert.ok(/function userDocExists\(\)/.test(rules), 'missing uid doc must not break helpers');
+});
+test('login bootstrap: batches / unitConfig / config readable when signed in', () => {
+  assert.match(rules, /match \/batches\/\{batchId\} \{[\s\S]*?allow read: if signedIn\(\)/);
+  assert.match(rules, /match \/unitConfig\/\{docId\} \{[\s\S]*?allow read: if signedIn\(\)/);
+  assert.match(rules, /match \/config\/\{docId\} \{[\s\S]*?allow read: if signedIn\(\)/);
+});
+
 console.log('\n■ DOCUMENT UPLOAD FAKE-SUCCESS AUDIT');
 
 const docSrc = fs.readFileSync(path.join(root, 'src/features/students/DocumentVerificationScreen.tsx'), 'utf8');
