@@ -1,183 +1,229 @@
-import { Users, Shield, FileText, Activity, AlertTriangle, CheckCircle } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+// ═══════════════════════════════════════════════════════════
+// ADMIN DASHBOARD — HQ Training Command
+// Real Firestore data — no mock data
+// ═══════════════════════════════════════════════════════════
 
-// Mock Data for the chart
-const attendanceData = [
-  { name: 'Alpha COY', present: 120, leave: 5 },
-  { name: 'Bravo COY', present: 98, leave: 12 },
-  { name: 'Charlie COY', present: 115, leave: 2 },
-  { name: 'Delta COY', present: 105, leave: 8 },
-];
+import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  Users, Shield, FileText, Activity, AlertTriangle, CheckCircle2,
+  Loader2, RefreshCw, Layers, ArrowRight, Building2,
+} from 'lucide-react';
+import {
+  collection, getDocs, query, where,
+} from 'firebase/firestore';
+import { db } from '../../config/firebase';
+import { useBatch } from '../../contexts/BatchContext';
 
-export const AdminDashboard = () => {
+export const AdminDashboard: React.FC = () => {
+  const navigate = useNavigate();
+  const go = useCallback((path: string) => navigate(path), [navigate]);
+  const { currentBatch: activeBatch } = useBatch();
+
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({
+    totalTrainees: 0,
+    presentToday: 0,
+    absentToday: 0,
+    onLeave: 0,
+    sickHospital: 0,
+    totalBatches: 0,
+    activeBatches: 0,
+    totalStaff: 0,
+    docsPending: 0,
+    fptFailed: 0,
+  });
+  const [recentTrainees, setRecentTrainees] = useState<any[]>([]);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [traineesSnap, batchesSnap, staffSnap] = await Promise.all([
+        getDocs(collection(db, 'trainees')),
+        getDocs(collection(db, 'batches')),
+        getDocs(collection(db, 'staff')).catch(() => ({ docs: [] })),
+      ]);
+
+      let total = 0, present = 0, absent = 0, leave = 0, sick = 0, docsPend = 0, fptFail = 0;
+      const recent: any[] = [];
+
+      traineesSnap.forEach(d => {
+        total++;
+        const data = d.data();
+        const attn = data.attn || 'P';
+        if (attn === 'P') present++;
+        else if (attn === 'A') absent++;
+        else if (attn === 'L') leave++;
+        else if (attn === 'S' || attn === 'H') sick++;
+        if (!data.docsComplete) docsPend++;
+        if (data.fptResult === 'Fail') fptFail++;
+
+        recent.push({ id: d.id, ...data });
+      });
+
+      recent.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      setRecentTrainees(recent.slice(0, 10));
+
+      let totalBatches = 0, activeBatches = 0;
+      batchesSnap.forEach(d => {
+        totalBatches++;
+        const data = d.data();
+        if (data.status === 'active') activeBatches++;
+      });
+
+      setStats({
+        totalTrainees: total,
+        presentToday: present,
+        absentToday: absent,
+        onLeave: leave,
+        sickHospital: sick,
+        totalBatches,
+        activeBatches,
+        totalStaff: staffSnap.docs?.length || 0,
+        docsPending: docsPend,
+        fptFailed: fptFail,
+      });
+    } catch (err) {
+      console.error('AdminDashboard error:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-20">
+        <Loader2 className="animate-spin text-military-700" size={28} />
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-gray-100 p-6 font-sans">
-      
-      {/* Top Header Section */}
-      <div className="flex justify-between items-center mb-8 bg-white p-4 border-l-4 border-green-800 shadow-sm">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800 tracking-tight">HQ Training Command</h1>
-          <p className="text-sm text-gray-500 font-medium">BSF Training Center Management System</p>
-        </div>
-        <div className="flex items-center space-x-4">
-          <span className="bg-green-100 text-green-800 text-xs font-bold px-3 py-1 rounded border border-green-300">
-            Role: SUPER ADMIN
-          </span>
-          <div className="h-10 w-10 bg-green-900 rounded-full flex items-center justify-center text-white font-bold">
-            HQ
+    <div className="max-w-7xl mx-auto space-y-5 pb-10">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-green-900 to-green-700 rounded-2xl px-6 py-5 shadow-lg text-white">
+        <div className="flex justify-between items-start flex-wrap gap-3">
+          <div>
+            <h1 className="text-xl font-black uppercase tracking-wider flex items-center gap-2">
+              <Shield size={20} className="text-green-300" />
+              HQ Training Command
+            </h1>
+            <p className="text-[10px] text-white/50 mt-1 ml-8">
+              BSF Training Center Management System — All Companies Overview
+            </p>
           </div>
+          <button onClick={fetchData} className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 text-[10px] font-bold uppercase rounded-xl border border-white/20 flex items-center gap-1.5">
+            <RefreshCw size={13} /> Refresh
+          </button>
         </div>
       </div>
 
-      {/* KPI Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-        <div className="bg-white p-6 border-t-4 border-green-800 shadow-sm rounded-sm">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-sm text-gray-500 font-semibold">Total Trainees</p>
-              <h3 className="text-3xl font-bold text-gray-800 mt-1">1,245</h3>
+      {/* KPI Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        {[
+          { label: 'Total Trainees', value: stats.totalTrainees, icon: Users, color: 'bg-blue-50 border-blue-200', text: 'text-blue-700' },
+          { label: 'Present Today', value: stats.presentToday, icon: CheckCircle2, color: 'bg-green-50 border-green-200', text: 'text-green-700' },
+          { label: 'Absent', value: stats.absentToday, icon: AlertTriangle, color: 'bg-red-50 border-red-200', text: 'text-red-700' },
+          { label: 'On Leave', value: stats.onLeave, icon: Activity, color: 'bg-amber-50 border-amber-200', text: 'text-amber-700' },
+          { label: 'Sick/Hospital', value: stats.sickHospital, icon: Activity, color: 'bg-purple-50 border-purple-200', text: 'text-purple-700' },
+        ].map(s => (
+          <div key={s.label} className={`bg-white border ${s.color} rounded-xl p-4`}>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase text-slate-500">{s.label}</span>
+              <s.icon size={16} className={s.text} />
             </div>
-            <Users className="text-green-800 h-8 w-8 opacity-80" />
+            <p className={`text-2xl font-black mt-1 ${s.text}`}>{s.value}</p>
           </div>
-        </div>
-
-        <div className="bg-white p-6 border-t-4 border-green-700 shadow-sm rounded-sm">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-sm text-gray-500 font-semibold">Active Companies</p>
-              <h3 className="text-3xl font-bold text-gray-800 mt-1">12</h3>
-            </div>
-            <Shield className="text-green-700 h-8 w-8 opacity-80" />
-          </div>
-        </div>
-
-        <div className="bg-white p-6 border-t-4 border-gray-600 shadow-sm rounded-sm">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-sm text-gray-500 font-semibold">Pending Verifications</p>
-              <h3 className="text-3xl font-bold text-gray-800 mt-1">48</h3>
-            </div>
-            <FileText className="text-gray-600 h-8 w-8 opacity-80" />
-          </div>
-        </div>
-
-        <div className="bg-white p-6 border-t-4 border-red-700 shadow-sm rounded-sm">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-sm text-gray-500 font-semibold">On Leave / Sick</p>
-              <h3 className="text-3xl font-bold text-gray-800 mt-1">27</h3>
-            </div>
-            <Activity className="text-red-700 h-8 w-8 opacity-80" />
-          </div>
-        </div>
+        ))}
       </div>
 
-      {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Chart Section */}
-        <div className="bg-white p-6 shadow-sm rounded-sm lg:col-span-2 border border-gray-200">
-          <h3 className="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Company Wise Attendance (Today)</h3>
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={attendanceData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#6b7280', fontSize: 12}} />
-                <YAxis axisLine={false} tickLine={false} tick={{fill: '#6b7280', fontSize: 12}} />
-                <Tooltip cursor={{fill: '#f3f4f6'}} contentStyle={{borderRadius: '4px', border: '1px solid #e5e7eb'}} />
-                <Bar dataKey="present" name="Present" fill="#166534" radius={[2, 2, 0, 0]} />
-                <Bar dataKey="leave" name="On Leave" fill="#9ca3af" radius={[2, 2, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+      {/* Secondary Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { label: 'Active Batches', value: `${stats.activeBatches}/${stats.totalBatches}`, icon: Layers, color: 'bg-indigo-50 border-indigo-200', text: 'text-indigo-700' },
+          { label: 'Total Staff', value: stats.totalStaff, icon: Shield, color: 'bg-cyan-50 border-cyan-200', text: 'text-cyan-700' },
+          { label: 'Docs Pending', value: stats.docsPending, icon: FileText, color: 'bg-amber-50 border-amber-200', text: 'text-amber-700' },
+          { label: 'FPT Failed', value: stats.fptFailed, icon: AlertTriangle, color: 'bg-red-50 border-red-200', text: 'text-red-700' },
+        ].map(s => (
+          <div key={s.label} className={`bg-white border ${s.color} rounded-xl p-4`}>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase text-slate-500">{s.label}</span>
+              <s.icon size={16} className={s.text} />
+            </div>
+            <p className={`text-2xl font-black mt-1 ${s.text}`}>{s.value}</p>
           </div>
-        </div>
-
-        {/* Recent Alerts / Status Section */}
-        <div className="bg-white p-6 shadow-sm rounded-sm border border-gray-200">
-          <h3 className="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Critical Alerts</h3>
-          <div className="space-y-4">
-            
-            <div className="flex items-start p-3 bg-red-50 border-l-4 border-red-600 rounded-r-sm">
-              <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5 mr-3 flex-shrink-0" />
-              <div>
-                <p className="text-sm font-bold text-gray-800">Low Ammunition Stock</p>
-                <p className="text-xs text-gray-600 mt-1">Alpha COY armory reporting 5.56mm stock below threshold.</p>
-              </div>
-            </div>
-
-            <div className="flex items-start p-3 bg-yellow-50 border-l-4 border-yellow-500 rounded-r-sm">
-              <Activity className="h-5 w-5 text-yellow-600 mt-0.5 mr-3 flex-shrink-0" />
-              <div>
-                <p className="text-sm font-bold text-gray-800">Medical Board Pending</p>
-                <p className="text-xs text-gray-600 mt-1">12 trainees pending annual medical checkup in Bravo COY.</p>
-              </div>
-            </div>
-
-            <div className="flex items-start p-3 bg-green-50 border-l-4 border-green-700 rounded-r-sm">
-              <CheckCircle className="h-5 w-5 text-green-700 mt-0.5 mr-3 flex-shrink-0" />
-              <div>
-                <p className="text-sm font-bold text-gray-800">Firing Practice Complete</p>
-                <p className="text-xs text-gray-600 mt-1">Charlie COY has completed day firing module successfully.</p>
-              </div>
-            </div>
-
-          </div>
-        </div>
-
+        ))}
       </div>
 
-      {/* Data Table Section */}
-      <div className="mt-8 bg-white shadow-sm rounded-sm border border-gray-200 overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
-          <h3 className="text-lg font-bold text-gray-800">Recent Instructor Deployments</h3>
-          <button className="text-sm bg-green-800 text-white px-4 py-2 rounded shadow-sm hover:bg-green-900 transition">
-            View All
+      {/* Recent Trainees */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Users size={14} className="text-blue-600" />
+            <span className="text-[11px] font-black text-slate-700 uppercase">Recent Trainees ({recentTrainees.length})</span>
+          </div>
+          <button onClick={() => go('/profile')} className="text-[10px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1">
+            View All <ArrowRight size={10} />
           </button>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-gray-100 text-gray-600 text-sm uppercase tracking-wider">
-                <th className="px-6 py-3 border-b font-semibold">Service No.</th>
-                <th className="px-6 py-3 border-b font-semibold">Name & Rank</th>
-                <th className="px-6 py-3 border-b font-semibold">Company</th>
-                <th className="px-6 py-3 border-b font-semibold">Subject</th>
-                <th className="px-6 py-3 border-b font-semibold">Status</th>
+          <table className="w-full text-xs">
+            <thead className="bg-slate-50">
+              <tr>
+                {['#', 'Chest', 'Name', 'Batch', 'Platoon', 'Status', 'FPT', 'Docs'].map(h => (
+                  <th key={h} className="px-4 py-2.5 text-left text-[9px] font-black uppercase text-slate-500">{h}</th>
+                ))}
               </tr>
             </thead>
-            <tbody className="text-sm text-gray-800">
-              <tr className="hover:bg-gray-50 border-b border-gray-100">
-                <td className="px-6 py-4 font-mono text-gray-600">IRLA-84729</td>
-                <td className="px-6 py-4 font-bold">Insp. Rajeev Singh</td>
-                <td className="px-6 py-4">Alpha COY</td>
-                <td className="px-6 py-4">Weapon Training</td>
-                <td className="px-6 py-4">
-                  <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-bold">ACTIVE</span>
-                </td>
-              </tr>
-              <tr className="hover:bg-gray-50 border-b border-gray-100">
-                <td className="px-6 py-4 font-mono text-gray-600">IRLA-91823</td>
-                <td className="px-6 py-4 font-bold">SI Amit Kumar</td>
-                <td className="px-6 py-4">Bravo COY</td>
-                <td className="px-6 py-4">Physical Training</td>
-                <td className="px-6 py-4">
-                  <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-bold">ACTIVE</span>
-                </td>
-              </tr>
-              <tr className="hover:bg-gray-50">
-                <td className="px-6 py-4 font-mono text-gray-600">IRLA-75634</td>
-                <td className="px-6 py-4 font-bold">HC Vikram Rathore</td>
-                <td className="px-6 py-4">Charlie COY</td>
-                <td className="px-6 py-4">Field Craft</td>
-                <td className="px-6 py-4">
-                  <span className="bg-gray-200 text-gray-700 px-2 py-1 rounded text-xs font-bold">COMPLETED</span>
-                </td>
-              </tr>
+            <tbody className="divide-y divide-slate-50">
+              {recentTrainees.map((t, idx) => {
+                const attn = t.attn || 'P';
+                const attnCls = attn === 'P' ? 'bg-green-100 text-green-700'
+                  : attn === 'A' ? 'bg-red-100 text-red-700'
+                  : attn === 'L' ? 'bg-blue-100 text-blue-700'
+                  : 'bg-orange-100 text-orange-700';
+                return (
+                  <tr key={t.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => go('/profile')}>
+                    <td className="px-4 py-2 text-slate-400">{idx + 1}</td>
+                    <td className="px-4 py-2 font-mono font-black">{t.chestNo || '—'}</td>
+                    <td className="px-4 py-2 font-bold">{t.name}</td>
+                    <td className="px-4 py-2 text-slate-500">{t.batchNumber || '—'}</td>
+                    <td className="px-4 py-2 text-slate-500">{t.platoon || '—'}</td>
+                    <td className="px-4 py-2"><span className={`text-[9px] font-black px-2 py-0.5 rounded-lg ${attnCls}`}>{attn}</span></td>
+                    <td className="px-4 py-2">{t.fptResult === 'Pass' ? '✅' : t.fptResult === 'Fail' ? '❌' : '—'}</td>
+                    <td className="px-4 py-2">{t.docsComplete ? <CheckCircle2 size={13} className="text-green-500" /> : <AlertTriangle size={13} className="text-amber-400" />}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       </div>
 
+      {/* Quick Actions */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+        <p className="text-[11px] font-black text-slate-700 uppercase mb-3">Quick Actions</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2">
+          {[
+            { label: 'Profile', path: '/profile', icon: '👥', color: 'bg-blue-600 hover:bg-blue-700' },
+            { label: 'Batches', path: '/batch-management', icon: '📊', color: 'bg-purple-600 hover:bg-purple-700' },
+            { label: 'Staff', path: '/staff', icon: '👤', color: 'bg-cyan-600 hover:bg-cyan-700' },
+            { label: 'Reports', path: '/reports', icon: '📋', color: 'bg-indigo-600 hover:bg-indigo-700' },
+            { label: 'Settings', path: '/settings', icon: '⚙️', color: 'bg-slate-600 hover:bg-slate-700' },
+            { label: 'Users', path: '/user-management', icon: '🔐', color: 'bg-amber-600 hover:bg-amber-700' },
+          ].map(btn => (
+            <button key={btn.path} onClick={() => go(btn.path)}
+              className={`${btn.color} text-white rounded-xl px-3 py-3 text-[10px] font-bold uppercase flex flex-col items-center gap-1.5 transition-colors`}>
+              <span className="text-lg">{btn.icon}</span>
+              {btn.label}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 };
+
+export default AdminDashboard;

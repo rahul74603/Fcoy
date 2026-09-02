@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
-import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 
 // ✅ HOOK IMPORT
 import { useTraineeSearch } from '../../hooks/useTraineeSearch';
@@ -249,11 +249,22 @@ export const DocumentVerificationScreen = () => {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // ── Remove File ──
+  // ── Remove File (also deletes from Firebase Storage) ──
   const handleRemoveFile = (docKey: string, fileIndex?: number) => {
     setDocStatus(prev => {
       const current = prev[docKey];
       if (fileIndex !== undefined && current.files.length > 1) {
+        const fileToRemove = current.files[fileIndex];
+        // Delete from Firebase Storage (fire-and-forget — don't block UI)
+        if (fileToRemove.fileUrl && fileToRemove.fileUrl.includes('firebasestorage.googleapis.com')) {
+          try {
+            const storage = getStorage();
+            const fileRef = ref(storage, fileToRemove.fileUrl);
+            deleteObject(fileRef).catch(err =>
+              console.warn('Storage delete failed (orphan cleanup needed):', err)
+            );
+          } catch { /* URL parse failed — skip */ }
+        }
         const updatedFiles = current.files.filter((_, i) => i !== fileIndex);
         return {
           ...prev,
@@ -264,6 +275,18 @@ export const DocumentVerificationScreen = () => {
           },
         };
       }
+      // Remove ALL files — delete each from Storage
+      (current.files || []).forEach(file => {
+        if (file.fileUrl && file.fileUrl.includes('firebasestorage.googleapis.com')) {
+          try {
+            const storage = getStorage();
+            const fileRef = ref(storage, file.fileUrl);
+            deleteObject(fileRef).catch(err =>
+              console.warn('Storage delete failed:', err)
+            );
+          } catch { /* skip */ }
+        }
+      });
       return { ...prev, [docKey]: { ...current, status: 'Pending', files: [] } };
     });
   };

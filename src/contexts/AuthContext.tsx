@@ -200,6 +200,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             customerId:  userData['customerId'] != null ? String(userData['customerId']) : null,
           });
           setDevViewer(isDev);
+        } else if (firebaseUser.email?.toLowerCase() === 'developer@acoy.com') {
+          // Developer account — no Firestore profile yet. Grant a
+          // synthetic developer profile so the Master App login works
+          // immediately; the Owner can create the Firestore doc later
+          // via the Practice Console.
+          setUser({
+            uid:         firebaseUser.uid,
+            email:       firebaseUser.email,
+            displayName: firebaseUser.displayName,
+            name:        'Developer / Owner',
+            role:        'Company Commander',
+            phone:       'N/A',
+            designation: 'Owner',
+            isActive:    true,
+            createdBy:   'System',
+            isDeveloper: true,
+          });
+          setDevViewer(true);
         } else {
           console.warn(`User doc not found for uid or email: ${firebaseUser.uid}`);
           setUser({
@@ -240,8 +258,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setUser(null);
         setDevViewer(false);
       } else if (fbErr.code === 'permission-denied') {
-        console.warn('Firestore permission denied. Using basic auth info.');
-        setUser(fallbackUser);
+        if (firebaseUser.email?.toLowerCase() === 'developer@acoy.com') {
+          // Developer account — Firestore rules may not be deployed yet.
+          // Grant synthetic developer access so the Master App is usable.
+          console.warn('Firestore permission denied. Granting synthetic developer access.');
+          setUser({
+            ...fallbackUser,
+            name:        'Developer / Owner',
+            role:        'Company Commander',
+            isActive:    true,
+            isDeveloper: true,
+            designation: 'Owner',
+          });
+          setDevViewer(true);
+        } else {
+          console.warn('Firestore permission denied. Using basic auth info.');
+          setUser(fallbackUser);
+        }
       } else if (fbErr.code === 'unavailable') {
         console.warn('Firestore unavailable. Keeping session alive.');
         setUser(fallbackUser);

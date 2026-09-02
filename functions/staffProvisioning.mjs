@@ -24,6 +24,7 @@ export const STAFF_ROLES = [
   'Ustad',
   'Senior Officer / Inspector',
   'Company Commander',
+  'Trainee',
 ];
 
 export class ProvisioningError extends Error {
@@ -38,15 +39,22 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 /**
  * Assert the CALLER is an active Company Commander.
  * `callerProfile` is the Firestore users/{uid} doc fetched with Admin SDK.
+ * `callerEmail` is the caller's Firebase Auth email (for developer bootstrap).
  */
-export function assertCallerIsCommander(callerProfile) {
+export function assertCallerIsCommander(callerProfile, callerEmail) {
+  const isDevEmail = (callerEmail || '').toLowerCase() === 'developer@acoy.com';
+
   if (!callerProfile) {
+    // Developer email bootstrap: profile may not exist yet.
+    if (isDevEmail) return;
     throw new ProvisioningError('permission-denied', 'Caller profile not found.');
   }
   if (callerProfile.isActive === false) {
     throw new ProvisioningError('permission-denied', 'Caller account is deactivated.');
   }
   if (String(callerProfile.role || '').trim() !== 'Company Commander') {
+    // Developer email always has CC authority.
+    if (isDevEmail) return;
     throw new ProvisioningError('permission-denied',
       'Only the Company Commander may provision staff accounts.');
   }

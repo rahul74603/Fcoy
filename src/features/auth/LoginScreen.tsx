@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { auth, db } from '../../config/firebase';
 import { sendPasswordResetEmail, signInWithEmailAndPassword } from 'firebase/auth';
-import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, setDoc, query, where } from 'firebase/firestore';
 import { ShieldCheck, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -31,6 +31,31 @@ export const LoginScreen = () => {
       // 1. Authenticate with Firebase Auth
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
+
+      // 1b. Developer / Owner account → skip Firestore profile lookup entirely.
+      //     Hardcoded email — works even if Firestore profile doesn't exist yet.
+      //     Persist profile to Firestore so rules can evaluate userDoc() for
+      //     all subsequent writes (seed, practice, etc.).
+      if (user.email?.toLowerCase() === 'developer@acoy.com') {
+        try {
+          await setDoc(doc(db, 'users', user.uid), {
+            name: 'Developer / Owner',
+            email: user.email,
+            role: 'Company Commander',
+            isActive: true,
+            isDeveloper: true,
+            designation: 'Owner',
+            createdBy: 'System',
+            createdAt: new Date().toISOString(),
+          }, { merge: true });
+        } catch (profileErr: any) {
+          // If Firestore write fails (rules not yet deployed), log but don't
+          // block login — AuthContext synthetic profile still works for UI.
+          console.warn('Developer profile write failed (will use synthetic):', profileErr?.code);
+        }
+        navigate('/dev-practice');
+        return;
+      }
 
       // 2. Fetch Role from Firestore Database
       const userDocRef = doc(db, 'users', user.uid);
@@ -74,6 +99,9 @@ export const LoginScreen = () => {
             break;
           case 'Senior Officer / Inspector':
             navigate('/so-dashboard');
+            break;
+          case 'Trainee':
+            navigate('/trainee-dashboard');
             break;
           default:
             setError('Unassigned Role. Access Denied.');

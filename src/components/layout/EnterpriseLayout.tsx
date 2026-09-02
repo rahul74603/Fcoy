@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from './Sidebar';
-import { User, Shield, LogOut, Loader2, MapPin, Layers } from 'lucide-react';
+import { User, Shield, LogOut, Loader2, MapPin, Layers, KeyRound } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBatch } from '../../contexts/BatchContext';
 import { useUnitConfig } from '../../contexts/UnitConfigContext';
@@ -10,6 +10,7 @@ import { useUnitConfig } from '../../contexts/UnitConfigContext';
 // 🆕 Notification System Import
 import NotificationBell from '../../features/notifications/NotificationBell';
 import { GlobalSearch } from './GlobalSearch';
+import { ChangePasswordModal } from '../ChangePasswordModal';
 
 // 🆕 Subscription Expiry Banner
 import SubscriptionBanner from '../../features/subscription/components/SubscriptionBanner';
@@ -87,6 +88,7 @@ const BatchSwitcher: React.FC = () => {
 
 export const EnterpriseLayout: React.FC<EnterpriseLayoutProps> = ({ children }) => {
   const [time, setTime] = useState(new Date());
+  const [showChangePass, setShowChangePass] = useState(false);
 
   // Firebase Auth Context se live user data aur logout
   const { user, logout } = useAuth();
@@ -194,6 +196,13 @@ export const EnterpriseLayout: React.FC<EnterpriseLayoutProps> = ({ children }) 
                 </div>
 
                 <button
+                  onClick={() => setShowChangePass(true)}
+                  className="print:hidden rounded-sm border border-transparent p-1.5 text-slate-400 transition-colors hover:border-amber-200 hover:bg-amber-50 hover:text-amber-600 sm:p-2"
+                  title="Change Password"
+                >
+                  <KeyRound size={18} />
+                </button>
+                <button
                   onClick={logout}
                   className="print:hidden rounded-sm border border-transparent p-1.5 text-slate-400 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600 sm:p-2"
                   title="Secure Logout"
@@ -227,6 +236,7 @@ export const EnterpriseLayout: React.FC<EnterpriseLayoutProps> = ({ children }) 
         </main>
 
       </div>
+    <ChangePasswordModal isOpen={showChangePass} onClose={() => setShowChangePass(false)} />
     </div>
   );
 };

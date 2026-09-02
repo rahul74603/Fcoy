@@ -98,6 +98,12 @@ describe('Storage rules', () => {
         authedStorage(testEnv, CLERK)
           .ref('documents/REG1/aadhar_1.png').put(PNG, { contentType: 'image/png' }));
     });
+    it('Clerk cannot upload a PDF > 10 MB (size limit enforced)', async () => {
+      const oversizedPdf = Buffer.alloc(10 * 1024 * 1024 + 1, 0x25); // 10 MB + 1 byte
+      await assert.isRejected(
+        authedStorage(testEnv, CLERK)
+          .ref('documents/REG1/big.pdf').put(oversizedPdf, { contentType: 'application/pdf' }));
+    });
     it('Ustad cannot upload a document', async () => {
       await assert.isRejected(
         authedStorage(testEnv, USTAD)

@@ -424,7 +424,9 @@ export const VendorManagementScreen: React.FC = () => {
       const newBills: BillAttachment[] = [...entry.bills];
 
       for (const file of files) {
-        const result = await processBillFile(file);
+        const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+        const tempId = `vendor_${dateStr}_${Date.now()}`;
+        const result = await processBillFile(file, 'vendors', tempId);
         if (result.error) {
           setErrorMsg(result.error);
           continue;
@@ -438,6 +440,8 @@ export const VendorManagementScreen: React.FC = () => {
             fileSize:   result.data.billFileSize,
             uploadedAt: new Date().toISOString(),
             uploadedBy: createdBy,
+            downloadUrl: result.data.billDownloadUrl ?? '',
+            storagePath: result.data.billStoragePath ?? '',
           });
         }
       }

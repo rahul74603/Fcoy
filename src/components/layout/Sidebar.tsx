@@ -10,7 +10,7 @@ import {
   PieChart, Menu,
   Bot, Sparkles,
   UserCog, ClipboardList, Boxes, FlaskConical, Crown, Building2,
-  ClipboardCheck,
+  ClipboardCheck, AlertTriangle,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBatch } from '../../contexts/BatchContext';
@@ -25,17 +25,10 @@ export const Sidebar = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({
-    // Commander sections
     ccSystem: false,
-
-    // QM sections
     qmInventory: true,
     qmFunds: true,
-
-    // Ustad sections (Instructor's own view)
     ustadOwn: true,
-
-    // Clerk / Admin sections
     clerkBatch: true,
     clerkTrainee: true,
     clerkTraining: true,
@@ -49,8 +42,6 @@ export const Sidebar = () => {
     setOpenMenus(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
-  // CC has access to everything
-  // Others need to be in allowed roles
   const hasAccess = (allowedRoles: string[]) => {
     if (!user) return false;
     if (user.role === 'Company Commander') return true;
@@ -191,7 +182,6 @@ export const Sidebar = () => {
     </div>
   );
 
-  // Section Header (Role-based grouping)
   const RoleSectionHeader = ({
     icon, title, subtitle, color, bgColor,
   }: {
@@ -244,7 +234,7 @@ export const Sidebar = () => {
   );
 
   // ═══════════════════════════════════════════
-  // RENDER
+  // RENDER — ORDER: CC → SO → QM → Ustad → Clerk
   // ═══════════════════════════════════════════
   return (
     <>
@@ -297,12 +287,34 @@ export const Sidebar = () => {
             </h1>
           </div>
 
-          {/* USER INFO */}
-          <div className="px-4 py-2 bg-military-950/50 border-b border-military-800">
-            <p className="text-[10px] font-bold text-slate-400 uppercase">Logged in as</p>
-            <p className="text-xs font-black text-white mt-0.5">{user?.name || 'User'}</p>
-            <p className="text-[10px] text-amber-400 font-bold">{user?.role || 'Role'}</p>
-          </div>
+          {/* USER INFO — Rank-based beautification */}
+          {(() => {
+            const roleConfig: Record<string, { icon: string; gradient: string; badge: string; badgeColor: string }> = {
+              'Company Commander': { icon: '⭐', gradient: 'from-amber-600 to-yellow-500', badge: 'CO', badgeColor: 'bg-amber-500 text-white' },
+              'Senior Officer / Inspector': { icon: '🎖️', gradient: 'from-blue-600 to-indigo-500', badge: 'SO', badgeColor: 'bg-blue-500 text-white' },
+              'Quartermaster': { icon: '📦', gradient: 'from-emerald-600 to-green-500', badge: 'QM', badgeColor: 'bg-emerald-500 text-white' },
+              'Ustad': { icon: '🎯', gradient: 'from-red-600 to-rose-500', badge: 'UST', badgeColor: 'bg-red-500 text-white' },
+              'Clerk': { icon: '📋', gradient: 'from-slate-500 to-gray-400', badge: 'CLK', badgeColor: 'bg-slate-500 text-white' },
+            };
+            const rc = roleConfig[user?.role || ''] || { icon: '🪖', gradient: 'from-slate-600 to-slate-500', badge: 'USR', badgeColor: 'bg-slate-500 text-white' };
+            return (
+              <div className={`px-4 py-3 bg-gradient-to-r ${rc.gradient} border-b border-white/10`}>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center text-xl backdrop-blur-sm border border-white/10">
+                    {rc.icon}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[9px] font-bold text-white/60 uppercase tracking-wider">Logged in as</p>
+                    <p className="text-xs font-black text-white mt-0.5 truncate">{user?.name || 'User'}</p>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <span className={`text-[8px] font-black px-2 py-0.5 rounded-md ${rc.badgeColor}`}>{rc.badge}</span>
+                      <span className="text-[10px] text-white/80 font-bold">{user?.role || 'Role'}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* ACTIVE BATCH STATUS */}
           <div className={`px-4 py-2 border-b flex items-center justify-between ${
@@ -330,14 +342,14 @@ export const Sidebar = () => {
           </div>
 
           {/* ═════════════════════════════════════
-              NAVIGATION
+              NAVIGATION — RANK ORDER
           ═════════════════════════════════════ */}
           <div className="flex-1 overflow-y-auto py-3 space-y-1 custom-scrollbar">
 
             {/* ═══════════════════════════════════════════════
-                ⭐ COMPANY COMMANDER — FIRST
+                ⭐ 1. COMPANY COMMANDER
             ═══════════════════════════════════════════════ */}
-            {hasAccess([]) && user?.role === 'Company Commander' && (
+            {user?.role === 'Company Commander' && (
               <>
                 <RoleSectionHeader
                   icon="⭐"
@@ -346,8 +358,10 @@ export const Sidebar = () => {
                   color="border-amber-500"
                   bgColor="bg-amber-900/30"
                 />
+                <NavItem title="🔍 Bemel Dashboard" icon={AlertTriangle} path="/mismatch-dashboard" />
                 <NavItem title="Commander Dashboard" icon={LayoutDashboard} path="/commander" />
                 <AINavItem />
+                <NavItem title="🛡️ SO Inspections Oversight" icon={ClipboardCheck} path="/so-inspections" />
                 <NavGroup
                   title="Batch Command"
                   icon={Layers}
@@ -361,7 +375,24 @@ export const Sidebar = () => {
             )}
 
             {/* ═══════════════════════════════════════════════
-                📦 QUARTER MASTER — SECOND
+                🛡️ 2. SENIOR OFFICER / INSPECTOR
+            ═══════════════════════════════════════════════ */}
+            {user?.role === 'Senior Officer / Inspector' && (
+              <>
+                <RoleSectionHeader
+                  icon="🛡️"
+                  title="Senior Officer"
+                  subtitle="Inspection · Supervision · Verification"
+                  color="border-indigo-400"
+                  bgColor="bg-indigo-900/30"
+                />
+                <NavItem title="Inspections & Oversight" icon={ClipboardCheck} path="/so-inspections" />
+                <div className="mx-4 my-2 h-px bg-military-800" />
+              </>
+            )}
+
+            {/* ═══════════════════════════════════════════════
+                📦 3. QUARTER MASTER
             ═══════════════════════════════════════════════ */}
             {hasAccess(['Quarter Master']) && (
               <>
@@ -380,7 +411,7 @@ export const Sidebar = () => {
                   icon={Archive}
                   menuKey="qmInventory"
                 >
-                  <SubItem title="Inventory / Kit Issue" path="/issue-kit" dot="bg-blue-400" />
+                  <SubItem title="Saaman Vitran (Kit Issue)" path="/issue-kit" dot="bg-blue-400" />
                 </NavGroup>
                 <NavItem title="Assigned Corrective Actions" icon={ClipboardCheck} path="/so-inspections" />
                 <NavGroup
@@ -399,15 +430,13 @@ export const Sidebar = () => {
                   <SubItem title="🏪 Vendor Management" path="/vendors" dot="bg-indigo-400" />
                   <SubItem title="💳 Vendor Payments" path="/vendor-payments" dot="bg-red-400" />
                   <SubItem title="👨‍🍳 Mess Boy Salary" path="/mess-boy-salary" dot="bg-purple-400" />
-                  <GroupDivider label="Welfare" />
-                  <SubItem title="🤝 Festival Welfare Plan" path="/welfare-demographics" dot="bg-rose-400" />
                 </NavGroup>
                 <div className="mx-4 my-2 h-px bg-military-800" />
               </>
             )}
 
             {/* ═══════════════════════════════════════════════
-                🎖️ USTAD / INSTRUCTOR — THIRD
+                🎖️ 4. USTAD / INSTRUCTOR
             ═══════════════════════════════════════════════ */}
             {hasAccess(['Ustad']) && (
               <>
@@ -427,8 +456,6 @@ export const Sidebar = () => {
                   badge={<NewBadge />}
                 >
                   <SubItem title="Staff List" path="/staff" dot="bg-blue-400" />
-                  {/* Subject Master / Assignment are CC+Clerk administration —
-                      hidden from Ustad so no menu leads to an Access-Denied wall. */}
                   {user?.role !== 'Ustad' && (
                     <>
                       <SubItem title="Subject Master" path="/subjects" dot="bg-purple-400" />
@@ -443,8 +470,6 @@ export const Sidebar = () => {
                 >
                   <SubItem title="📊 Batch Progress" path="/batch-progress" dot="bg-purple-500" />
                   <SubItem title="Training Schedule" path="/training-schedule" dot="bg-blue-400" />
-                  {/* Attendance / Duty / Deputation are CC+Clerk administration.
-                      Ustad sees staff + schedule + own leave only. */}
                   {user?.role !== 'Ustad' && (
                     <>
                       <SubItem title="Mark Attendance" path="/staff-attendance" dot="bg-green-400" />
@@ -459,7 +484,7 @@ export const Sidebar = () => {
             )}
 
             {/* ═══════════════════════════════════════════════
-                📋 CLERK / TRAINING RECORDS — FOURTH
+                📋 5. CLERK / TRAINING RECORDS
             ═══════════════════════════════════════════════ */}
             {hasAccess(['Clerk']) && (
               <>
@@ -486,14 +511,13 @@ export const Sidebar = () => {
                   </NavGroup>
                 )}
                 <NavGroup
-                  title="Trainee Management"
+                  title="Rangroot Prabandhan"
                   icon={Users}
                   menuKey="clerkTrainee"
                 >
-                  <SubItem title="Trainee Details / Profile" path="/profile" dot="bg-blue-400" />
-                  <SubItem title="Document Cell" path="/documents" dot="bg-purple-400" />
-                  <SubItem title="MI Room & Medical" path="/medical-register" dot="bg-red-400" />
-                  <SubItem title="🤝 Welfare & Demographics" path="/welfare-demographics" dot="bg-rose-400" />
+                  <SubItem title="Rangroot Profile (Trainee)" path="/profile" dot="bg-blue-400" />
+                  <SubItem title="Dastavez Satyapan (Documents)" path="/documents" dot="bg-purple-400" />
+                  <SubItem title="Chikitsa Register (Medical)" path="/medical-register" dot="bg-red-400" />
                 </NavGroup>
                 <NavGroup
                   title="Program & Duty Planning"
@@ -504,48 +528,42 @@ export const Sidebar = () => {
                   <SubItem title="Ustad Schedule / Duty" path="/training-schedule" dot="bg-blue-400" />
                 </NavGroup>
                 <NavGroup
-                  title="Training Records"
+                  title="Prashikshan Anurekhan"
                   icon={BarChart3}
                   menuKey="clerkRecords"
                 >
                   <GroupDivider label="Daily Tracking" />
-                  <SubItem title="Absent / Leave / Medical" path="/absent-management" dot="bg-red-500" />
+                  <SubItem title="Anupasthiti / Chhutti / Medical" path="/absent-management" dot="bg-red-500" />
                   <GroupDivider label="Exam Records" />
-                  <SubItem title="FPT / Weekly Test Records" path="/test-records" dot="bg-purple-500" />
+                  <SubItem title="Pariksha Register (All Tests)" path="/test-records" dot="bg-purple-500" />
+                  <SubItem title="⚖️ Anushasan Register" path="/discipline-register" dot="bg-red-500" />
+                  <SubItem title="🚶 Sthanantar Register" path="/movement-register" dot="bg-blue-500" />
+                  <SubItem title="✈️ Chhutti Prabandhan" path="/leave-management" dot="bg-amber-500" />
+                  <SubItem title="📊 Kaksha Upasthiti" path="/period-attendance" dot="bg-green-500" />
+                  <SubItem title="📚 Pathyakram Anurekhan" path="/syllabus-tracking" dot="bg-indigo-500" />
+                  <SubItem title="🏆 Antim Board Result" path="/final-board" dot="bg-yellow-500" />
+                  <SubItem title="📋 Klirans Prabandhan" path="/clearance" dot="bg-teal-500" />
+                  <SubItem title="🚶 Bharti Prakriya" path="/joining-workflow" dot="bg-violet-500" />
+                  <SubItem title="📝 Lekha-Jokha (Audit)" path="/audit-log" dot="bg-slate-500" />
+                  <SubItem title="✈️ Chhutti Prabandhan" path="/leave-management" dot="bg-amber-500" />
+                  <SubItem title="📊 Kaksha Upasthiti" path="/period-attendance" dot="bg-green-500" />
+                  <SubItem title="📚 Pathyakram Anurekhan" path="/syllabus-tracking" dot="bg-indigo-500" />
+                  <SubItem title="🏆 Antim Board Result" path="/final-board" dot="bg-yellow-500" />
+                  <SubItem title="📋 Klirans Prabandhan" path="/clearance" dot="bg-teal-500" />
+                  <SubItem title="🚶 Bharti Prakriya" path="/joining-workflow" dot="bg-violet-500" />
+                  <SubItem title="📝 Lekha-Jokha (Audit)" path="/audit-log" dot="bg-slate-500" />
                 </NavGroup>
                 <div className="mx-4 my-2 h-px bg-military-800" />
               </>
             )}
 
             {/* ═══════════════════════════════════════════════
-                🛡️ SENIOR OFFICER / INSPECTOR — SO works it; CC oversees
-            ═══════════════════════════════════════════════ */}
-            {user?.role === 'Senior Officer / Inspector' && (
-              <>
-                <RoleSectionHeader
-                  icon="🛡️"
-                  title="Senior Officer"
-                  subtitle="Inspection · Supervision · Verification"
-                  color="border-indigo-400"
-                  bgColor="bg-indigo-900/30"
-                />
-                <NavItem title="Inspection Dashboard" icon={LayoutDashboard} path="/so-dashboard" />
-                <NavItem title="Inspections & Findings" icon={ClipboardCheck} path="/so-inspections" badge={<NewBadge />} />
-                <div className="mx-4 my-2 h-px bg-military-800" />
-              </>
-            )}
-            {/* CC oversight entry inside Commander section */}
-            {user?.role === 'Company Commander' && (
-              <NavItem title="🛡️ SO Inspections Oversight" icon={ClipboardCheck} path="/so-inspections" />
-            )}
-
-            {/* ═══════════════════════════════════════════════
-                🛡️ REPORTS & SETTINGS — CC ONLY, LAST
+                REPORTS & SETTINGS — CC ONLY
             ═══════════════════════════════════════════════ */}
             {user?.role === 'Company Commander' && (
               <>
                 <RoleSectionHeader
-                  icon="🛡️"
+                  icon="⚙️"
                   title="Reports & Settings"
                   subtitle="Commander Only"
                   color="border-slate-400"
@@ -564,7 +582,7 @@ export const Sidebar = () => {
             )}
 
             {/* ═══════════════════════════════════════════════
-                🧪 DEVELOPER — sirf dev account ko dikhta hai
+                🧪 DEVELOPER
             ═══════════════════════════════════════════════ */}
             {user?.isDeveloper && (
               <>
@@ -590,7 +608,7 @@ export const Sidebar = () => {
 
           {/* FOOTER */}
           <div className="p-4 bg-military-950 border-t border-military-800 text-xs text-military-400 text-center">
-            v2.5.2 · Nav Clean
+            v2.6.0 · Rank Order
           </div>
 
         </div>

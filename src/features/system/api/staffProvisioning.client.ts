@@ -1,18 +1,12 @@
-// ═══════════════════════════════════════════════════════════════════════
-// STAFF PROVISIONING — client callable wrapper
-// ───────────────────────────────────────────────────────────────────────
-// Staff accounts are created SERVER-SIDE by the `createStaffAccount` Cloud
-// Function (Admin SDK). The browser no longer calls
-// createUserWithEmailAndPassword for staff provisioning, so a non-CC signed-in
-// user cannot mint even an orphan Auth account. Authorization (active Company
-// Commander) is enforced inside the function; the role/isDeveloper/
-// assignedBatchIds/customerId values are validated/forced server-side.
-// ═══════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+// STAFF PROVISIONING — client-side with secondary app
+// Creates Auth account WITHOUT signing out the CC
+// ═══════════════════════════════════════════════════════════
 
-import {
-  getFunctions, httpsCallable, connectFunctionsEmulator,
-} from 'firebase/functions';
-import { app } from '../../../config/firebase';
+import { getAuth as getAuthSecondary, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { getApps, initializeApp } from 'firebase/app';
+import { doc, setDoc } from 'firebase/firestore';
+import { db, firebaseConfig } from '../../../config/firebase';
 
 export interface CreateStaffInput {
   name: string;
@@ -30,41 +24,59 @@ export interface CreateStaffResult {
   role: string;
 }
 
-let cached: ReturnType<typeof getFunctions> | null = null;
-function functionsInstance() {
-  if (cached) return cached;
-  const region = (import.meta.env.VITE_FUNCTIONS_REGION as string | undefined) || 'us-central1';
-  cached = getFunctions(app, region);
-  if (import.meta.env.VITE_USE_FUNCTIONS_EMULATOR === 'true') {
-    connectFunctionsEmulator(cached, 'localhost', 5001);
-  }
-  return cached;
+// Secondary Firebase app — CC session kabhi switch nahi hota
+function getSecondaryAuth() {
+  const secondary = getApps().find(a => a.name === 'staff-provisioner')
+    || initializeApp(firebaseConfig, 'staff-provisioner');
+  return getAuthSecondary(secondary);
 }
 
 /**
- * Provision a staff login account. Throws an Error with a Hinglish-friendly
- * message for known failure reasons.
+ * Provision a staff login account.
+ * Uses secondary Firebase app so CC stays logged in.
  */
 export async function createStaffAccount(input: CreateStaffInput): Promise<CreateStaffResult> {
-  const callable = httpsCallable<CreateStaffInput, CreateStaffResult>(
-    functionsInstance(), 'createStaffAccount');
   try {
-    const res = await callable(input);
-    return res.data;
+    const secondaryAuth = getSecondaryAuth();
+
+    // 1) Create Firebase Auth account (in secondary app — CC session unaffected)
+    const userCredential = await createUserWithEmailAndPassword(secondaryAuth, input.email, input.password);
+    const newUid = userCredential.user.uid;
+
+    // 2) Update display name
+    await updateProfile(userCredential.user, { displayName: input.name });
+
+    // 3) Create Firestore profile (doc id = auth uid)
+    const { getAuth } = await import('firebase/auth');
+    const primaryAuth = getAuth();
+    await setDoc(doc(db, 'users', newUid), {
+      name: input.name,
+      email: input.email,
+      role: input.role,
+      phone: input.phone || '',
+      designation: input.designation || '',
+      isActive: true,
+      isDeveloper: false,
+      assignedBatchIds: input.assignedBatchIds || [],
+      createdAt: new Date().toISOString(),
+      createdBy: primaryAuth.currentUser?.uid || 'unknown',
+    });
+
+    // 4) Sign out from secondary app (cleanup)
+    await secondaryAuth.signOut();
+
+    return { uid: newUid, email: input.email, role: input.role };
   } catch (e: any) {
-    const code = e?.code ?? '';
-    if (code === 'already-exists' || /email-already|already exists|already-exists/i.test(e?.message ?? '')) {
+    const code = e?.code || '';
+    if (code === 'auth/email-already-in-use') {
       throw new Error('Ye email pehle se registered hai.');
     }
-    if (code === 'permission-denied' || code === 'unauthenticated') {
-      throw new Error('SURAKSHA: staff account sirf Company Commander bana sakta hai.');
+    if (code === 'auth/weak-password') {
+      throw new Error('Password kam se kam 6 characters ka ho.');
     }
-    if (code === 'invalid-argument') {
-      throw new Error(e?.message ?? 'Input galat hai (name/email/password/role check karo).');
+    if (code === 'auth/invalid-email') {
+      throw new Error('Email galat hai.');
     }
-    if (code === 'unavailable' || code === 'deadline-exceeded' || code === 'failed-precondition') {
-      throw new Error('Server abhi reachable nahi. Cloud Functions deploy/emulator check karo.');
-    }
-    throw new Error(e?.message ?? 'Staff account create nahi ho paya.');
+    throw new Error(e?.message || 'Staff account create nahi ho paya.');
   }
 }

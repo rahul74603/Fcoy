@@ -361,6 +361,58 @@ export const setCustomerStatus = async (
   await setDoc(doc(db, CUSTOMERS_COL, customer.id), { status }, { merge: true });
 };
 
+// ─────────────────────────────────────────────
+// SOFT DELETE CUSTOMER (audit-safe)
+// Sets status to 'deleted', preserves all data
+// ─────────────────────────────────────────────
+export const softDeleteCustomer = async (
+  customer: Customer,
+  by: string,
+  reason: string,
+): Promise<void> => {
+  const now = new Date().toISOString();
+  await setDoc(doc(db, CUSTOMERS_COL, customer.id), {
+    status: 'deleted',
+    deletedAt: now,
+    deletedBy: by,
+    deleteReason: reason,
+  }, { merge: true });
+
+  await addDoc(collection(db, HISTORY_COL), {
+    action: 'DELETED',
+    customerId: customer.customerId,
+    planId: '', planName: '', amount: 0,
+    startDate: '', endDate: '',
+    remarks: `Soft deleted: ${reason}`,
+    by, at: now,
+  });
+};
+
+// ─────────────────────────────────────────────
+// RESTORE DELETED CUSTOMER
+// ─────────────────────────────────────────────
+export const restoreCustomer = async (
+  customer: Customer,
+  by: string,
+): Promise<void> => {
+  const now = new Date().toISOString();
+  await setDoc(doc(db, CUSTOMERS_COL, customer.id), {
+    status: 'active',
+    deletedAt: null,
+    deletedBy: null,
+    deleteReason: null,
+  }, { merge: true });
+
+  await addDoc(collection(db, HISTORY_COL), {
+    action: 'RESTORED',
+    customerId: customer.customerId,
+    planId: '', planName: '', amount: 0,
+    startDate: '', endDate: '',
+    remarks: 'Customer restored from deleted state',
+    by, at: now,
+  });
+};
+
 // ═════════════════════════════════════════════════════════════
 // ⚡ FIRST COMPANY QUICK SETUP (Owner ne order kiya)
 // Ek click me 4 kaam:

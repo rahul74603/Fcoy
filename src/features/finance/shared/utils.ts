@@ -133,15 +133,22 @@ export const MAX_BASE64_SIZE   = 800 * 1024;        // 800KB for Firestore
 // ─────────────────────────────────────────────
 // BILL PROCESSING (used in multiple screens)
 // ─────────────────────────────────────────────
+import { uploadBillToStorage } from '../../shared/storage.utils';
+
 export interface ProcessedBill {
-  billBase64:   string;
+  billBase64:   string;       // DEPRECATED — kept for backward compat
   billFileName: string;
   billFileType: string;
   billFileSize: number;
+  // NEW: Storage fields (when storageCategory + entityId provided)
+  billDownloadUrl?: string;
+  billStoragePath?: string;
 }
 
 export const processBillFile = async (
-  file: File
+  file: File,
+  storageCategory?: string,  // 'mess_fund', 'training_fund', etc.
+  entityId?: string          // expenseId
 ): Promise<{ data: ProcessedBill | null; error: string | null }> => {
   if (!ALLOWED_FILE_TYPES.includes(file.type)) {
     return { data: null, error: 'Sirf PDF, JPG, PNG, WEBP allowed hai' };
@@ -154,6 +161,23 @@ export const processBillFile = async (
   }
 
   try {
+    // NEW: Upload to Firebase Storage if category/entityId provided
+    if (storageCategory && entityId) {
+      const result = await uploadBillToStorage(file, storageCategory, entityId);
+      return {
+        data: {
+          billBase64: '', // No base64 — using Storage
+          billFileName: result.billFileName,
+          billFileType: result.billFileType,
+          billFileSize: result.billFileSize,
+          billDownloadUrl: result.billDownloadUrl,
+          billStoragePath: result.billStoragePath,
+        },
+        error: null,
+      };
+    }
+
+    // FALLBACK: Legacy base64 mode
     let base64: string;
     const isPdf = file.type === 'application/pdf';
 

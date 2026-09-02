@@ -15,6 +15,7 @@ import { useTestRecords } from '../hooks/useTestRecords';
 import { useStaff } from '../hooks/useStaff';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+import { exportFiringRegister, exportTraineeMaster } from '../../../services/export.service';
 import { useBatch } from '../../../contexts/BatchContext';
 import {
   TestRecord, TestFormData, TestType, TraineeResult, FPTEvent,
@@ -209,10 +210,24 @@ const TestRecordsScreen: React.FC = () => {
   const [fptEvents, setFptEvents] = useState<FPTEvent[]>(DEFAULT_FPT_EVENTS);
   const [overallPassPercent, setOverallPassPercent] = useState(50);
 
+  // Firing Practice Config (BSF Register Pattern)
+  const [firingConfig, setFiringConfig] = useState({
+    weaponType: 'INSAS Rifle',
+    exerciseName: 'Grouping Practice',
+    exerciseNo: '1',
+    distance: '100 Mtrs',
+    targetType: 'Figure 11',
+    totalRounds: 5,
+  });
+
   // ─── Results State ───────────────────────
   const [trainees, setTrainees] = useState<any[]>([]);
   const [results, setResults] = useState<TraineeResult[]>([]);
   const [searchTrainee, setSearchTrainee] = useState('');
+  const [firingScoringTrainee, setFiringScoringTrainee] = useState<string | null>(null);
+  const [currentRingValues, setCurrentRingValues] = useState<number[]>([]);
+  const [targetPhotoFile, setTargetPhotoFile] = useState<File | null>(null);
+  const [targetPhotoPreview, setTargetPhotoPreview] = useState<string>('');
 
   // ─── Fetch Trainees ──────────────────────
   useEffect(() => {
@@ -321,6 +336,15 @@ const TestRecordsScreen: React.FC = () => {
       instructorIds: selectedInstructorIds, // All IDs
     };
 
+    if (testForm.testType === 'firing') {
+      const maxScore = firingConfig.totalRounds * 10;
+      finalForm.firingConfig = firingConfig;
+      finalForm.totalMarks = maxScore;
+      finalForm.passingMarks = Math.round(maxScore * 0.5);
+      finalForm.passingPercent = 50;
+      finalForm.venue = finalForm.venue || 'Firing Range';
+    }
+
     if (testForm.testType === 'fpt') {
       const totalMarks = fptEvents.reduce((s, e) => s + e.maxMarks, 0);
       const totalPassing = fptEvents.reduce((s, e) => s + e.passingMarks, 0);
@@ -346,6 +370,32 @@ const TestRecordsScreen: React.FC = () => {
   // ═══════════════════════════════════════════
   // RESULTS ENTRY
   // ═══════════════════════════════════════════
+    // BSF Classification Logic
+  const getClassification = (actualScore: number, maxScore: number): string => {
+    if (maxScore <= 0) return 'FAIL';
+    const pct = (actualScore / maxScore) * 100;
+    if (pct >= 80) return 'MM (Marksman)';
+    if (pct >= 60) return 'FC (First Class)';
+    if (pct >= 50) return 'SS (Sharpshooter)';
+    return 'FAIL';
+  };
+
+  const getClassColor = (cls: string) => {
+    if (cls.includes('Marksman')) return 'bg-yellow-500 text-white';
+    if (cls.includes('First Class')) return 'bg-green-600 text-white';
+    if (cls.includes('Sharpshooter')) return 'bg-blue-600 text-white';
+    return 'bg-red-600 text-white';
+  };
+
+  const handleTargetPhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setTargetPhotoFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => setTargetPhotoPreview(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
   const openResultsModal = (test: TestRecord, bulk: boolean = false) => {
     setSelectedTest(test);
 
@@ -485,6 +535,28 @@ const TestRecordsScreen: React.FC = () => {
   };
 
   const handleSaveResultsSubmit = async () => {
+    // For firing tests, ensure firingDetails are populated
+    if (selectedTest?.testType === 'firing') {
+      const maxScore = (selectedTest.firingConfig?.totalRounds || 5) * 10;
+      setResults(prev => prev.map(r => {
+        if (r.status === 'absent') return r;
+        const ringVals = r.firingDetails?.ringValues || [];
+        const actual = ringVals.reduce((s, v) => s + v, 0);
+        const cls = getClassification(actual, maxScore);
+        return {
+          ...r,
+          marks: actual,
+          firingDetails: {
+            ...r.firingDetails,
+            ringValues: ringVals,
+            totalRounds: selectedTest.firingConfig?.totalRounds || 5,
+            actualScore: actual,
+            maxScore,
+            classification: cls,
+          },
+        };
+      }));
+    }
     if (!selectedTest) return;
     const success = await handleSaveResults(
       selectedTest.id,
@@ -1411,6 +1483,62 @@ const TestRecordsScreen: React.FC = () => {
             </div>
           )}
 
+          {/* 🔥 FIRING PRACTICE CONFIGURATION (BSF Register Pattern) */}
+          {testForm.testType === 'firing' && (
+            <div className="bg-orange-50 border-2 border-orange-300 rounded-xl p-4 space-y-3">
+              <h3 className="text-xs font-black text-orange-800 uppercase flex items-center gap-1">
+                🎯 Firing Range Register — BSF Pattern
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-orange-700 uppercase mb-1">Weapon Type *</label>
+                  <select value={firingConfig.weaponType} onChange={e => setFiringConfig(p => ({...p, weaponType: e.target.value}))}
+                    className="w-full px-3 py-2 border border-orange-300 rounded-lg text-sm font-bold">
+                    {['INSAS Rifle', '9mm Pistol', 'AK-47', 'AK-203', 'SLR', 'LMG', 'Carbine', 'Other'].map(w => <option key={w}>{w}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-orange-700 uppercase mb-1">Exercise Name *</label>
+                  <select value={firingConfig.exerciseName} onChange={e => setFiringConfig(p => ({...p, exerciseName: e.target.value}))}
+                    className="w-full px-3 py-2 border border-orange-300 rounded-lg text-sm font-bold">
+                    {['Grouping Practice', 'Application Fire', 'Classification Fire', 'Night Firing', 'Snap Shooting', 'Battle Range', 'Other'].map(e => <option key={e}>{e}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-orange-700 uppercase mb-1">Exercise No</label>
+                  <input type="text" value={firingConfig.exerciseNo} onChange={e => setFiringConfig(p => ({...p, exerciseNo: e.target.value}))}
+                    className="w-full px-3 py-2 border border-orange-300 rounded-lg text-sm" placeholder="e.g., 1, 2, 3" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-orange-700 uppercase mb-1">Distance *</label>
+                  <select value={firingConfig.distance} onChange={e => setFiringConfig(p => ({...p, distance: e.target.value}))}
+                    className="w-full px-3 py-2 border border-orange-300 rounded-lg text-sm font-bold">
+                    {['25 Mtrs', '50 Mtrs', '100 Mtrs', '200 Mtrs', '300 Mtrs'].map(d => <option key={d}>{d}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-orange-700 uppercase mb-1">Target Type *</label>
+                  <select value={firingConfig.targetType} onChange={e => setFiringConfig(p => ({...p, targetType: e.target.value}))}
+                    className="w-full px-3 py-2 border border-orange-300 rounded-lg text-sm font-bold">
+                    {['Figure 11', 'Figure 12', 'Ring Target', 'Bullseye', 'Running Target', 'Other'].map(t => <option key={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-orange-700 uppercase mb-1">Rounds Per Firer *</label>
+                  <select value={firingConfig.totalRounds} onChange={e => setFiringConfig(p => ({...p, totalRounds: Number(e.target.value)}))}
+                    className="w-full px-3 py-2 border border-orange-300 rounded-lg text-sm font-bold">
+                    {[3, 5, 8, 10, 15, 20].map(n => <option key={n} value={n}>{n} Rounds</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="bg-white border border-orange-200 rounded p-2 text-[10px] text-orange-700">
+                📋 <strong>Auto:</strong> Total Marks = {firingConfig.totalRounds} × 10 = <strong>{firingConfig.totalRounds * 10}</strong> | 
+                Passing = <strong>{Math.round(firingConfig.totalRounds * 10 * 0.5)}</strong> (50%) |
+                Classification: MM ≥80% | FC ≥60% | SS ≥50% | FAIL &lt;50%
+              </div>
+            </div>
+          )}
+
                     {/* 🆕 MULTIPLE INSTRUCTORS */}
           <div>
             <label className="block text-xs font-bold text-gray-700 uppercase mb-2">
@@ -1646,17 +1774,49 @@ const TestRecordsScreen: React.FC = () => {
                     <td className="px-3 py-2 text-xs font-medium">{r.traineeName}</td>
                     <td className="px-3 py-2 text-xs text-slate-500">{r.platoon || '—'}</td>
                     <td className="px-3 py-2">
-                      <input
-                        type="number"
-                        value={r.marks < 0 ? '' : r.marks}
-                        onChange={e => updateMarks(r.traineeId, Number(e.target.value))}
-                        disabled={r.status === 'absent'}
-                        min={0}
-                        max={selectedTest?.totalMarks}
-                        placeholder="0"
-                        className="w-16 px-2 py-1 border border-gray-300 rounded text-center text-sm font-bold"
-                      />
-                      <span className="text-[10px] text-slate-400 ml-1">/{selectedTest?.totalMarks}</span>
+                      {selectedTest?.testType === 'firing' ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="text"
+                            value={r.firingDetails?.laneNo || ''}
+                            onChange={e => {
+                              const lane = e.target.value;
+                              setResults(prev => prev.map(x => x.traineeId === r.traineeId ? {...x, firingDetails: {...(x.firingDetails || {}), laneNo: lane}} : x));
+                            }}
+                            placeholder="Lane"
+                            className="w-12 px-1 py-1 border border-orange-300 rounded text-center text-[10px] font-bold"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFiringScoringTrainee(r.traineeId);
+                              setCurrentRingValues(r.firingDetails?.ringValues || []);
+                            }}
+                            className="px-2 py-1 bg-orange-500 text-white text-[10px] font-black rounded hover:bg-orange-600"
+                          >
+                            🎯 Score ({r.firingDetails?.ringValues?.length || 0}/{selectedTest?.firingConfig?.totalRounds || 5})
+                          </button>
+                          {r.firingDetails?.ringValues && r.firingDetails.ringValues.length > 0 && (
+                            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${getClassColor(getClassification(r.firingDetails.actualScore || 0, r.firingDetails.maxScore || 50))}`}>
+                              {r.firingDetails.actualScore}/{r.firingDetails.maxScore} — {r.firingDetails.classification}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <>
+                          <input
+                            type="number"
+                            value={r.marks < 0 ? '' : r.marks}
+                            onChange={e => updateMarks(r.traineeId, Number(e.target.value))}
+                            disabled={r.status === 'absent'}
+                            min={0}
+                            max={selectedTest?.totalMarks}
+                            placeholder="0"
+                            className="w-16 px-2 py-1 border border-gray-300 rounded text-center text-sm font-bold"
+                          />
+                          <span className="text-[10px] text-slate-400 ml-1">/{selectedTest?.totalMarks}</span>
+                        </>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-center">
                       {r.status !== 'absent' && r.marks > 0 && (
@@ -1704,6 +1864,119 @@ const TestRecordsScreen: React.FC = () => {
           </div>
         </div>
       </FormModal>
+
+      {/* ═══ TAP-TO-SCORE MODAL (Firing Practice) ═══ */}
+      {firingScoringTrainee && selectedTest?.testType === 'firing' && (() => {
+        const trainee = results.find(r => r.traineeId === firingScoringTrainee);
+        const totalRounds = selectedTest?.firingConfig?.totalRounds || 5;
+        const maxScore = totalRounds * 10;
+        const actualScore = currentRingValues.reduce((s, v) => s + v, 0);
+        const classification = getClassification(actualScore, maxScore);
+        return (
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] p-4">
+            <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+              <div className="bg-orange-600 px-4 py-3 rounded-t-2xl flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-black text-white">🎯 Tap to Score — {trainee?.traineeName}</h3>
+                  <p className="text-[10px] text-orange-200">Lane {trainee?.firingDetails?.laneNo || '—'} · {selectedTest?.firingConfig?.weaponType} · {selectedTest?.firingConfig?.distance}</p>
+                </div>
+                <button onClick={() => setFiringScoringTrainee(null)} className="text-white hover:text-red-300"><X size={18} /></button>
+              </div>
+              <div className="p-4 space-y-4">
+                {/* Ring Values Display */}
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                  <p className="text-[10px] font-black text-slate-500 uppercase mb-2">Shots ({currentRingValues.length}/{totalRounds})</p>
+                  <div className="flex flex-wrap gap-1.5 min-h-[32px]">
+                    {currentRingValues.map((rv, i) => (
+                      <button key={i} onClick={() => setCurrentRingValues(prev => prev.filter((_, idx) => idx !== i))}
+                        className={`text-sm font-black px-2.5 py-1 rounded-lg cursor-pointer hover:opacity-70 ${rv >= 8 ? 'bg-green-600 text-white' : rv >= 5 ? 'bg-amber-500 text-white' : 'bg-red-600 text-white'}`}>
+                        {rv}
+                      </button>
+                    ))}
+                    {currentRingValues.length === 0 && <span className="text-xs text-slate-400">Neeche buttons tap karo...</span>}
+                  </div>
+                </div>
+
+                {/* Tap Grid */}
+                <div className="grid grid-cols-5 gap-2">
+                  {[10, 9, 8, 7, 6, 5, 4, 3, 2, 1].map(val => (
+                    <button key={val} disabled={currentRingValues.length >= totalRounds}
+                      onClick={() => { if (currentRingValues.length < totalRounds) setCurrentRingValues(prev => [...prev, val]); }}
+                      className={`py-3 rounded-xl text-lg font-black border-2 transition-all active:scale-95 disabled:opacity-30 ${
+                        val >= 8 ? 'bg-green-100 border-green-400 text-green-800 hover:bg-green-200' :
+                        val >= 5 ? 'bg-amber-100 border-amber-400 text-amber-800 hover:bg-amber-200' :
+                        'bg-red-100 border-red-400 text-red-800 hover:bg-red-200'
+                      }`}>
+                      {val}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Miss button */}
+                <button disabled={currentRingValues.length >= totalRounds}
+                  onClick={() => { if (currentRingValues.length < totalRounds) setCurrentRingValues(prev => [...prev, 0]); }}
+                  className="w-full py-2 bg-slate-200 text-slate-700 text-sm font-bold rounded-lg hover:bg-slate-300 disabled:opacity-30">
+                  ❌ Miss (0)
+                </button>
+
+                {/* Auto-calculated Results */}
+                <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 space-y-2">
+                  <div className="flex justify-between text-xs"><span className="text-slate-500">Actual Score</span><span className="font-black text-orange-800">{actualScore} / {maxScore}</span></div>
+                  <div className="flex justify-between text-xs"><span className="text-slate-500">Percentage</span><span className="font-black">{maxScore > 0 ? Math.round((actualScore/maxScore)*100) : 0}%</span></div>
+                  <div className="flex justify-between items-center text-xs"><span className="text-slate-500">Classification</span><span className={`text-sm font-black px-3 py-1 rounded-lg ${getClassColor(classification)}`}>{classification}</span></div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-2">
+                  <button onClick={() => { setCurrentRingValues([]); }} className="flex-1 py-2 bg-slate-100 text-slate-600 text-xs font-bold rounded-lg hover:bg-slate-200">Clear All</button>
+                  <button onClick={() => { setCurrentRingValues(prev => prev.slice(0, -1)); }} className="flex-1 py-2 bg-amber-100 text-amber-700 text-xs font-bold rounded-lg hover:bg-amber-200">Undo Last</button>
+                </div>
+
+                {/* Target Photo Upload */}
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                  <p className="text-[9px] font-black text-slate-500 uppercase mb-2">📸 Target Paper Photo (Optional)</p>
+                  {targetPhotoPreview ? (
+                    <div className="relative">
+                      <img src={targetPhotoPreview} alt="Target" className="w-full max-h-32 object-contain rounded-lg border" />
+                      <button onClick={() => { setTargetPhotoFile(null); setTargetPhotoPreview(''); }} className="absolute top-1 right-1 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs">×</button>
+                    </div>
+                  ) : (
+                    <label className="flex items-center justify-center gap-2 py-3 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer hover:border-orange-400 hover:bg-orange-50 transition-all">
+                      <span className="text-xs font-bold text-slate-500">📷 Tap to upload target photo</span>
+                      <input type="file" accept="image/*" capture="environment" onChange={handleTargetPhotoSelect} className="hidden" />
+                    </label>
+                  )}
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-2">
+                  <button onClick={() => { setCurrentRingValues([]); setTargetPhotoFile(null); setTargetPhotoPreview(''); }} className="flex-1 py-2 bg-slate-100 text-slate-600 text-xs font-bold rounded-lg hover:bg-slate-200">Clear All</button>
+                  <button onClick={() => { setCurrentRingValues(prev => prev.slice(0, -1)); }} className="flex-1 py-2 bg-amber-100 text-amber-700 text-xs font-bold rounded-lg hover:bg-amber-200">Undo Last</button>
+                  <button onClick={() => {
+                    const fd = {
+                      laneNo: trainee?.firingDetails?.laneNo || '',
+                      ringValues: currentRingValues,
+                      totalRounds,
+                      actualScore,
+                      maxScore,
+                      classification,
+                      targetPhotoURL: targetPhotoPreview || '',
+                    };
+                    setResults(prev => prev.map(x => x.traineeId === firingScoringTrainee ? {
+                      ...x, marks: actualScore, grade: calculateGrade(maxScore > 0 ? (actualScore/maxScore)*100 : 0),
+                      status: actualScore >= (selectedTest?.passingMarks || 0) ? 'pass' : 'fail',
+                      firingDetails: fd,
+                    } : x));
+                    setFiringScoringTrainee(null);
+                    setTargetPhotoFile(null);
+                    setTargetPhotoPreview('');
+                  }} className="flex-1 py-2 bg-green-600 text-white text-xs font-black rounded-lg hover:bg-green-700">✅ Save</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ═══════════════════════════════════════
           BULK/FPT RESULTS ENTRY MODAL
