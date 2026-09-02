@@ -781,6 +781,12 @@ test('login bootstrap: batches / unitConfig / config / subscription readable whe
   assert.match(rules, /match \/config\/\{docId\} \{[\s\S]*?allow read: if signedIn\(\)/);
   assert.match(rules, /match \/subscription\/\{docId\} \{[\s\S]*?allow read: if signedIn\(\)/);
 });
+test('trainee senior portal: isTrainee helper and read grants', () => {
+  assert.ok(/function isTrainee\(\)/.test(rules));
+  assert.match(rules, /match \/trainees\/\{traineeId\} \{[\s\S]*?allow read: if isTrainee\(\)/);
+  assert.match(rules, /match \/traineeNotices\/\{id\} \{[\s\S]*?allow read: if isTrainee\(\)/);
+});
+
 
 console.log('\n■ DOCUMENT UPLOAD FAKE-SUCCESS AUDIT');
 

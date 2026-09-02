@@ -86,7 +86,7 @@ export const TraineeDashboard: React.FC = () => {
       } catch {}
 
       // Load updates for this trainee (if trainee is logged in)
-      if (user.role === 'Trainee') {
+      if (user.role === 'Trainee' || /trainee/i.test(String(user.role ?? ''))) {
         const myTrainee = tList.find(t => t.name === user.name);
         if (myTrainee) {
           const upd = await getTraineeUpdates(myTrainee.id);
@@ -178,7 +178,7 @@ export const TraineeDashboard: React.FC = () => {
             </div>
             <div>
               <h1 className="text-sm font-black text-white">TRAINEE DASHBOARD</h1>
-              <p className="text-[10px] text-green-200">BSF Training Center — {activeBatch?.batchNumber || 'No Batch'}</p>
+              <p className="text-[10px] text-green-200">BSF Training Center — {batch.batchNumber || 'No Batch'}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">

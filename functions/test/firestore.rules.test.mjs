@@ -56,6 +56,7 @@ const QM    = { uid: 'qmUid',   email: 'qm@example.com' };
 const USTAD = { uid: 'ustadUid', email: 'ustad@example.com' };
 // Senior Officer / Inspector — assigned batchA ONLY (batchB must be denied)
 const SO    = { uid: 'soUid',   email: 'so@example.com' };
+const TRAINEE = { uid: 'traineeUid', email: 'ct@master.com' };
 
 async function seedProfiles(env) {
   // Write profiles with admin privileges (rules bypassed) so role lookups
@@ -93,6 +94,10 @@ async function seedProfiles(env) {
     await admin.doc('users/soUid').set({
       name: 'SO', email: SO.email, role: 'Senior Officer / Inspector',
       isActive: true, isDeveloper: false, assignedBatchIds: ['batchA'],
+    });
+    await admin.doc('users/traineeUid').set({
+      name: 'Course Trainee Senior', email: TRAINEE.email, role: 'Course Trainee Senior',
+      isActive: true, isDeveloper: false,
     });
   });
 }
@@ -770,6 +775,40 @@ describe('Firestore rules', () => {
   });
 
   // ── LOGIN BOOTSTRAP (must not chicken-and-egg on isStaff) ───────────
+
+  describe('trainee senior portal', () => {
+    it('Trainee can read batches / unitConfig / trainees (portal bootstrap)', async () => {
+      await adminDb(testEnv).doc('batches/b1').set({
+        batchNumber: '1', status: 'active', createdAt: '2026-01-01',
+      });
+      await adminDb(testEnv).doc('unitConfig/main').set({ companyName: 'F COY' });
+      await adminDb(testEnv).doc('trainees/t1').set({ name: 'RAM', chestNo: '25', batchId: 'b1' });
+      await assert.isFulfilled(authedDb(testEnv, TRAINEE).doc('batches/b1').get());
+      await assert.isFulfilled(authedDb(testEnv, TRAINEE).doc('unitConfig/main').get());
+      await assert.isFulfilled(authedDb(testEnv, TRAINEE).doc('trainees/t1').get());
+    });
+    it('Trainee cannot write finance or approve leave', async () => {
+      await assert.isRejected(
+        authedDb(testEnv, TRAINEE).collection('mess_fund_expenses').add({ amount: 1 }));
+      await adminDb(testEnv).doc('staff_leave/lvT').set({
+        leaveNumber: 'LV-T', staffId: 's1', staffName: 'X',
+        status: 'pending', approvedBy: '', approvedByName: '',
+        approvalDate: null, rejectionReason: '', remarks: '',
+      });
+      await assert.isRejected(
+        authedDb(testEnv, TRAINEE).doc('staff_leave/lvT')
+          .update({ status: 'approved', approvedBy: 'traineeUid' }));
+    });
+    it('Trainee can read traineeNotices / traineeUpdates / periodAttendance', async () => {
+      await adminDb(testEnv).doc('traineeNotices/n1').set({ batchId: 'b1', title: 'x', isActive: true });
+      await adminDb(testEnv).doc('traineeUpdates/u1').set({ traineeId: 't1', title: 'x' });
+      await adminDb(testEnv).doc('periodAttendance/p1').set({ batchId: 'b1', traineeId: 't1', date: '2026-09-02', status: 'P' });
+      await assert.isFulfilled(authedDb(testEnv, TRAINEE).doc('traineeNotices/n1').get());
+      await assert.isFulfilled(authedDb(testEnv, TRAINEE).doc('traineeUpdates/u1').get());
+      await assert.isFulfilled(authedDb(testEnv, TRAINEE).doc('periodAttendance/p1').get());
+    });
+  });
+
   describe('login bootstrap', () => {
     it('signed-in user can read own users/{uid} even with short role alias', async () => {
       await adminDb(testEnv).doc('users/aliasUid').set({

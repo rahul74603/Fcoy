@@ -494,6 +494,7 @@ export const Sidebar = () => {
                   <SubItem title="Document Cell" path="/documents" dot="bg-purple-400" />
                   <SubItem title="MI Room & Medical" path="/medical-register" dot="bg-red-400" />
                   <SubItem title="Relegation / RelID" path="/relegation" dot="bg-amber-400" />
+                  <SubItem title="Trainee Senior Portal" path="/trainee-management" dot="bg-green-400" />
                   <SubItem title="🤝 Welfare & Demographics" path="/welfare-demographics" dot="bg-rose-400" />
                 </NavGroup>
                 <NavGroup

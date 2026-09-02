@@ -58,6 +58,8 @@ export const LoginScreen = () => {
           : roleKey === 'ustad' || roleKey === 'instructor' ? 'Ustad'
           : roleKey === 'so' || roleKey === 'senior officer' || roleKey === 'inspector'
               || roleKey === 'senior officer / inspector' ? 'Senior Officer / Inspector'
+          : roleKey === 'trainee' || roleKey === 'trainee senior' || roleKey === 'course trainee senior'
+              || roleKey === 'senior trainee' || roleKey === 'course trainee' || roleKey === 'cts' ? 'Trainee'
           : String(userData.role ?? '');
         switch (normalizedRole) {
           case 'Company Commander':
@@ -74,6 +76,9 @@ export const LoginScreen = () => {
             break;
           case 'Senior Officer / Inspector':
             navigate('/so-dashboard');
+            break;
+          case 'Trainee':
+            navigate('/trainee-dashboard');
             break;
           default:
             setError('Unassigned Role. Access Denied.');

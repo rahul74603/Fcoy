@@ -92,6 +92,16 @@ service cloud.firestore {
         || roleKey() == 'senior officer/inspector'
       );
     }
+    function isTrainee() {
+      return signedIn() && (
+        role() == 'Trainee'
+        || roleKey() == 'trainee'
+        || roleKey() == 'trainee senior'
+        || roleKey() == 'course trainee senior'
+        || roleKey() == 'senior trainee'
+        || roleKey() == 'course trainee'
+      );
+    }
     function isStaff() {
       return signedIn() && (isCC() || isClerk() || isQM() || isUstad() || isSO());
     }
@@ -345,7 +355,7 @@ service cloud.firestore {
     // documents, kit status). QM needs write for kit-issue updates.
     // Ustad has read-only access (view for training).
     match /trainees/{traineeId} {
-      allow read: if isStaff() && canReadDevData();
+      allow read: if isTrainee() || (isStaff() && canReadDevData());
       allow create: if (canManage() || canFinance()) && canWriteDevData();
       allow update: if (canManage() || canFinance()) && canWriteDevData();
       allow delete: if isCC();
@@ -400,7 +410,7 @@ service cloud.firestore {
       allow write: if canManage() && canWriteDevData();
     }
     match /periodAttendance/{id} {
-      allow read: if isStaff() && canReadDevData();
+      allow read: if isTrainee() || (isStaff() && canReadDevData());
       allow write: if canManage() && canWriteDevData();
     }
     match /trainingSyllabus/{id} {
@@ -445,7 +455,7 @@ service cloud.firestore {
       allow write: if canManage() && canWriteDevData();
     }
     match /traineeUpdates/{id} {
-      allow read: if isStaff() && canReadDevData();
+      allow read: if isTrainee() || (isStaff() && canReadDevData());
       allow write: if canManage() && canWriteDevData();
     }
 

@@ -25,6 +25,9 @@ const normalizeRole = (value: unknown): string => {
   if (key === 'so' || key === 'senior officer' || key === 'inspector'
       || key === 'senior officer / inspector' || key === 'senior officer/inspector')
     return 'Senior Officer / Inspector';
+  if (key === 'trainee' || key === 'trainee senior' || key === 'course trainee senior'
+      || key === 'senior trainee' || key === 'course trainee' || key === 'cts')
+    return 'Trainee';
   return String(value ?? 'Unassigned');
 };
 
