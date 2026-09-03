@@ -1243,7 +1243,7 @@ const TestRecordsScreen: React.FC = () => {
         title="Create New Test"
         subtitle={
           testForm.testType === 'fpt' ? 'FPT with events + running grades'
-          : testForm.testType === 'firing' ? 'Firing range register — weapon, exercise, rounds'
+          : testForm.testType === 'firing' ? 'STC range register — ammo issue + classification'
           : 'Schedule test'
         }
         onClose={() => setShowCreateModal(false)}
@@ -2169,31 +2169,6 @@ const TestRecordsScreen: React.FC = () => {
             >
               {submitting ? <><Loader2 size={14} className="animate-spin" /> Saving...</> : <><Save size={14} /> Save All ({trainees.length})</>}
             </button>
-          </div>
-        </div>
-      </FormModal>
-
-      {/* DELETE CONFIRM */}
-      <ConfirmDialog
-        isOpen={showDeleteDialog}
-        title="Delete Test"
-        message={`Delete "${selectedTest?.testName}"? All results will be lost.`}
-        confirmLabel="Yes, Delete"
-        confirmColor="red"
-        onConfirm={handleDeleteConfirm}
-        onCancel={() => {
-          setShowDeleteDialog(false);
-          setSelectedTest(null);
-        }}
-        loading={submitting}
-      />
-
-      
-    </div>
-  );
-};
-
-export default TestRecordsScreen;            </button>
           </div>
         </div>
       </FormModal>
