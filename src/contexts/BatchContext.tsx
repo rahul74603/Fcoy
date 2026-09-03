@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import {
   doc, collection, onSnapshot, getDoc,
-  updateDoc, query, orderBy, writeBatch
+  updateDoc, writeBatch
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { isDevViewer, onDevViewerChange, DEV_TAG } from '../utils/devDataFilter';
@@ -26,8 +26,6 @@ import { useAuth } from './AuthContext';
 //      (CC/Clerk) se hota hai — dev se real batch pe koi write nahi.
 //   5. Dono duniyon ke beech sirf SUBSCRIPTION + RULES ka rishta hai.
 // ═══════════════════════════════════════════════════════════════
-const DEV_SANDBOX_BATCH_ID = 'batch_DEV_TEST_01';
-
 // ─── Types ───
 export interface Batch {
   id: string;
@@ -118,42 +116,74 @@ export const BatchProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     else localStorage.removeItem(key);
   };
 
+  const [configActiveId, setConfigActiveId] = useState<string | null>(null);
+  const isTraineeRole = (user?.role || '').toLowerCase().includes('trainee');
+
+  // ── Company running batch pointer (shared by EVERY role) ──
+  useEffect(() => {
+    const unsub = onSnapshot(
+      doc(db, 'config', 'activeBatch'),
+      (snap) => {
+        const id = snap.exists() ? String(snap.data()?.batchId || '').trim() : '';
+        setConfigActiveId(id || null);
+      },
+      (err) => {
+        console.error('activeBatch config listener error:', err);
+      },
+    );
+    return () => unsub();
+  }, [uid]);
+
   // ── Real-time listener for all batches ──
+  // Do NOT orderBy createdAt — missing createdAt would deny the whole list.
+  // Company ACTIVE batch is the same for CC / QM / Clerk / Ustad / SO / Trainee Senior.
   useEffect(() => {
     const unsubscribe = onSnapshot(
-      query(collection(db, 'batches'), orderBy('createdAt', 'desc')),
+      collection(db, 'batches'),
       (snapshot) => {
         const batches: Batch[] = [];
-        snapshot.forEach((doc) => {
-          batches.push({ id: doc.id, ...doc.data() } as Batch);
+        snapshot.forEach((d) => {
+          batches.push({ id: d.id, ...d.data() } as Batch);
         });
+        batches.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
         const isDevBatch = (b: Batch) =>
           (b as unknown as Record<string, unknown>)[DEV_TAG] === true;
 
-        if (isDev) {
-          // 🧪 DEV SANDBOX — dev account ke liye SIRF dev batches exist karte hain.
-          // Real batches is duniya me dikhte hi nahi, chune hi nahi ja sakte.
-          const devOnly = batches.filter(isDevBatch);
-          const lock =
-            devOnly.find(b => b.id === DEV_SANDBOX_BATCH_ID) ?? devOnly[0] ?? null;
-          setAllBatches(devOnly);
-          // Sandbox ka ACTIVE dev batch default hai (nayi test entries usi pe stamp hongi)
-          setActiveBatch(devOnly.find(b => b.status === 'active') ?? lock);
-          // Dev ki saved selection sirf dev batches me valid ho tabhi rakho
+        const realOnly = batches.filter(b => !isDevBatch(b));
+        const devOnly = batches.filter(isDevBatch);
+
+        const pickCompanyActive = (list: Batch[]): Batch | null => {
+          if (configActiveId) {
+            const fromConfig = list.find(b => b.id === configActiveId);
+            if (fromConfig) return fromConfig;
+          }
+          return list.find(b => b.status === 'active') || null;
+        };
+
+        // 🏢 ONE running batch for the whole company — every role sees this.
+        const companyActive = pickCompanyActive(realOnly) || pickCompanyActive(batches);
+
+        if (isTraineeRole) {
+          setAllBatches(realOnly.length ? realOnly : batches);
+          setActiveBatch(companyActive);
+          setSelectedBatchIdState(null);
+        } else if (isDev) {
+          // Developer still sees sandbox batches, but ACTIVE remains the
+          // company running batch so QM/Clerk/Trainee Senior match CC.
+          const combined = [...realOnly, ...devOnly];
+          setAllBatches(combined);
+          setActiveBatch(companyActive || pickCompanyActive(devOnly));
           setSelectedBatchIdState(prev =>
-            prev && devOnly.some(b => b.id === prev) ? prev : null
+            prev && combined.some(b => b.id === prev) ? prev : null
           );
         } else {
-          // 🏢 REAL WORLD — dev/test batches yahan kabhi exist hi nahi karte
-          const realOnly = batches.filter(b => !isDevBatch(b));
           setAllBatches(realOnly);
-          setActiveBatch(realOnly.find(b => b.status === 'active') || null);
-          // Saved selection real batches me valid hai tabhi rakho
-          // (dev batch id ya kisi dusre user ka selection yahan survive nahi karega)
+          setActiveBatch(companyActive);
           setSelectedBatchIdState(prev =>
             prev && realOnly.some(b => b.id === prev) ? prev : null
           );
         }
+        setError('');
         setLoading(false);
       },
       (err) => {
@@ -164,7 +194,7 @@ export const BatchProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     );
 
     return () => unsubscribe();
-  }, [isDev, uid, storageKey]);
+  }, [isDev, uid, storageKey, configActiveId, isTraineeRole]);
 
   // ⛓️ currentBatch = selected (agar list me hai) warna active — STRICT RULE ka base
   const currentBatch = (() => {

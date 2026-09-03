@@ -25,8 +25,15 @@ const normalizeRole = (value: unknown): string => {
   if (key === 'so' || key === 'senior officer' || key === 'inspector'
       || key === 'senior officer / inspector' || key === 'senior officer/inspector')
     return 'Senior Officer / Inspector';
+  if (key === 'trainee' || key === 'trainee senior' || key === 'course trainee senior'
+      || key === 'senior trainee' || key === 'course trainee' || key === 'cts')
+    return 'Trainee';
   return String(value ?? 'Unassigned');
 };
+
+/** Trainee Senior must never enter the developer sandbox — they follow the company active batch. */
+const asDevViewer = (userData: Record<string, unknown>): boolean =>
+  Boolean(userData['isDeveloper'] ?? false) && normalizeRole(userData['role']) !== 'Trainee';
 
 interface AppUser {
   uid: string;
@@ -106,11 +113,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         designation: String(userData['designation'] ?? 'Unassigned'),
         isActive:    userData['isActive'] !== false,
         createdBy:   String(userData['createdBy']   ?? 'Unknown'),
-        isDeveloper: Boolean(userData['isDeveloper'] ?? false),
+        isDeveloper: Boolean(userData['isDeveloper'] ?? false) && normalizeRole(userData['role']) !== 'Trainee',
         customerId:  userData['customerId'] != null ? String(userData['customerId']) : null,
         assignedBatchIds: Array.isArray(userData["assignedBatchIds"]) ? userData["assignedBatchIds"].map(String) : [],
       });
-      setDevViewer(Boolean(userData['isDeveloper'] ?? false));
+      setDevViewer(Boolean(userData['isDeveloper'] ?? false) && normalizeRole(userData['role']) !== 'Trainee');
     };
 
     profileUnsubRef.current = onSnapshot(
@@ -172,11 +179,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           designation: String(userData['designation'] ?? 'Unassigned'),
           isActive:    userData['isActive'] !== false,
           createdBy:   String(userData['createdBy']   ?? 'Unknown'),
-          isDeveloper: Boolean(userData['isDeveloper'] ?? false),
+          isDeveloper: asDevViewer(userData),
           customerId:  userData['customerId'] != null ? String(userData['customerId']) : null,
           assignedBatchIds: Array.isArray(userData["assignedBatchIds"]) ? userData["assignedBatchIds"].map(String) : [],
         });
-        setDevViewer(Boolean(userData['isDeveloper'] ?? false));
+        setDevViewer(asDevViewer(userData));
       } else {
         // Older User Management records used a random document id. Fall back
         // to email lookup so those authenticated staff profiles still work.
@@ -286,11 +293,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           designation: String(userData['designation'] ?? 'Unassigned'),
           isActive:    userData['isActive'] !== false,
           createdBy:   String(userData['createdBy']   ?? 'Unknown'),
-          isDeveloper: Boolean(userData['isDeveloper'] ?? false),
+          isDeveloper: asDevViewer(userData),
           customerId:  userData['customerId'] != null ? String(userData['customerId']) : null,
           assignedBatchIds: Array.isArray(userData["assignedBatchIds"]) ? userData["assignedBatchIds"].map(String) : [],
         });
-        setDevViewer(Boolean(userData['isDeveloper'] ?? false));
+        setDevViewer(asDevViewer(userData));
 
         console.log('✓ User data refreshed from Firestore');
       } else {
@@ -377,4 +384,5 @@ export const useIsActiveUser = (): boolean => {
 export const useUserRole = (): string => {
   const { user } = useAuth();
   return user?.role?.toLowerCase() ?? 'unassigned';
+}; ?? 'unassigned';
 };
