@@ -219,6 +219,31 @@ export const rejectTraineeUpdate = async (id: string, approvedBy: string, reason
   });
 };
 
+// ─── ABSENCE REPORT APPROVAL ──────────────────────────────
+export const approveAbsenceReport = async (update: TraineeUpdate, approvedBy: string): Promise<void> => {
+  // Approve the update
+  await updateDoc(doc(db, 'traineeUpdates', update.id), {
+    status: 'approved', approvedBy,
+    approvedAt: new Date().toISOString(),
+  });
+
+  // If this absence report is linked to an absent/medical record, update it
+  if (update.appliedToAbsentId) {
+    await updateDoc(doc(db, 'absentRecords', update.appliedToAbsentId), {
+      status: 'Approved',
+      approvedBy,
+      approvedAt: new Date().toISOString(),
+    });
+  }
+  if (update.appliedToMedicalId) {
+    await updateDoc(doc(db, 'medicalRecords', update.appliedToMedicalId), {
+      status: 'Approved',
+      approvedBy,
+      approvedAt: new Date().toISOString(),
+    });
+  }
+};
+
 // ─── NOTICES ──────────────────────────────────────────────
 
 export const createNotice = async (

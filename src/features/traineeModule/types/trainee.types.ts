@@ -198,3 +198,12 @@ export const RELEGATION_STATUS_COLORS = {
   completed: 'bg-green-100 text-green-700',
   cancelled: 'bg-slate-100 text-slate-700',
 };
+
+export const ABSENCE_REPORT_KINDS: { value: AbsenceReportKind; label: string; icon: string }[] = [
+  { value: 'sick', label: 'Sick Report', icon: '🤒' },
+  { value: 'hospital', label: 'Hospital', icon: '🏥' },
+  { value: 'pt_miss', label: 'PT Miss', icon: '🏃' },
+  { value: 'rest', label: 'Rest', icon: '🛌' },
+  { value: 'leave', label: 'Leave', icon: '✈️' },
+  { value: 'other', label: 'Other', icon: '📋' },
+];
