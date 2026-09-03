@@ -31,7 +31,7 @@ import {
   type FiringConfig, type FiringDetails, type FiringRegisterKind,
 } from '../types/testRecord.types';
 import FormModal from '../components/shared/FormModal';
-import { FiringRegisterView } from '../components/FiringRegisterView';
+import { FiringRegisterView, FiringEntryCard } from '../components/FiringRegisterView';
 import ConfirmDialog from '../components/shared/ConfirmDialog';
 import { ReportButton } from '../../../components/common/ReportButton';
 
@@ -1209,7 +1209,7 @@ const TestRecordsScreen: React.FC = () => {
                         onClick={() => openResultsModal(test, test.testType === 'fpt' || test.testType === 'firing' || trainees.length > 5)}
                         className="flex-1 px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded hover:bg-blue-700 flex items-center justify-center gap-1"
                       >
-                        <Edit3 size={12} /> {test.status === 'completed' ? 'Edit' : 'Enter'} Marks
+                        <Edit3 size={12} /> {test.testType === 'firing' ? (test.status === 'completed' ? 'Edit Register' : 'Enter Register') : (test.status === 'completed' ? 'Edit Marks' : 'Enter Marks')}
                       </button>
                       {test.status === 'scheduled' && (
                         <button
@@ -1360,10 +1360,7 @@ const TestRecordsScreen: React.FC = () => {
             />
             <datalist id="subjects-list">
               {BSF_SUBJECTS.map(s => <option key={s} value={s} />)}
-            </datalist>
-          </div>
-
-          {/* Marks (only for non-FPT / non-firing) */}
+            </datalor non-FPT / non-firing) */}
           {testForm.testType !== 'fpt' && testForm.testType !== 'firing' && (
             <div className="grid grid-cols-3 gap-3">
               <div>
@@ -1686,9 +1683,6 @@ const TestRecordsScreen: React.FC = () => {
               {selectedInstructorIds.length > 0 && (
                 <button
                   type="button"
-                  onClick={(structorIds.length > 0 && (
-                <button
-                  type="button"
                   onClick={() => setSelectedInstructorIds([])}
                   className="px-3 py-2 bg-red-100 text-red-700 text-xs font-bold rounded-lg hover:bg-red-200"
                   title="Clear all"
@@ -1974,6 +1968,18 @@ const TestRecordsScreen: React.FC = () => {
             </div>
           )}
 
+          {selectedTest?.testType === 'firing' ? (
+            <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-1">
+              {filteredResults.map(r => (
+                <FiringEntryCard
+                  key={r.traineeId}
+                  result={r}
+                  config={resolvedFiringConfig(selectedTest.firingConfig)}
+                  onChange={(patch) => updateFiringField(r.traineeId, patch)}
+                />
+              ))}
+            </div>
+          ) : (
           <div className="border border-slate-200 rounded-lg overflow-auto max-h-96">
             <table className="w-full text-xs">
               <thead className="bg-slate-100 sticky top-0 z-10">
@@ -2233,6 +2239,7 @@ const TestRecordsScreen: React.FC = () => {
               </tbody>
             </table>
           </div>
+          )}
 
           <div className="flex gap-3 justify-end pt-4 border-t">
             <button onClick={() => setShowBulkModal(false)}
