@@ -493,6 +493,8 @@ export const Sidebar = () => {
                   <SubItem title="Trainee Details / Profile" path="/profile" dot="bg-blue-400" />
                   <SubItem title="Document Cell" path="/documents" dot="bg-purple-400" />
                   <SubItem title="MI Room & Medical" path="/medical-register" dot="bg-red-400" />
+                  <SubItem title="Relegation / RelID" path="/relegation" dot="bg-amber-400" />
+                  <SubItem title="Trainee Senior Portal" path="/trainee-management" dot="bg-green-400" />
                   <SubItem title="🤝 Welfare & Demographics" path="/welfare-demographics" dot="bg-rose-400" />
                 </NavGroup>
                 <NavGroup
@@ -590,7 +592,7 @@ export const Sidebar = () => {
 
           {/* FOOTER */}
           <div className="p-4 bg-military-950 border-t border-military-800 text-xs text-military-400 text-center">
-            v2.5.2 · Nav Clean
+            v2.6.0 · RelID Relegation
           </div>
 
         </div>

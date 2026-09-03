@@ -22,6 +22,7 @@ import { CommanderInformationBoard } from './CommanderInformationBoard';
 import { normalizePlatoon, PLATOON_OPTIONS } from '../../utils/platoon';
 
 
+
 // ─── Staff Module API ───────────────────────
 import { getStaffSummary } from '../../features/ustad/api/staff.api';
 import { ReportButton } from '../../components/common/ReportButton';
@@ -1367,6 +1368,7 @@ const [staffLoading, setStaffLoading] = useState(false);
       const traineeList: TraineeInfo[] = [];
       traineesSnap.forEach(d => {
         const data = d.data();
+        if (String(data.trainingStatus || 'active') === 'relegated') return;
         traineeList.push({
           id: d.id, name: data.name ?? '', chestNo: data.chestNo ?? '',
           regNo: data.regNo ?? '', platoon: normalizePlatoon(data.platoon), rank: data.rank ?? 'RCT',

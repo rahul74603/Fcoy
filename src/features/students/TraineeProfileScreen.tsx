@@ -5,7 +5,7 @@ import {
   Search, UserSquare, Activity, ShieldAlert, Crosshair, Save, Package,
   AlertCircle, CheckCircle2, FileText, User, Shield, Heart, Phone, Award,
   Briefcase, Edit3, X, MapPin, RefreshCw, TrendingUp, Minus,
-  Users, Camera, Upload, Loader2, Layers, Hash
+  Users, Camera, Upload, Loader2, Layers, Hash, ArrowRightLeft
 } from 'lucide-react';
 import {
   collection, addDoc, getDocs, query, where, doc, updateDoc,
@@ -13,9 +13,12 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 
+import { useNavigate } from 'react-router-dom';
 import { useTraineeSearch } from '../../hooks/useTraineeSearch';
 import type { TraineeSearchResult } from '../../hooks/useTraineeSearch';
 import { ReportButton } from '../../components/common/ReportButton';
+import { rejoinChestNo } from '../relegation/utils/relegation.utils';
+import { TraineeTestResultsPanel } from './TraineeTestResultsPanel';
 
 type TraineeData = TraineeSearchResult;
 
@@ -318,6 +321,7 @@ interface QMCatalogItem {
 // MAIN SCREEN
 // ═══════════════════════════════════════════════════════════
 export const TraineeProfileScreen = () => {
+  const navigate = useNavigate();
 
   const {
     trainee:    searchedTrainee,
@@ -739,13 +743,20 @@ export const TraineeProfileScreen = () => {
             {searchLoading ? <Loader2 size={14} className="animate-spin" /> : 'Fetch'}
           </button>
         </div>
-        <button
-          onClick={() => { setShowRegistrationForm(!showRegistrationForm); setCurrentStep(1); setFormMessage(''); }}
-          className="bg-military-700 text-white px-4 py-1.5 text-xs font-bold uppercase hover:bg-military-800 flex items-center gap-2">
-          {showRegistrationForm
-            ? <><X size={13} /> Close</>
-            : <><FileText size={13} /> New Rangroot Registration</>}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => navigate('/relegation')}
+            className="bg-amber-600 text-white px-4 py-1.5 text-xs font-bold uppercase hover:bg-amber-700 flex items-center gap-2">
+            <ArrowRightLeft size={13} /> RelID / Relegate
+          </button>
+          <button
+            onClick={() => { setShowRegistrationForm(!showRegistrationForm); setCurrentStep(1); setFormMessage(''); }}
+            className="bg-military-700 text-white px-4 py-1.5 text-xs font-bold uppercase hover:bg-military-800 flex items-center gap-2">
+            {showRegistrationForm
+              ? <><X size={13} /> Close</>
+              : <><FileText size={13} /> New Rangroot Registration</>}
+          </button>
+        </div>
       </div>
 
       {/* REGISTRATION FORM */}
@@ -1029,14 +1040,36 @@ export const TraineeProfileScreen = () => {
                       </span>
                       <span className="bg-military-700 text-white text-[10px] font-bold px-2 py-0.5">{searchedTrainee.platoon}</span>
                       <span className="bg-military-700 text-white text-[10px] font-bold px-2 py-0.5">{searchedTrainee.bloodGroup}</span>
+                      {searchedTrainee.trainingStatus === 'relegated' && (
+                        <span className="bg-amber-500 text-black text-[10px] font-black px-2 py-0.5">
+                          RELEGATED · {searchedTrainee.relegateId || 'RelID'}
+                          {searchedTrainee.rejoinedBatchNumber
+                            ? ` → ${searchedTrainee.rejoinedBatchNumber} chest ${searchedTrainee.rejoinedChestNo}`
+                            : ' · awaiting rejoin'}
+                        </span>
+                      )}
+                      {searchedTrainee.isRelegatedIntake && (
+                        <span className="bg-yellow-400 text-black text-[10px] font-black px-2 py-0.5">
+                          R · from {searchedTrainee.originalBatchNumber || 'prev batch'} chest {searchedTrainee.originalChestNo || rejoinChestNo(searchedTrainee.chestNo)}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
-                <button
-                  onClick={() => { setEditData({ ...searchedTrainee, id: searchedTrainee.id || searchedTraineeId }); setShowEditModal(true); }}
-                  className="flex-shrink-0 bg-yellow-500 text-black px-3 py-1.5 text-[10px] font-bold uppercase hover:bg-yellow-400 flex items-center gap-1">
-                  <Edit3 size={12} /> Edit Profile
-                </button>
+                <div className="flex flex-col gap-1.5 flex-shrink-0">
+                  <button
+                    onClick={() => { setEditData({ ...searchedTrainee, id: searchedTrainee.id || searchedTraineeId }); setShowEditModal(true); }}
+                    className="bg-yellow-500 text-black px-3 py-1.5 text-[10px] font-bold uppercase hover:bg-yellow-400 flex items-center gap-1">
+                    <Edit3 size={12} /> Edit Profile
+                  </button>
+                  {searchedTrainee.trainingStatus !== 'relegated' && (
+                    <button
+                      onClick={() => navigate('/relegation')}
+                      className="bg-red-700 text-white px-3 py-1.5 text-[10px] font-bold uppercase hover:bg-red-800 flex items-center gap-1">
+                      <ArrowRightLeft size={12} /> Relegate
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -1064,7 +1097,7 @@ export const TraineeProfileScreen = () => {
               { id: 'kit',      label: 'Kit / QM',   icon: Package    },
               { id: 'docs',     label: 'Documents',  icon: FileText   },
               { id: 'personal', label: 'Personal',   icon: User       },
-              { id: 'exams',    label: 'PT / Exams', icon: TrendingUp },
+              { id: 'exams',    label: 'Tests / Results', icon: TrendingUp },
             ].map(tab => {
               const Icon = tab.icon;
               return (
@@ -1084,6 +1117,19 @@ export const TraineeProfileScreen = () => {
             {/* OVERVIEW TAB */}
             {activeProfileTab === 'overview' && (
               <div className="p-4">
+                {searchedTrainee.trainingStatus === 'relegated' && (
+                  <div className="bg-amber-50 border border-amber-300 p-3 mb-4 text-[11px] text-amber-900">
+                    <p className="font-black uppercase mb-1">Relegated — RelID {searchedTrainee.relegateId || '—'}</p>
+                    {searchedTrainee.rejoinedBatchNumber
+                      ? <p>Is trainee naye batch <strong>{searchedTrainee.rejoinedBatchNumber}</strong> me chest <strong>{searchedTrainee.rejoinedChestNo}</strong> pe aa chuka hai.</p>
+                      : <p>Destination batch abhi unknown. Jab fit ho, current batch RelID se add karega — chest {rejoinChestNo(searchedTrainee.chestNo)}.</p>}
+                  </div>
+                )}
+                {searchedTrainee.isRelegatedIntake && (
+                  <div className="bg-yellow-50 border border-yellow-300 p-3 mb-4 text-[11px] text-yellow-900">
+                    Relegated intake — original batch {searchedTrainee.originalBatchNumber || '—'} chest {searchedTrainee.originalChestNo || '—'}. RelID {searchedTrainee.relegateId || '—'}.
+                  </div>
+                )}
                 <div className="bg-blue-50 border border-blue-200 p-3 mb-4 grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div><p className="text-[9px] font-black text-blue-500 uppercase">Batch No</p><p className="text-sm font-black text-blue-900">{searchedTrainee.batchNumber || '--'}</p></div>
                   <div><p className="text-[9px] font-black text-blue-500 uppercase">Batch Name</p><p className="text-sm font-bold text-blue-800">{searchedTrainee.batchName || '--'}</p></div>
@@ -1427,30 +1473,35 @@ export const TraineeProfileScreen = () => {
               </div>
             )}
 
-            {/* EXAMS TAB */}
+            {/* TESTS / RESULTS TAB — live from Test Records (training_tests) */}
             {activeProfileTab === 'exams' && (
               <div className="p-4">
-                <BatchChestBadge batchNumber={searchedTrainee.batchNumber} chestNo={searchedTrainee.chestNo} />
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <BatchChestBadge batchNumber={searchedTrainee.batchNumber} chestNo={searchedTrainee.chestNo} />
+                  <p className="text-[10px] font-bold text-slate-500 uppercase">From Test Records · all types</p>
+                </div>
+                <TraineeTestResultsPanel
+                  traineeId={searchedTraineeId || searchedTrainee.id || ''}
+                  traineeName={searchedTrainee.name}
+                  chestNo={searchedTrainee.chestNo}
+                  regNo={searchedTrainee.regNo}
+                  batchId={searchedTrainee.batchId || activeBatch?.id}
+                />
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-4">
                   {[
-                    { label: 'PT Score',    value: searchedTrainee.ptScore || '--',              icon: Activity,    color: 'border-t-military-600', sub: 'Physical Training' },
-                    { label: 'FPT',         value: searchedTrainee.fptResult || 'Not Done',      icon: TrendingUp,  color: searchedTrainee.fptResult === 'Fail' ? 'border-t-red-500' : 'border-t-green-500', sub: `Score: ${searchedTrainee.fptScore || 'N/A'}` },
-                    { label: 'Weekly Exam', value: searchedTrainee.weeklyExamResult || 'Not Given', icon: FileText, color: searchedTrainee.weeklyExamResult === 'Fail' ? 'border-t-red-500' : 'border-t-blue-500', sub: `Marks: ${searchedTrainee.weeklyExamMarks || 'N/A'}` },
-                    { label: 'Weapon',      value: searchedTrainee.weaponQual || '--',           icon: Crosshair,   color: 'border-t-green-500', sub: 'Firing' },
-                    { label: 'Punishments', value: searchedTrainee.punishments || '0',           icon: ShieldAlert, color: 'border-t-red-500',   sub: (!searchedTrainee.punishments || searchedTrainee.punishments === '0') ? 'Clean' : 'Action Required' },
-                    { label: 'Attendance',  value: searchedTrainee.attn || 'P',                  icon: Users,       color: 'border-t-amber-500', sub: 'Status' },
+                    { label: 'Punishments', value: searchedTrainee.punishments || '0', icon: ShieldAlert, sub: (!searchedTrainee.punishments || searchedTrainee.punishments === '0') ? 'Clean sheet' : 'Action required' },
+                    { label: 'Attendance',  value: searchedTrainee.attn || 'P',         icon: Users,       sub: 'Today status' },
+                    { label: 'Weapon No',   value: searchedTrainee.weaponQual || searchedTrainee.weaponNo || '--', icon: Crosshair, sub: 'Issue / qual' },
                   ].map(card => {
                     const I = card.icon;
                     return (
-                      <div key={card.label} className={`bg-white border border-slate-300 p-3 border-t-2 ${card.color}`}>
+                      <div key={card.label} className="border border-slate-200 p-3 bg-slate-50">
                         <div className="flex justify-between">
                           <span className="text-[10px] font-bold text-slate-500 uppercase">{card.label}</span>
-                          <I size={16} className="text-slate-400" />
+                          <I size={14} className="text-slate-400" />
                         </div>
-                        <p className={`text-2xl font-black mt-1 ${card.value === 'Fail' ? 'text-red-600' : 'text-military-900'}`}>
-                          {card.value}
-                        </p>
-                        <p className="text-[10px] text-slate-500 mt-0.5">{card.sub}</p>
+                        <p className="text-lg font-black mt-1 text-military-900">{card.value}</p>
+                        <p className="text-[10px] text-slate-500">{card.sub}</p>
                       </div>
                     );
                   })}

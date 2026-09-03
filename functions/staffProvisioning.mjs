@@ -24,6 +24,7 @@ export const STAFF_ROLES = [
   'Ustad',
   'Senior Officer / Inspector',
   'Company Commander',
+  'Trainee',
 ];
 
 export class ProvisioningError extends Error {
