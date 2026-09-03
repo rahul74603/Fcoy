@@ -384,5 +384,4 @@ export const useIsActiveUser = (): boolean => {
 export const useUserRole = (): string => {
   const { user } = useAuth();
   return user?.role?.toLowerCase() ?? 'unassigned';
-}; ?? 'unassigned';
 };

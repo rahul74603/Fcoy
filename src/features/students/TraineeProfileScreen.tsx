@@ -18,6 +18,7 @@ import { useTraineeSearch } from '../../hooks/useTraineeSearch';
 import type { TraineeSearchResult } from '../../hooks/useTraineeSearch';
 import { ReportButton } from '../../components/common/ReportButton';
 import { rejoinChestNo } from '../relegation/utils/relegation.utils';
+import { TraineeTestResultsPanel } from './TraineeTestResultsPanel';
 
 type TraineeData = TraineeSearchResult;
 
@@ -1096,7 +1097,7 @@ export const TraineeProfileScreen = () => {
               { id: 'kit',      label: 'Kit / QM',   icon: Package    },
               { id: 'docs',     label: 'Documents',  icon: FileText   },
               { id: 'personal', label: 'Personal',   icon: User       },
-              { id: 'exams',    label: 'PT / Exams', icon: TrendingUp },
+              { id: 'exams',    label: 'Tests / Results', icon: TrendingUp },
             ].map(tab => {
               const Icon = tab.icon;
               return (
@@ -1472,30 +1473,35 @@ export const TraineeProfileScreen = () => {
               </div>
             )}
 
-            {/* EXAMS TAB */}
+            {/* TESTS / RESULTS TAB — live from Test Records (training_tests) */}
             {activeProfileTab === 'exams' && (
               <div className="p-4">
-                <BatchChestBadge batchNumber={searchedTrainee.batchNumber} chestNo={searchedTrainee.chestNo} />
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <BatchChestBadge batchNumber={searchedTrainee.batchNumber} chestNo={searchedTrainee.chestNo} />
+                  <p className="text-[10px] font-bold text-slate-500 uppercase">From Test Records · all types</p>
+                </div>
+                <TraineeTestResultsPanel
+                  traineeId={searchedTraineeId || searchedTrainee.id || ''}
+                  traineeName={searchedTrainee.name}
+                  chestNo={searchedTrainee.chestNo}
+                  regNo={searchedTrainee.regNo}
+                  batchId={searchedTrainee.batchId || activeBatch?.id}
+                />
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-4">
                   {[
-                    { label: 'PT Score',    value: searchedTrainee.ptScore || '--',              icon: Activity,    color: 'border-t-military-600', sub: 'Physical Training' },
-                    { label: 'FPT',         value: searchedTrainee.fptResult || 'Not Done',      icon: TrendingUp,  color: searchedTrainee.fptResult === 'Fail' ? 'border-t-red-500' : 'border-t-green-500', sub: `Score: ${searchedTrainee.fptScore || 'N/A'}` },
-                    { label: 'Weekly Exam', value: searchedTrainee.weeklyExamResult || 'Not Given', icon: FileText, color: searchedTrainee.weeklyExamResult === 'Fail' ? 'border-t-red-500' : 'border-t-blue-500', sub: `Marks: ${searchedTrainee.weeklyExamMarks || 'N/A'}` },
-                    { label: 'Weapon',      value: searchedTrainee.weaponQual || '--',           icon: Crosshair,   color: 'border-t-green-500', sub: 'Firing' },
-                    { label: 'Punishments', value: searchedTrainee.punishments || '0',           icon: ShieldAlert, color: 'border-t-red-500',   sub: (!searchedTrainee.punishments || searchedTrainee.punishments === '0') ? 'Clean' : 'Action Required' },
-                    { label: 'Attendance',  value: searchedTrainee.attn || 'P',                  icon: Users,       color: 'border-t-amber-500', sub: 'Status' },
+                    { label: 'Punishments', value: searchedTrainee.punishments || '0', icon: ShieldAlert, sub: (!searchedTrainee.punishments || searchedTrainee.punishments === '0') ? 'Clean sheet' : 'Action required' },
+                    { label: 'Attendance',  value: searchedTrainee.attn || 'P',         icon: Users,       sub: 'Today status' },
+                    { label: 'Weapon No',   value: searchedTrainee.weaponQual || searchedTrainee.weaponNo || '--', icon: Crosshair, sub: 'Issue / qual' },
                   ].map(card => {
                     const I = card.icon;
                     return (
-                      <div key={card.label} className={`bg-white border border-slate-300 p-3 border-t-2 ${card.color}`}>
+                      <div key={card.label} className="border border-slate-200 p-3 bg-slate-50">
                         <div className="flex justify-between">
                           <span className="text-[10px] font-bold text-slate-500 uppercase">{card.label}</span>
-                          <I size={16} className="text-slate-400" />
+                          <I size={14} className="text-slate-400" />
                         </div>
-                        <p className={`text-2xl font-black mt-1 ${card.value === 'Fail' ? 'text-red-600' : 'text-military-900'}`}>
-                          {card.value}
-                        </p>
-                        <p className="text-[10px] text-slate-500 mt-0.5">{card.sub}</p>
+                        <p className="text-lg font-black mt-1 text-military-900">{card.value}</p>
+                        <p className="text-[10px] text-slate-500">{card.sub}</p>
                       </div>
                     );
                   })}
