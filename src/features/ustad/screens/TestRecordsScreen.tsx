@@ -1101,7 +1101,7 @@ const TestRecordsScreen: React.FC = () => {
                       )}
                     </div>
 
-                                        {test.testType === 'firing' && test.firingConfig && (
+                                        {test.testType === 'firing' && (
                       <div className="bg-orange-50 border border-orange-200 rounded-lg p-2">
                         <p className="text-[10px] font-bold text-orange-800 uppercase mb-1">STC Firing Register</p>
                         <div className="flex flex-wrap gap-1">
