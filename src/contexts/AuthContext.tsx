@@ -192,7 +192,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           : { empty: true, docs: [] as never[] };
         if (!legacySnap.empty) {
           const userData = legacySnap.docs[0].data();
-          const isDev = Boolean(userData['isDeveloper'] ?? false);
+          const isDev = asDevViewer(userData);
           setUser({
             uid:         firebaseUser.uid,
             email:       firebaseUser.email,
