@@ -45,6 +45,10 @@ export interface TraineeUpdate {
   absentType?: AbsentTypeCode;
   appliedToAbsentId?: string;
   appliedToMedicalId?: string;
+  appliedToNoticeId?: string;
+  /** true = senior ne kisi aur trainee ke liye report ki */
+  onBehalf?: boolean;
+  reportedForChestNo?: string;
 }
 
 export type TraineeUpdateCategory =

@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useBatch } from '../../../contexts/BatchContext';
-import { getTraineeUpdates, getNotices, findMyTrainee } from '../api/trainee.api';
+import { getTraineeUpdates, getUpdatesSubmittedBy, getNotices, findMyTrainee } from '../api/trainee.api';
 import { ChangePasswordModal } from '../../../components/ChangePasswordModal';
 import { AbsenceReportPanel } from '../components/AbsenceReportPanel';
 import type { TraineeUpdate, TraineeNotice } from '../types/trainee.types';
@@ -91,11 +91,15 @@ export const TraineeDashboard: React.FC = () => {
 
       // Load updates for this trainee (if trainee is logged in)
       if (user.role === 'Trainee' || /trainee/i.test(String(user.role ?? ''))) {
+        // Apni reports + jo maine doosre trainees ke liye bheji hain
         const myTrainee = findMyTrainee(tList, user);
-        if (myTrainee) {
-          const upd = await getTraineeUpdates(myTrainee.id);
-          setUpdates(upd);
-        }
+        const mine = myTrainee ? await getTraineeUpdates(myTrainee.id) : [];
+        const sent = await getUpdatesSubmittedBy(user.uid || '');
+        const merged = [...mine, ...sent].filter(
+          (u, i, arr) => arr.findIndex(x => x.id === u.id) === i
+        );
+        merged.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+        setUpdates(merged);
       } else {
         // Staff sees all updates
         const allUpdates: TraineeUpdate[] = [];
@@ -251,9 +255,11 @@ export const TraineeDashboard: React.FC = () => {
         {activeTab === 'report' && (
           <AbsenceReportPanel
             myTrainee={findMyTrainee(trainees, user)}
+            trainees={trainees}
             batchId={batch.id}
             userName={user?.name || ''}
             userUid={user?.uid || ''}
+            userRole={user?.role || 'Trainee'}
             reports={updates}
             onSubmitted={loadData}
           />

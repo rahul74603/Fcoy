@@ -195,6 +195,17 @@ export const getTraineeUpdates = async (traineeId: string): Promise<TraineeUpdat
   }
 };
 
+/** Senior ne jo reports bheji (kisi ke bhi liye) */
+export const getUpdatesSubmittedBy = async (uid: string): Promise<TraineeUpdate[]> => {
+  if (!uid) return [];
+  try {
+    const snap = await getDocs(query(collection(db, 'traineeUpdates'), where('submittedByUid', '==', uid)));
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as TraineeUpdate));
+    list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+    return list;
+  } catch { return []; }
+};
+
 export const getAllUpdatesForBatch = async (batchId: string): Promise<TraineeUpdate[]> => {
   try {
     const snap = await getDocs(query(collection(db, 'traineeUpdates'), where('batchId', '==', batchId)));
@@ -220,28 +231,181 @@ export const rejectTraineeUpdate = async (id: string, approvedBy: string, reason
 };
 
 // ─── ABSENCE REPORT APPROVAL ──────────────────────────────
+/**
+ * Clerk approval = single source of truth.
+ * Ek report approve hote hi ye sab jagah data chala jata hai:
+ *   1. traineeUpdates            → status approved
+ *   2. absentRecords             → Absent Management / company list
+ *   3. medicalRecords            → MI Room / Medical Register (sirf S/H/R/M)
+ *   4. trainees.attn + medStat   → company nominal roll me live status
+ *   5. traineeNotices            → trainee Notice / Information Board
+ */
 export const approveAbsenceReport = async (update: TraineeUpdate, approvedBy: string): Promise<void> => {
-  // Approve the update
-  await updateDoc(doc(db, 'traineeUpdates', update.id), {
-    status: 'approved', approvedBy,
-    approvedAt: new Date().toISOString(),
-  });
+  const now = new Date().toISOString();
+  const fromDate = update.fromDate || now.split('T')[0];
+  const toDate = update.toDate || fromDate;
+  const absentType: AbsentTypeCode =
+    (update.absentType as AbsentTypeCode) ||
+    kindMeta(update.reportKind || kindFromCategory(update.category)).absentType ||
+    'A';
+  const isMedical = ['S', 'H', 'R', 'M'].includes(absentType);
+  const totalDays = calcDays(fromDate, toDate);
+  const patch: Record<string, any> = {
+    status: 'approved', approvedBy, approvedAt: now,
+  };
 
-  // If this absence report is linked to an absent/medical record, update it
-  if (update.appliedToAbsentId) {
-    await updateDoc(doc(db, 'absentRecords', update.appliedToAbsentId), {
-      status: 'Approved',
-      approvedBy,
-      approvedAt: new Date().toISOString(),
-    });
+  // ── 2. Absent record (Absent Management + company list) ──
+  try {
+    if (update.appliedToAbsentId) {
+      await updateDoc(doc(db, 'absentRecords', update.appliedToAbsentId), {
+        status: 'Active', approvedBy, approvedAt: now,
+        type: absentType, fromDate, toDate, totalDays,
+      });
+    } else {
+      const absentRef = await addDoc(collection(db, 'absentRecords'), {
+        batchId: update.batchId,
+        traineeId: update.traineeId,
+        traineeName: update.traineeName,
+        chestNo: update.chestNo,
+        regNo: update.regNo || '',
+        platoon: update.platoon || '',
+        type: absentType,
+        reason: update.title || update.description || '',
+        fromDate, toDate, totalDays,
+        status: 'Active',
+        remarks: `${update.description || ''} (Trainee report — approved by ${approvedBy})`.trim(),
+        source: 'traineeReport',
+        traineeUpdateId: update.id,
+        approvedBy, approvedAt: now,
+        createdAt: now,
+      });
+      patch.appliedToAbsentId = absentRef.id;
+    }
+  } catch (err) {
+    console.error('absentRecords sync failed', err);
   }
-  if (update.appliedToMedicalId) {
-    await updateDoc(doc(db, 'medicalRecords', update.appliedToMedicalId), {
-      status: 'Approved',
-      approvedBy,
-      approvedAt: new Date().toISOString(),
-    });
+
+  // ── 3. Medical record (MI Room register) ──
+  if (isMedical) {
+    try {
+      if (update.appliedToMedicalId) {
+        await updateDoc(doc(db, 'medicalRecords', update.appliedToMedicalId), {
+          status: 'Active', approvedBy, approvedAt: now,
+        });
+      } else {
+        const medRef = await addDoc(collection(db, 'medicalRecords'), {
+          batchId: update.batchId,
+          traineeId: update.traineeId,
+          name: update.traineeName,
+          chestNo: update.chestNo,
+          regNo: update.regNo || '',
+          platoon: update.platoon || '',
+          date: fromDate,
+          category: medicalCategoryFor(absentType),
+          diagnosis: update.title || '',
+          wardNo: '',
+          recommendedDays: totalDays,
+          remarks: `${update.description || ''} (Trainee report — approved by ${approvedBy})`.trim(),
+          status: 'Active',
+          source: 'traineeReport',
+          traineeUpdateId: update.id,
+          createdAt: now,
+        });
+        patch.appliedToMedicalId = medRef.id;
+      }
+    } catch (err) {
+      console.error('medicalRecords sync failed', err);
+    }
   }
+
+  // ── 4. Live trainee status (company nominal roll) ──
+  try {
+    await updateDoc(doc(db, 'trainees', update.traineeId), {
+      attn: absentType,
+      ...(isMedical ? { medStat: medStatFor(absentType) } : {}),
+      lastStatusReason: update.title || '',
+      lastStatusFrom: fromDate,
+      lastStatusTo: toDate,
+      lastStatusUpdatedAt: now,
+    });
+  } catch (err) {
+    console.error('trainee status sync failed', err);
+  }
+
+  // ── 5. Notice / Information board entry ──
+  try {
+    const label = kindMeta(update.reportKind || kindFromCategory(update.category)).label;
+    const noticeRef = await addDoc(collection(db, 'traineeNotices'), {
+      batchId: update.batchId,
+      title: `${label} — ${update.chestNo} ${update.traineeName}`,
+      content:
+        `${update.title || ''}\n${update.description || ''}\n` +
+        `Duration: ${fromDate}${toDate !== fromDate ? ` → ${toDate}` : ''} (${totalDays} din)` +
+        `${update.activity ? ` · ${update.activity}` : ''} · Approved by ${approvedBy}`,
+      category: isMedical ? 'Emergency' : 'General Notice',
+      priority: absentType === 'H' ? 'urgent' : 'important',
+      targetPlatoon: update.platoon || 'all',
+      publishedBy: approvedBy,
+      publishedAt: now,
+      isActive: true,
+      source: 'traineeReport',
+      traineeUpdateId: update.id,
+      traineeId: update.traineeId,
+      chestNo: update.chestNo,
+      createdAt: now,
+    });
+    patch.appliedToNoticeId = noticeRef.id;
+  } catch (err) {
+    console.error('notice sync failed', err);
+  }
+
+  // ── 1. Finally mark the update approved with all links ──
+  await updateDoc(doc(db, 'traineeUpdates', update.id), patch);
+};
+
+/** Senior trainee kisi bhi trainee ke liye report bhej sakta hai */
+export const submitReportForTrainee = async (
+  data: {
+    trainee: Record<string, any>;
+    batchId: string;
+    reportKind: AbsenceReportKind;
+    fromDate: string;
+    toDate: string;
+    activity?: AbsenceActivity;
+    title: string;
+    description: string;
+  },
+  submittedBy: string, submittedByRole: string, submittedByUid: string,
+  onBehalf: boolean,
+): Promise<string> => {
+  const t = data.trainee;
+  const meta = kindMeta(data.reportKind);
+  const now = new Date().toISOString();
+  const ref = await addDoc(collection(db, 'traineeUpdates'), {
+    traineeId: t.id,
+    traineeName: t.name || '',
+    chestNo: t.chestNo || '',
+    regNo: t.regNo || '',
+    batchId: data.batchId,
+    platoon: t.platoon || '',
+    category: meta.category,
+    title: data.title,
+    description: data.description,
+    priority: data.reportKind === 'hospital' ? 'urgent'
+      : data.reportKind === 'sick' ? 'high' : 'medium',
+    reportKind: data.reportKind,
+    fromDate: data.fromDate,
+    toDate: data.toDate || data.fromDate,
+    activity: data.activity || meta.activity || '',
+    absentType: meta.absentType || 'A',
+    status: 'pending',
+    onBehalf,
+    reportedForChestNo: t.chestNo || '',
+    submittedBy, submittedByRole, submittedByUid,
+    approvedBy: '', approvedAt: '',
+    submittedAt: now, createdAt: now,
+  });
+  return ref.id;
 };
 
 // ─── NOTICES ──────────────────────────────────────────────
