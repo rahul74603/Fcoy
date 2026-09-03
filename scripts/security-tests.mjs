@@ -696,6 +696,9 @@ test('AI update_trainee CANNOT mutate kit/issue fields', () => {
   assert.ok(/FORBIDDEN_KIT_FIELDS/.test(toolsSrc));
   assert.ok(/issuedKitItems/.test(toolsSrc));
 });
+test('AI generic writes CANNOT touch relegations (atomic RelID flow)', () => {
+  assert.ok(toolsSrc.includes("'relegations'"), 'blocked list includes relegations');
+});
 
 console.log('\n■ AI BACKEND (secret isolation)');
 const backend = fs.readFileSync(path.join(root, 'functions/index.js'), 'utf8');
@@ -721,6 +724,69 @@ test('Pinecone client never holds a browser secret', () => {
   assert.ok(!/AI_CONFIG\.pineconeKey/.test(sync));
   assert.ok(/callPinecone(Upsert|Query)/.test(sync));
 });
+
+console.log('\n■ RELEGATION RelID HELPERS');
+
+const relUtils = await importTs('src/features/relegation/utils/relegation.utils.ts');
+
+test('chest 25 → 25R (Capital R, no duplicate with original)', () => {
+  assert.equal(relUtils.rejoinChestNo('25'), '25R');
+  assert.equal(relUtils.rejoinChestNo('025'), '025R');
+});
+test('already-suffixed chest strips back to original identity', () => {
+  assert.equal(relUtils.originalChestBase('25R'), '25');
+  assert.equal(relUtils.originalChestBase('25R2'), '25');
+  assert.equal(relUtils.rejoinChestNo('25R'), '25R');
+});
+test('collision sequence 25R → 25R2 → 25R3', () => {
+  assert.equal(relUtils.nextRejoinChestNo('25', 1), '25R');
+  assert.equal(relUtils.nextRejoinChestNo('25', 2), '25R2');
+  assert.equal(relUtils.nextRejoinChestNo('25R', 3), '25R3');
+});
+test('RelID format REL-YYYY-CHEST-XXXX and normalizes case/spaces', () => {
+  const id = relUtils.generateRelegateId('25', new Date(2026, 8, 2));
+  assert.match(id, /^REL-2026-25-[A-Z0-9]{4}$/);
+  assert.equal(relUtils.normalizeRelegateId(' rel-2026-25-k7m2 '), 'REL-2026-25-K7M2');
+  assert.equal(relUtils.isValidRelegateId('REL-2026-25-K7M2'), true);
+  assert.equal(relUtils.isValidRelegateId('CHEST-25'), false);
+});
+test('relegated trainee is off strength; missing status stays on strength', () => {
+  assert.equal(relUtils.isOnStrength({ trainingStatus: 'relegated' }), false);
+  assert.equal(relUtils.isOnStrength({ trainingStatus: 'active' }), true);
+  assert.equal(relUtils.isOnStrength({}), true);
+  assert.equal(relUtils.isOnStrength({ trainingStatus: 'discharged' }), false);
+});
+test('firestore rules govern relegations (CC/Clerk write, default-deny intact)', () => {
+  assert.ok(/match \/relegations\/\{id\}/.test(rules));
+  const block = rules.match(/match \/relegations\/\{id\} \{[\s\S]*?\n    \}/);
+  assert.ok(block, 'relegations rule present');
+  assert.ok(/canManage\(\)/.test(block[0]));
+  assert.ok(/allow delete: if isCC\(\)/.test(block[0]));
+  assert.ok(/allow\s+read\s*,\s+write\s*:\s+if\s+false/.test(rules));
+});
+test('firestore rules govern training_tests / staff_activity_logs (were missing)', () => {
+  assert.ok(/match \/training_tests\/\{id\}/.test(rules));
+  assert.ok(/match \/staff_activity_logs\/\{id\}/.test(rules));
+  assert.ok(/match \/batch_progress\/\{id\}/.test(rules));
+});
+
+test('login bootstrap: own users/{uid} readable without already being isStaff', () => {
+  assert.ok(/request\.auth\.uid == userId/.test(rules), 'own-uid read');
+  assert.ok(/request\.auth\.token\.email/.test(rules), 'legacy email read');
+  assert.ok(/function userDocExists\(\)/.test(rules), 'missing uid doc must not break helpers');
+});
+test('login bootstrap: batches / unitConfig / config / subscription readable when signed in', () => {
+  assert.match(rules, /match \/batches\/\{batchId\} \{[\s\S]*?allow read: if signedIn\(\)/);
+  assert.match(rules, /match \/unitConfig\/\{docId\} \{[\s\S]*?allow read: if signedIn\(\)/);
+  assert.match(rules, /match \/config\/\{docId\} \{[\s\S]*?allow read: if signedIn\(\)/);
+  assert.match(rules, /match \/subscription\/\{docId\} \{[\s\S]*?allow read: if signedIn\(\)/);
+});
+test('trainee senior portal: isTrainee helper and read grants', () => {
+  assert.ok(/function isTrainee\(\)/.test(rules));
+  assert.match(rules, /match \/trainees\/\{traineeId\} \{[\s\S]*?allow read: if isTrainee\(\)/);
+  assert.match(rules, /match \/traineeNotices\/\{id\} \{[\s\S]*?allow read: if isTrainee\(\)/);
+});
+
 
 console.log('\n■ DOCUMENT UPLOAD FAKE-SUCCESS AUDIT');
 

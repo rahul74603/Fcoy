@@ -90,7 +90,9 @@ export const MedicalRegisterScreen = () => {
       const tSnap = await getDocs(tq);
       const tList: any[] = [];
       tSnap.forEach(d => tList.push({ id: d.id, ...d.data() }));
-      setTrainees(tList.sort((a, b) => (a.chestNo || '').localeCompare(b.chestNo || '')));
+      setTrainees(tList
+        .filter((t) => String(t.trainingStatus || 'active') !== 'relegated')
+        .sort((a, b) => (a.chestNo || '').localeCompare(b.chestNo || '')));
 
       // Fetch Medical Records
       const mq = query(collection(db, 'medicalRecords'), where('batchId', '==', activeBatch.id), orderBy('date', 'desc'));

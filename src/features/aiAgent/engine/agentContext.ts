@@ -172,7 +172,7 @@ export function canWriteCollection(ctx: AgentContext, collectionName: string): {
     'subscriptionPlans', 'customers', 'customerSubscriptions', 'companyBridges',
   ];
   const staffCols = [
-    'trainees', 'absentRecords', 'medicalRecords', 'fptRecords',
+    'trainees', 'absentRecords', 'medicalRecords', 'relegations', 'fptRecords',
     'weeklyTestRecords', 'weeklyPrograms', 'staff', 'staff_attendance',
     'staff_duty', 'duty_types', 'deputation_records', 'training_schedule',
   ];

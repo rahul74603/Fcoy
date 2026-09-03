@@ -88,6 +88,38 @@
         { "fieldPath": "targetId", "order": "ASCENDING" },
         { "fieldPath": "timestamp", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "relegations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "relegatedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "relegations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "fromBatchId", "order": "ASCENDING" },
+        { "fieldPath": "relegatedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "relegations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "toBatchId", "order": "ASCENDING" },
+        { "fieldPath": "rejoinedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "relegations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "fromTraineeId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

@@ -36,25 +36,76 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function userDocExists() {
+      return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
     function userDoc() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
     function role() {
-      return userDoc().role;
+      return userDocExists() ? userDoc().role : '';
     }
 
     // First-run wizard has not yet completed (config/firstRun marker absent).
     function firstRunOpen() {
       return !exists(/databases/$(database)/documents/config/firstRun);
     }
-    function isCC()      { return signedIn() && role() == 'Company Commander'; }
-    function isClerk()   { return signedIn() && role() == 'Clerk'; }
-    function isQM()      { return signedIn() && role() == 'Quarter Master'; }
-    function isUstad()   { return signedIn() && role() == 'Ustad'; }
-    function isSO()      { return signedIn() && role() == 'Senior Officer / Inspector'; }
-    function isStaff()   { return signedIn() && role() in ['Company Commander', 'Clerk', 'Quarter Master', 'Ustad', 'Senior Officer / Inspector']; }
-    function isActive()  { return signedIn() && userDoc().isActive != false; }
+    // Match client AuthContext.normalizeRole — stored values may be 'CC', 'qm', etc.
+    function roleKey() {
+      return role() is string ? role().lower() : '';
+    }
+    function isCC() {
+      return signedIn() && (
+        role() == 'Company Commander'
+        || roleKey() == 'cc'
+        || roleKey() == 'commander'
+        || roleKey() == 'company commander'
+      );
+    }
+    function isClerk() {
+      return signedIn() && (role() == 'Clerk' || roleKey() == 'clerk');
+    }
+    function isQM() {
+      return signedIn() && (
+        role() == 'Quarter Master'
+        || roleKey() == 'qm'
+        || roleKey() == 'quartermaster'
+        || roleKey() == 'quarter master'
+      );
+    }
+    function isUstad() {
+      return signedIn() && (
+        role() == 'Ustad'
+        || roleKey() == 'ustad'
+        || roleKey() == 'instructor'
+      );
+    }
+    function isSO() {
+      return signedIn() && (
+        role() == 'Senior Officer / Inspector'
+        || roleKey() == 'so'
+        || roleKey() == 'senior officer'
+        || roleKey() == 'inspector'
+        || roleKey() == 'senior officer / inspector'
+        || roleKey() == 'senior officer/inspector'
+      );
+    }
+    function isTrainee() {
+      return signedIn() && (
+        role() == 'Trainee'
+        || roleKey() == 'trainee'
+        || roleKey() == 'trainee senior'
+        || roleKey() == 'course trainee senior'
+        || roleKey() == 'senior trainee'
+        || roleKey() == 'course trainee'
+      );
+    }
+    function isStaff() {
+      return signedIn() && (isCC() || isClerk() || isQM() || isUstad() || isSO());
+    }
+    function isActive()  { return userDocExists() && userDoc().isActive != false; }
 
     // Management tier = CC or Clerk (per existing business rules)
     function canManage() { return isActive() && (isCC() || isClerk()); }
@@ -62,7 +113,7 @@ service cloud.firestore {
     function canFinance() { return isActive() && (isCC() || isQM()); }
 
     function isDeveloper() {
-      return signedIn() && userDoc().isDeveloper == true;
+      return userDocExists() && userDoc().isDeveloper == true;
     }
     // CC or a marked developer test account
     function canUseDevSandbox() {
@@ -120,9 +171,16 @@ service cloud.firestore {
     // USERS COLLECTION
     // ──────────────────────────────────────────────────────────────────
     match /users/{userId} {
-      // Every authenticated staff member may read user profiles
-      // (needed for role lookups, staff lists, approvals).
-      allow read: if isStaff() && canReadDevData();
+      // Login bootstrap: a signed-in user MUST be able to read their own
+      // profile (by uid OR matching email) without already being isStaff().
+      // Otherwise Auth succeeds and Firestore immediately permission-denies
+      // — the lockout on the login screen.
+      // Staff may still list/read other profiles for User Management.
+      allow read: if signedIn() && (
+        request.auth.uid == userId
+        || resource.data.email == request.auth.token.email
+        || (isStaff() && canReadDevData())
+      );
 
       // First-run wizard: before setup has completed, the very first
       // account may create its own Company Commander profile. The
@@ -154,7 +212,10 @@ service cloud.firestore {
     // BATCHES  (lifecycle = CC / Clerk)
     // ──────────────────────────────────────────────────────────────────
     match /batches/{batchId} {
-      allow read: if isStaff() && canReadDevData();
+      // Unfiltered onSnapshot(orderBy createdAt) is used at login.
+      // Do NOT gate list-reads on resource.isDevData — mixed sandbox/real
+      // docs would deny the entire query. Dev isolation is client-side.
+      allow read: if signedIn();
       // CC/Clerk create batches; only they may flip a dev-tagged batch.
       allow create: if canManage() && canWriteDevData();
       allow update: if canManage() && canWriteDevData()
@@ -163,7 +224,7 @@ service cloud.firestore {
     }
 
     match /config/{docId} {
-      allow read: if isStaff();
+      allow read: if signedIn();
       // activeBatch pointer is written by CC/Clerk batch lifecycle.
       // The firstRun marker is written once by the setup wizard (allowed
       // only while setup is still open).
@@ -172,7 +233,7 @@ service cloud.firestore {
     }
 
     match /unitConfig/{docId} {
-      allow read: if isStaff();
+      allow read: if signedIn();
       allow write: if isCC() || (signedIn() && firstRunOpen());
     }
 
@@ -294,7 +355,7 @@ service cloud.firestore {
     // documents, kit status). QM needs write for kit-issue updates.
     // Ustad has read-only access (view for training).
     match /trainees/{traineeId} {
-      allow read: if isStaff() && canReadDevData();
+      allow read: if isTrainee() || (isStaff() && canReadDevData());
       allow create: if (canManage() || canFinance()) && canWriteDevData();
       allow update: if (canManage() || canFinance()) && canWriteDevData();
       allow delete: if isCC();
@@ -307,6 +368,94 @@ service cloud.firestore {
     }
     match /medicalRecords/{id} {
       allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+
+    // Relegation register — RelID lifecycle (awaiting_rejoin → rejoined).
+    // CC/Clerk write; all staff may read (strength / history). Delete = CC.
+    match /relegations/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow create: if canManage() && canWriteDevData();
+      allow update: if canManage() && canWriteDevData();
+      allow delete: if isCC();
+    }
+
+    // FPT / weekly tests live in training_tests (Test Records screen).
+    match /training_tests/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+    match /batch_progress/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+    match /staff_activity_logs/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow create: if isActive();
+      allow update, delete: if isCC();
+    }
+
+    // Extra trainee-ops collections used by the full training suite.
+    // Same policy as medical/absent: staff read, CC/Clerk write, CC delete.
+    match /disciplineRecords/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+    match /movementRecords/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+    match /leaveApplications/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+    match /periodAttendance/{id} {
+      allow read: if isTrainee() || (isStaff() && canReadDevData());
+      allow write: if canManage() && canWriteDevData();
+    }
+    match /trainingSyllabus/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+    match /trainingSessions/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+    match /finalResults/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+    match /clearanceRecords/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+    match /joiningRecords/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+    match /documentVerifications/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+    match /kitAllocations/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if (canManage() || canFinance()) && canWriteDevData();
+    }
+    match /auditLogs/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow create: if isActive();
+      allow update, delete: if isCC();
+    }
+    match /traineeAccounts/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+    match /traineeNotices/{id} {
+      allow read: if isStaff() && canReadDevData();
+      allow write: if canManage() && canWriteDevData();
+    }
+    match /traineeUpdates/{id} {
+      allow read: if isTrainee() || (isStaff() && canReadDevData());
       allow write: if canManage() && canWriteDevData();
     }
 
@@ -393,7 +542,9 @@ service cloud.firestore {
     // No secret owner key is stored in plaintext; the owner renewal flow
     // verifies a salted hash (ownerKeyHash) that is not client-readable.
     match /subscription/{docId} {
-      allow read: if isStaff();
+      // Login-time listener (SubscriptionContext). Do not require isStaff()
+      // or the green spinner never ends when role bootstrap is still loading.
+      allow read: if signedIn();
       allow write: if isCC()
         || (signedIn() && firstRunOpen());
     }

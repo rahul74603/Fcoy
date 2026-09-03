@@ -50,6 +50,9 @@ import { DocumentVerificationScreen } from './features/students/DocumentVerifica
 import { WelfareDemographicsScreen }  from './features/welfare/WelfareDemographicsScreen';
 import { WeeklyProgramScreen }        from './features/weekly/WeeklyProgramScreen';
 import { MedicalRegisterScreen }      from './features/medical/MedicalRegisterScreen';
+import { RelegationRegisterScreen }   from './features/relegation/screens/RelegationRegisterScreen';
+import { TraineeDashboard } from './features/traineeModule/screens/TraineeDashboard';
+import { TraineeManagementScreen } from './features/traineeModule/screens/TraineeManagementScreen';
 import { DeputationScreen } from './features/ustad/screens';
 // --- Senior Officer / Inspector ---
 import SODashboard from './features/inspection/screens/SODashboard';
@@ -322,6 +325,30 @@ function App() {
                 element={
                   <ProtectedRoute allowedRoles={CLERK_ROLES}>
                     <EnterpriseLayout><MedicalRegisterScreen /></EnterpriseLayout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/relegation"
+                element={
+                  <ProtectedRoute allowedRoles={CLERK_ROLES}>
+                    <EnterpriseLayout><RelegationRegisterScreen /></EnterpriseLayout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/trainee-dashboard"
+                element={
+                  <ProtectedRoute allowedRoles={['Trainee', 'Company Commander', 'Clerk']}>
+                    <TraineeDashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/trainee-management"
+                element={
+                  <ProtectedRoute allowedRoles={STAFF_MANAGE_ROLES}>
+                    <EnterpriseLayout><TraineeManagementScreen /></EnterpriseLayout>
                   </ProtectedRoute>
                 }
               />

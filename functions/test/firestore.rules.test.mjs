@@ -56,6 +56,7 @@ const QM    = { uid: 'qmUid',   email: 'qm@example.com' };
 const USTAD = { uid: 'ustadUid', email: 'ustad@example.com' };
 // Senior Officer / Inspector — assigned batchA ONLY (batchB must be denied)
 const SO    = { uid: 'soUid',   email: 'so@example.com' };
+const TRAINEE = { uid: 'traineeUid', email: 'ct@master.com' };
 
 async function seedProfiles(env) {
   // Write profiles with admin privileges (rules bypassed) so role lookups
@@ -93,6 +94,10 @@ async function seedProfiles(env) {
     await admin.doc('users/soUid').set({
       name: 'SO', email: SO.email, role: 'Senior Officer / Inspector',
       isActive: true, isDeveloper: false, assignedBatchIds: ['batchA'],
+    });
+    await admin.doc('users/traineeUid').set({
+      name: 'Course Trainee Senior', email: TRAINEE.email, role: 'Course Trainee Senior',
+      isActive: true, isDeveloper: false,
     });
   });
 }
@@ -693,6 +698,180 @@ describe('Firestore rules', () => {
         ...inspectionA('ccUid'), isDevData: true, inspectorId: 'ccUid',
       });
       await assert.isFulfilled(authedDb(testEnv, CC).doc('inspections/d4-3').get());
+    });
+  });
+
+  // ── RELEGATION / RelID ──────────────────────────────────────────────
+  describe('relegations collection', () => {
+    const rec = {
+      relegateId: 'REL-2026-25-K7M2',
+      status: 'awaiting_rejoin',
+      fromTraineeId: 't1',
+      fromBatchId: 'batchA',
+      fromChestNo: '25',
+      traineeName: 'RAM',
+      reason: 'Medical — Injury',
+      relegatedAt: '2026-09-02T00:00:00Z',
+    };
+    it('Clerk can create a relegation record', async () => {
+      await assert.isFulfilled(
+        authedDb(testEnv, CLERK).collection('relegations').add(rec));
+    });
+    it('CC can create a relegation record', async () => {
+      await assert.isFulfilled(
+        authedDb(testEnv, CC).collection('relegations').add(rec));
+    });
+    it('Ustad cannot write relegations', async () => {
+      await assert.isRejected(
+        authedDb(testEnv, USTAD).collection('relegations').add(rec));
+    });
+    it('QM cannot write relegations', async () => {
+      await assert.isRejected(
+        authedDb(testEnv, QM).collection('relegations').add(rec));
+    });
+    it('SO cannot write relegations', async () => {
+      await assert.isRejected(
+        authedDb(testEnv, SO).collection('relegations').add(rec));
+    });
+    it('staff can read relegations; Ustad cannot delete', async () => {
+      await adminDb(testEnv).doc('relegations/r1').set(rec);
+      await assert.isFulfilled(authedDb(testEnv, USTAD).doc('relegations/r1').get());
+      await assert.isRejected(authedDb(testEnv, USTAD).doc('relegations/r1').delete());
+    });
+    it('Clerk can update awaiting → rejoined (RelID admit)', async () => {
+      await adminDb(testEnv).doc('relegations/r2').set(rec);
+      await assert.isFulfilled(
+        authedDb(testEnv, CLERK).doc('relegations/r2').update({
+          status: 'rejoined',
+          toBatchId: 'batchB',
+          toChestNo: '25R',
+          rejoinedAt: '2026-09-02T12:00:00Z',
+        }));
+    });
+    it('only CC may delete a relegation record', async () => {
+      await adminDb(testEnv).doc('relegations/r3').set(rec);
+      await assert.isRejected(authedDb(testEnv, CLERK).doc('relegations/r3').delete());
+      await assert.isFulfilled(authedDb(testEnv, CC).doc('relegations/r3').delete());
+    });
+  });
+
+  describe('training_tests / staff_activity_logs (were missing rules)', () => {
+    it('Clerk can write training_tests; Ustad cannot', async () => {
+      await assert.isFulfilled(
+        authedDb(testEnv, CLERK).collection('training_tests').add({ batchId: 'batchA', type: 'fpt' }));
+      await assert.isRejected(
+        authedDb(testEnv, USTAD).collection('training_tests').add({ batchId: 'batchA', type: 'fpt' }));
+    });
+    it('staff can create activity logs; Ustad cannot delete', async () => {
+      await assert.isFulfilled(
+        authedDb(testEnv, USTAD).collection('staff_activity_logs').add({ action: 'view', userId: 'u' }));
+      await adminDb(testEnv).doc('staff_activity_logs/l1').set({ action: 'view' });
+      await assert.isRejected(authedDb(testEnv, USTAD).doc('staff_activity_logs/l1').delete());
+    });
+    it('Clerk can write disciplineRecords used by full suite', async () => {
+      await assert.isFulfilled(
+        authedDb(testEnv, CLERK).collection('disciplineRecords').add({ traineeId: 't1', reason: 'x' }));
+    });
+  });
+
+  // ── LOGIN BOOTSTRAP (must not chicken-and-egg on isStaff) ───────────
+
+  describe('trainee senior portal', () => {
+    it('Trainee can read batches / unitConfig / trainees (portal bootstrap)', async () => {
+      await adminDb(testEnv).doc('batches/b1').set({
+        batchNumber: '1', status: 'active', createdAt: '2026-01-01',
+      });
+      await adminDb(testEnv).doc('unitConfig/main').set({ companyName: 'F COY' });
+      await adminDb(testEnv).doc('trainees/t1').set({ name: 'RAM', chestNo: '25', batchId: 'b1' });
+      await assert.isFulfilled(authedDb(testEnv, TRAINEE).doc('batches/b1').get());
+      await assert.isFulfilled(authedDb(testEnv, TRAINEE).doc('unitConfig/main').get());
+      await assert.isFulfilled(authedDb(testEnv, TRAINEE).doc('trainees/t1').get());
+    });
+    it('Trainee cannot write finance or approve leave', async () => {
+      await assert.isRejected(
+        authedDb(testEnv, TRAINEE).collection('mess_fund_expenses').add({ amount: 1 }));
+      await adminDb(testEnv).doc('staff_leave/lvT').set({
+        leaveNumber: 'LV-T', staffId: 's1', staffName: 'X',
+        status: 'pending', approvedBy: '', approvedByName: '',
+        approvalDate: null, rejectionReason: '', remarks: '',
+      });
+      await assert.isRejected(
+        authedDb(testEnv, TRAINEE).doc('staff_leave/lvT')
+          .update({ status: 'approved', approvedBy: 'traineeUid' }));
+    });
+    it('Trainee can read traineeNotices / traineeUpdates / periodAttendance', async () => {
+      await adminDb(testEnv).doc('traineeNotices/n1').set({ batchId: 'b1', title: 'x', isActive: true });
+      await adminDb(testEnv).doc('traineeUpdates/u1').set({ traineeId: 't1', title: 'x' });
+      await adminDb(testEnv).doc('periodAttendance/p1').set({ batchId: 'b1', traineeId: 't1', date: '2026-09-02', status: 'P' });
+      await assert.isFulfilled(authedDb(testEnv, TRAINEE).doc('traineeNotices/n1').get());
+      await assert.isFulfilled(authedDb(testEnv, TRAINEE).doc('traineeUpdates/u1').get());
+      await assert.isFulfilled(authedDb(testEnv, TRAINEE).doc('periodAttendance/p1').get());
+    });
+  });
+
+  describe('login bootstrap', () => {
+    it('signed-in user can read own users/{uid} even with short role alias', async () => {
+      await adminDb(testEnv).doc('users/aliasUid').set({
+        name: 'Alias CC', email: 'alias@example.com', role: 'CC', isActive: true,
+      });
+      const ALIAS = { uid: 'aliasUid', email: 'alias@example.com' };
+      await assert.isFulfilled(authedDb(testEnv, ALIAS).doc('users/aliasUid').get());
+    });
+    it('legacy profile keyed by random id is readable via email query', async () => {
+      await adminDb(testEnv).doc('users/randomLegacyId').set({
+        name: 'Legacy', email: 'legacy@example.com',
+        role: 'Company Commander', isActive: true,
+      });
+      const LEGACY = { uid: 'authUidNoDoc', email: 'legacy@example.com' };
+      await assert.isFulfilled(authedDb(testEnv, LEGACY).doc('users/authUidNoDoc').get());
+      const snap = await authedDb(testEnv, LEGACY).collection('users')
+        .where('email', '==', 'legacy@example.com').get();
+      assert.equal(snap.empty, false);
+    });
+    it('signed-in stranger cannot read another user profile', async () => {
+      const STRANGER = { uid: 'strangerUid', email: 'stranger@example.com' };
+      await assert.isRejected(authedDb(testEnv, STRANGER).doc('users/clerkUid').get());
+    });
+    it('unauthenticated cannot read users', async () => {
+      await assert.isRejected(
+        testEnv.unauthenticatedContext().firestore().doc('users/ccUid').get());
+    });
+    it('signed-in user can list mixed real+dev batches (login listener)', async () => {
+      await adminDb(testEnv).doc('batches/b1').set({
+        batchNumber: '1', status: 'active', createdAt: '2026-01-01',
+      });
+      await adminDb(testEnv).doc('batches/dev').set({
+        batchNumber: 'TEST', status: 'active', createdAt: '2026-01-02', isDevData: true,
+      });
+      const snap = await authedDb(testEnv, CLERK).collection('batches').get();
+      assert.ok(snap.docs.length >= 2);
+    });
+    it('signed-in user can read unitConfig/main and config/activeBatch', async () => {
+      await adminDb(testEnv).doc('unitConfig/main').set({ companyName: 'F COY' });
+      await adminDb(testEnv).doc('config/activeBatch').set({ batchId: 'b1' });
+      await assert.isFulfilled(authedDb(testEnv, USTAD).doc('unitConfig/main').get());
+      await assert.isFulfilled(authedDb(testEnv, USTAD).doc('config/activeBatch').get());
+    });
+    it('signed-in user can read subscription/current (login listener)', async () => {
+      await adminDb(testEnv).doc('subscription/current').set({ planId: 'p1', status: 'active' });
+      await assert.isFulfilled(authedDb(testEnv, USTAD).doc('subscription/current').get());
+    });
+    it('unauthenticated cannot read batches or unitConfig', async () => {
+      await adminDb(testEnv).doc('batches/b1').set({ batchNumber: '1' });
+      await adminDb(testEnv).doc('unitConfig/main').set({ companyName: 'F COY' });
+      const anon = testEnv.unauthenticatedContext().firestore();
+      await assert.isRejected(anon.doc('batches/b1').get());
+      await assert.isRejected(anon.doc('unitConfig/main').get());
+    });
+    it('role alias CC is treated as Company Commander for writes', async () => {
+      await adminDb(testEnv).doc('users/aliasUid').set({
+        name: 'Alias CC', email: 'alias@example.com', role: 'CC', isActive: true,
+      });
+      const ALIAS = { uid: 'aliasUid', email: 'alias@example.com' };
+      await assert.isFulfilled(
+        authedDb(testEnv, ALIAS).collection('relegations').add({
+          relegateId: 'REL-2026-1-AAAA', status: 'awaiting_rejoin',
+        }));
     });
   });
 });
