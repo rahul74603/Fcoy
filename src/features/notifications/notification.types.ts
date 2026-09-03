@@ -13,6 +13,7 @@ export type NotificationType =
   | 'schedule_upcoming'
   | 'deputation_new'
   | 'staff_hospital'
+  | 'trainee_report_pending'
   | 'system_alert';
 
 export type NotificationPriority = 'high' | 'medium' | 'low';
@@ -44,5 +45,6 @@ export const NOTIFICATION_CONFIG: Record<NotificationType, {
   schedule_upcoming: { icon: '📅', color: 'text-cyan-700', bgColor: 'bg-cyan-50' },
   deputation_new: { icon: '🔄', color: 'text-pink-700', bgColor: 'bg-pink-50' },
   staff_hospital: { icon: '🏥', color: 'text-red-700', bgColor: 'bg-red-50' },
+  trainee_report_pending: { icon: '🤒', color: 'text-yellow-800', bgColor: 'bg-yellow-50' },
   system_alert: { icon: '⚡', color: 'text-slate-700', bgColor: 'bg-slate-50' },
 };

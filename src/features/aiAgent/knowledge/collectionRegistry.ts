@@ -259,6 +259,26 @@ export const COLLECTIONS: CollectionDef[] = [
   },
 
   {
+    name: 'traineeUpdates',
+    description: 'Trainee self-reports — bimar, PT miss, rest, leave. Clerk approve kare to absent + MI + attendance sync.',
+    synonyms: ['trainee report', 'sick report', 'pt miss', 'bimari', 'gair hazir report', 'absence report'],
+    batchScoped: true,
+    linkField: 'chestNo',
+    titleField: 'title',
+    domain: 'trainee',
+    fields: [
+      { name: 'traineeName', kind: 'text', label: 'Trainee Name' },
+      { name: 'chestNo', kind: 'id', label: 'Chest No' },
+      { name: 'reportKind', kind: 'enum', label: 'Kind', values: ['sick','hospital','pt_miss','rest','leave','other'] },
+      { name: 'status', kind: 'enum', label: 'Status', values: ['pending','approved','rejected'] },
+      { name: 'title', kind: 'text', label: 'Title' },
+      { name: 'description', kind: 'text', label: 'Description' },
+      DATEF('fromDate', 'From'),
+      DATEF('toDate', 'To'),
+    ],
+  },
+
+  {
     name: 'batches',
     description: 'Training batches — kaunsa batch active hai, kab shuru/khatam',
     synonyms: ['batch', 'batches', 'course', 'session'],

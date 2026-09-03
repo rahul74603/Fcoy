@@ -14,7 +14,7 @@ import { useAuth } from '../../../contexts/AuthContext';
 import {
   createTraineeAccount, getAllTraineeAccounts, deleteTraineeAccount,
   submitTraineeUpdate, getAllUpdatesForBatch,
-  approveTraineeUpdate, rejectTraineeUpdate,
+  approveTraineeUpdate, rejectTraineeUpdate, approveAbsenceReport,
   createNotice, getNotices, deleteNotice,
   createRelegation, getRelegations, approveRelegation, completeRelegation, cancelRelegation,
 } from '../api/trainee.api';
@@ -149,8 +149,14 @@ export const TraineeManagementScreen: React.FC = () => {
 
   const handleApprove = async (id: string) => {
     if (!user) return;
-    await approveTraineeUpdate(id, user.name);
-    setMessage('✅ Update approved');
+    const upd = updates.find(u => u.id === id);
+    try {
+      if (upd) await approveAbsenceReport(upd, user.name);
+      else await approveTraineeUpdate(id, user.name);
+      setMessage('Approved — attendance / absent / MI register update ho gaya');
+    } catch (err: any) {
+      setMessage(err?.message || 'Approve fail');
+    }
     loadData();
     setTimeout(() => setMessage(''), 3000);
   };

@@ -16,6 +16,10 @@ import { useBatch } from '../../contexts/BatchContext';
 import { useNavigate } from 'react-router-dom';
 import { ReportButton } from '../../components/common/ReportButton';
 import { isOnStrength } from '../relegation/utils/relegation.utils';
+import { getAllUpdatesForBatch, approveAbsenceReport, rejectTraineeUpdate } from '../traineeModule/api/trainee.api';
+import type { TraineeUpdate } from '../traineeModule/types/trainee.types';
+import { ABSENCE_REPORT_KINDS } from '../traineeModule/types/trainee.types';
+import { useAuth } from '../../contexts/AuthContext';
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -261,6 +265,7 @@ const StatCard: React.FC<StatCardProps> = ({
 // ═══════════════════════════════════════════════════════════
 export const ClerkDashboard: React.FC = () => {
   const { activeBatch } = useBatch();
+  const { user } = useAuth();
   const hasBatch = !!activeBatch;
 
   // ── Data States ──
@@ -382,6 +387,13 @@ const navigate = useNavigate();
         } as UdhariRecord);
       });
       setUdhariRecords(uList);
+
+      try {
+        const upd = await getAllUpdatesForBatch(activeBatch.id);
+        setPendingReports(upd.filter(u => u.status === 'pending'));
+      } catch {
+        setPendingReports([]);
+      }
 
       setLastRefresh(new Date().toLocaleTimeString('en-IN'));
     } catch (err) {
@@ -526,7 +538,7 @@ const navigate = useNavigate();
 
       {/* ── STAT CARDS ROW ── */}
       {hasBatch && (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3">
 
           <StatCard
             title="Total Strength"
@@ -939,6 +951,105 @@ const navigate = useNavigate();
         ]}
       />
 
+      {reportModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
+          onClick={() => setReportModal(false)}>
+          <div className="bg-white w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl border border-slate-300"
+            onClick={e => e.stopPropagation()}>
+            <div className="bg-yellow-700 px-4 py-3 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-black text-white uppercase">Trainee Reports — Approve</h3>
+                <p className="text-[10px] text-yellow-100">{pendingReports.length} pending · approve ke baad absent / MI / PT har jagah update</p>
+              </div>
+              <button onClick={() => setReportModal(false)} className="text-white"><X size={20} /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {pendingReports.length === 0 ? (
+                <div className="p-8 text-center">
+                  <CheckCircle2 size={40} className="text-green-400 mx-auto mb-3" />
+                  <p className="text-sm font-bold text-slate-500 uppercase">Koi pending report nahi</p>
+                </div>
+              ) : pendingReports.map(u => {
+                const kind = ABSENCE_REPORT_KINDS.find(k => k.value === u.reportKind);
+                return (
+                  <div key={u.id} className="border border-yellow-200 rounded-lg p-3 bg-yellow-50/40">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-black text-slate-800">
+                          {kind?.icon || '📋'} {u.chestNo} — {u.traineeName}
+                        </p>
+                        <p className="text-[10px] text-slate-500">{u.platoon} · {kind?.label || u.category} · {u.activity || 'Full Day'}</p>
+                        <p className="text-xs font-bold mt-1">{u.title}</p>
+                        <p className="text-[11px] text-slate-600">{u.description}</p>
+                        <p className="text-[10px] text-slate-400 mt-1">
+                          {u.fromDate}{u.toDate && u.toDate !== u.fromDate ? ` → ${u.toDate}` : ''} · {u.submittedBy}
+                        </p>
+                      </div>
+                      <div className="flex flex-col gap-1 shrink-0">
+                        <button
+                          disabled={reportBusy}
+                          onClick={async () => {
+                            if (!user) return;
+                            setReportBusy(true);
+                            try {
+                              await approveAbsenceReport(u, user.name);
+                              await fetchDashboardData();
+                            } catch (err: any) {
+                              alert(err?.message || 'Approve fail');
+                            } finally {
+                              setReportBusy(false);
+                            }
+                          }}
+                          className="bg-green-700 text-white px-3 py-1.5 text-[10px] font-bold rounded"
+                        >Approve</button>
+                        <button
+                          disabled={reportBusy}
+                          onClick={() => { setRejectId(u.id); setRejectReason(''); }}
+                          className="bg-red-100 text-red-700 px-3 py-1.5 text-[10px] font-bold rounded"
+                        >Reject</button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="border-t px-4 py-2 flex justify-end">
+              <button onClick={() => setReportModal(false)} className="bg-slate-700 text-white px-4 py-1.5 text-[10px] font-bold uppercase">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {rejectId && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-xl w-full max-w-md p-4">
+            <h3 className="text-sm font-black mb-2">Reject trainee report</h3>
+            <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} rows={3}
+              placeholder="Reject ki wajah..." className="w-full px-3 py-2 border rounded-lg text-sm mb-3" />
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setRejectId(null)} className="px-3 py-1.5 bg-slate-100 text-xs font-bold rounded">Cancel</button>
+              <button
+                disabled={!rejectReason.trim() || reportBusy}
+                onClick={async () => {
+                  if (!user || !rejectId) return;
+                  setReportBusy(true);
+                  try {
+                    await rejectTraineeUpdate(rejectId, user.name, rejectReason.trim());
+                    setRejectId(null);
+                    await fetchDashboardData();
+                  } catch (err: any) {
+                    alert(err?.message || 'Reject fail');
+                  } finally {
+                    setReportBusy(false);
+                  }
+                }}
+                className="px-4 py-1.5 bg-red-600 text-white text-xs font-bold rounded disabled:opacity-40"
+              >Reject</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 5. USTAD UDHARI MODAL — LENA + DENA */}
       {udhariModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
@@ -1068,6 +1179,40 @@ const navigate = useNavigate();
               <p className="text-[9px] text-slate-500">
                 Udhari manage karne ke liye <strong>Deployment Screen</strong> mein jaayein
               </p>
+              <button onClick={() => setUdhariModal(false)}
+                className="bg-slate-700 text-white px-4 py-1.5 text-[10px] font-bold uppercase hover:bg-slate-800">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};     </p>
+              <button onClick={() => setUdhariModal(false)}
+                className="bg-slate-700 text-white px-4 py-1.5 text-[10px] font-bold uppercase hover:bg-slate-800">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};mein jaayein
+              </p>
+              <button onClick={() => setUdhariModal(false)}
+                className="bg-slate-700 text-white px-4 py-1.5 text-[10px] font-bold uppercase hover:bg-slate-800">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};     </p>
               <button onClick={() => setUdhariModal(false)}
                 className="bg-slate-700 text-white px-4 py-1.5 text-[10px] font-bold uppercase hover:bg-slate-800">
                 Close

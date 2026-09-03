@@ -13,8 +13,9 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useBatch } from '../../../contexts/BatchContext';
-import { getTraineeUpdates, getNotices } from '../api/trainee.api';
+import { getTraineeUpdates, getNotices, findMyTrainee } from '../api/trainee.api';
 import { ChangePasswordModal } from '../../../components/ChangePasswordModal';
+import { AbsenceReportPanel } from '../components/AbsenceReportPanel';
 import type { TraineeUpdate, TraineeNotice } from '../types/trainee.types';
 import { UPDATE_CATEGORIES, NOTICE_CATEGORIES, PRIORITY_COLORS, STATUS_COLORS } from '../types/trainee.types';
 import { getDocs, collection, query, where } from 'firebase/firestore';
@@ -35,7 +36,10 @@ export const TraineeDashboard: React.FC = () => {
   const [notices, setNotices] = useState<TraineeNotice[]>([]);
   const [attendanceData, setAttendanceData] = useState<Record<string, { present: number; absent: number; total: number }>>({});
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'platoon' | 'updates' | 'notices' | 'myinfo'>('platoon');
+  const isTraineeUser = user?.role === 'Trainee' || /trainee/i.test(String(user?.role ?? ''));
+  const [activeTab, setActiveTab] = useState<'report' | 'platoon' | 'updates' | 'notices' | 'myinfo'>(
+    isTraineeUser ? 'report' : 'platoon'
+  );
   const [expandedPlatoon, setExpandedPlatoon] = useState<string | null>(null);
   const [expandedTrainee, setExpandedTrainee] = useState<string | null>(null);
   const [showChangePass, setShowChangePass] = useState(false);
@@ -87,7 +91,7 @@ export const TraineeDashboard: React.FC = () => {
 
       // Load updates for this trainee (if trainee is logged in)
       if (user.role === 'Trainee' || /trainee/i.test(String(user.role ?? ''))) {
-        const myTrainee = tList.find(t => t.name === user.name);
+        const myTrainee = findMyTrainee(tList, user);
         if (myTrainee) {
           const upd = await getTraineeUpdates(myTrainee.id);
           setUpdates(upd);
@@ -224,6 +228,7 @@ export const TraineeDashboard: React.FC = () => {
       <div className="max-w-6xl mx-auto px-4 mt-4">
         <div className="flex gap-2 flex-wrap">
           {[
+            { key: 'report', label: 'Bimari / PT Report', icon: <Heart size={14} />, badge: updates.filter(u => u.status === 'pending').length },
             { key: 'platoon', label: '🏢 Platoon View', icon: <Users size={14} /> },
             { key: 'updates', label: '📋 Updates', icon: <ClipboardList size={14} />, badge: updates.filter(u => u.status === 'pending').length },
             { key: 'notices', label: '🔔 Notice Board', icon: <Bell size={14} />, badge: notices.filter(n => n.priority === 'urgent').length },
@@ -242,6 +247,17 @@ export const TraineeDashboard: React.FC = () => {
 
       {/* Content */}
       <div className="max-w-6xl mx-auto px-4 mt-4 pb-8">
+
+        {activeTab === 'report' && (
+          <AbsenceReportPanel
+            myTrainee={findMyTrainee(trainees, user)}
+            batchId={batch.id}
+            userName={user?.name || ''}
+            userUid={user?.uid || ''}
+            reports={updates}
+            onSubmitted={loadData}
+          />
+        )}
 
         {/* PLATOON VIEW */}
         {activeTab === 'platoon' && (

@@ -456,7 +456,18 @@ service cloud.firestore {
     }
     match /traineeUpdates/{id} {
       allow read: if isTrainee() || (isStaff() && canReadDevData());
-      allow write: if canManage() && canWriteDevData();
+      // Trainee may only CREATE a pending self-report. Clerk/CC approve/reject.
+      allow create: if canWriteDevData() && (
+        canManage()
+        ||
+        (isTrainee() && isActive()
+          && request.resource.data.status == 'pending'
+          && request.resource.data.submittedByUid == request.auth.uid
+          && request.resource.data.get('approvedBy', '') == ''
+          && request.resource.data.get('approvedAt', '') == '')
+      );
+      allow update: if canManage() && canWriteDevData();
+      allow delete: if isCC();
     }
 
     // ──────────────────────────────────────────────────────────────────

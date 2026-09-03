@@ -12,11 +12,16 @@ export interface TraineeAccount {
   createdBy: string;
 }
 
+export type AbsenceReportKind = 'sick' | 'hospital' | 'pt_miss' | 'rest' | 'leave' | 'other';
+export type AbsenceActivity = 'PT' | 'Parade' | 'Class' | 'Full Day';
+export type AbsentTypeCode = 'A' | 'L' | 'S' | 'H' | 'R' | 'M';
+
 export interface TraineeUpdate {
   id: string;
   traineeId: string;
   traineeName: string;
   chestNo: string;
+  regNo?: string;
   batchId: string;
   platoon: string;
   category: TraineeUpdateCategory;
@@ -25,12 +30,21 @@ export interface TraineeUpdate {
   priority: 'low' | 'medium' | 'high' | 'urgent';
   submittedBy: string;
   submittedByRole: string;
+  submittedByUid?: string;
   submittedAt: string;
   status: 'pending' | 'approved' | 'rejected';
   approvedBy?: string;
   approvedAt?: string;
   rejectionReason?: string;
   createdAt: string;
+  /** Trainee self-report: sick / PT miss / rest / leave */
+  reportKind?: AbsenceReportKind;
+  fromDate?: string;
+  toDate?: string;
+  activity?: AbsenceActivity;
+  absentType?: AbsentTypeCode;
+  appliedToAbsentId?: string;
+  appliedToMedicalId?: string;
 }
 
 export type TraineeUpdateCategory =

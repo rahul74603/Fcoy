@@ -231,6 +231,30 @@ export const useNotifications = (): UseNotificationsReturn => {
         console.warn('Failed to fetch deputations:', err);
       }
 
+      // 7. PENDING TRAINEE SICK / PT REPORTS (Clerk / CC)
+      try {
+        if (activeBatch && (user.role === 'Clerk' || user.role === 'Company Commander')) {
+          const updSnap = await getDocs(
+            query(collection(db, 'traineeUpdates'), where('batchId', '==', activeBatch.id))
+          );
+          const pending = updSnap.docs.filter(d => d.data().status === 'pending');
+          if (pending.length > 0) {
+            allNotifs.push({
+              id: `trainee_reports_${activeBatch.id}`,
+              type: 'trainee_report_pending',
+              priority: 'high',
+              title: `${pending.length} Trainee Report${pending.length === 1 ? '' : 's'} Pending`,
+              message: 'Bimari / PT miss — Clerk dashboard se check karke approve karo',
+              timestamp: today,
+              read: readIds.has(`trainee_reports_${activeBatch.id}`),
+              link: '/clerk',
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to fetch trainee reports:', err);
+      }
+
       // Sort by priority + timestamp
       allNotifs.sort((a, b) => {
         const priorityWeight = { high: 3, medium: 2, low: 1 };
