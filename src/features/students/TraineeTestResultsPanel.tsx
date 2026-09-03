@@ -8,6 +8,7 @@ import {
   TEST_TYPE_INFO, GRADE_COLORS, firingClassColor,
   type TestRecord, type TestType, type TraineeResult,
 } from '../ustad/types/testRecord.types';
+import { FiringRegisterView } from '../ustad/components/FiringRegisterView';
 
 interface Props {
   traineeId: string;
@@ -216,46 +217,8 @@ export const TraineeTestResultsPanel: React.FC<Props> = ({
                                 />
                               </div>
                               {test.testType === 'firing' && (test.firingConfig || result?.firingDetails) && (
-                                <div className="border border-orange-200 rounded overflow-hidden">
-                                  <p className="text-[9px] font-black uppercase bg-orange-50 px-2 py-1 text-orange-800">Firing range register</p>
-                                  <div className="px-2 py-2 space-y-2">
-                                    {test.firingConfig && (
-                                      <div className="flex flex-wrap gap-1">
-                                        {[
-                                          test.firingConfig.weaponType,
-                                          test.firingConfig.exerciseName,
-                                          test.firingConfig.exerciseNo ? `Ex ${test.firingConfig.exerciseNo}` : '',
-                                          test.firingConfig.distance,
-                                          test.firingConfig.targetType,
-                                          `${test.firingConfig.totalRounds} Rds`,
-                                        ].filter(Boolean).map((chip, i) => (
-                                          <span key={i} className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-orange-50 border border-orange-200 text-orange-800">{chip}</span>
-                                        ))}
-                                      </div>
-                                    )}
-                                    {result?.firingDetails?.laneNo && (
-                                      <p className="text-[10px] text-slate-600">Lane {result.firingDetails.laneNo}</p>
-                                    )}
-                                    {result?.firingDetails?.ringValues && result.firingDetails.ringValues.length > 0 && (
-                                      <div className="flex flex-wrap gap-1">
-                                        {result.firingDetails.ringValues.map((ring, i) => (
-                                          <span key={i} className={`text-[9px] font-black px-1.5 py-0.5 rounded border ${
-                                            ring >= 8 ? 'bg-green-50 border-green-300 text-green-700' :
-                                            ring >= 5 ? 'bg-amber-50 border-amber-300 text-amber-700' :
-                                            'bg-red-50 border-red-300 text-red-700'
-                                          }`}>R{i + 1}: {ring}/10</span>
-                                        ))}
-                                      </div>
-                                    )}
-                                    {result?.firingDetails?.classification && (
-                                      <span className={`inline-block text-[9px] font-black px-2 py-0.5 rounded ${firingClassColor(result.firingDetails.classification)}`}>
-                                        {result.firingDetails.classification}
-                                        {result.firingDetails.actualScore != null && result.firingDetails.maxScore != null
-                                          ? ` · ${result.firingDetails.actualScore}/${result.firingDetails.maxScore}`
-                                          : ''}
-                                      </span>
-                                    )}
-                                  </div>
+                                <div className="border border-orange-200 rounded p-2">
+                                  <FiringRegisterView config={test.firingConfig} details={result?.firingDetails} />
                                 </div>
                               )}
                               {result?.events && result.events.length > 0 && (
@@ -283,7 +246,7 @@ export const TraineeTestResultsPanel: React.FC<Props> = ({
                                   </table>
                                 </div>
                               )}
-                              {result?.remarks && (
+                              {result?.remarks && test.testType !== 'firing' && (
                                 <p className="text-slate-600"><span className="font-black">Remarks:</span> {result.remarks}</p>
                               )}
                               {result?.weakAreas && result.weakAreas.length > 0 && (

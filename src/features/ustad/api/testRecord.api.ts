@@ -93,6 +93,10 @@ export const createTest = async (
       payload.overallPassPercent = formData.overallPassPercent ?? 50;
     }
 
+    if (formData.testType === 'firing' && formData.firingConfig) {
+      payload.firingConfig = formData.firingConfig;
+    }
+
     const docRef = await addDoc(collection(db, COLLECTION), payload);
     return docRef.id;
   } catch (error) {

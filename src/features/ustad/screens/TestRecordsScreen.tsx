@@ -22,12 +22,15 @@ import {
   STATUS_COLORS, STATUS_LABELS, GRADE_COLORS, calculateGrade,
   BSF_SUBJECTS, DEFAULT_FPT_EVENTS, RUNNING_GRADES, GRADE_STYLE,
   gradeToMarks, BSF_PLATOONS,
-  DEFAULT_FIRING_CONFIG, FIRING_WEAPONS, FIRING_EXERCISES,
-  FIRING_DISTANCES, FIRING_TARGETS, FIRING_ROUND_OPTIONS,
-  getFiringClassification, firingClassColor,
-  type FiringConfig,
+  DEFAULT_FIRING_CONFIG, FIRING_WEAPONS, FIRING_PRACTICE_TYPES,
+  FIRING_DISTANCES, FIRING_TARGETS, FIRING_ROUND_OPTIONS, FIRING_GRADINGS,
+  FIRING_REMARK_OPTIONS, applyFiringPractice, applyFiringFields, emptyFiringDetails,
+  finalizeFiringResult, firingConfigChips, firingMaxScore, firingScoringMode,
+  firingPracticeLabel, firingClassColor,
+  type FiringConfig, type FiringDetails,
 } from '../types/testRecord.types';
 import FormModal from '../components/shared/FormModal';
+import { FiringRegisterView } from '../components/FiringRegisterView';
 import ConfirmDialog from '../components/shared/ConfirmDialog';
 import { ReportButton } from '../../../components/common/ReportButton';
 
@@ -108,30 +111,45 @@ const TestResultDetailsPanel: React.FC<{ test: TestRecord }> = ({ test }) => {
                       <div className="min-w-0">
                         <p className="text-[10px] font-black text-slate-800 truncate">{r.traineeName}</p>
                         <p className="text-[9px] text-slate-500">
-                          {r.platoon || '—'} · {r.marks}/{maxMarks} · {pct}%
+                          {r.platoon || '—'}
+                          {test.testType === 'firing' && r.firingDetails?.grading
+                            ? ` · ${r.firingDetails.grading}${r.firingDetails.hitsOnTarget != null ? ` · Hits ${r.firingDetails.hitsOnTarget}` : ''}`
+                            : ` · ${r.marks}/${maxMarks} · ${pct}%`}
                         </p>
                       </div>
                     </div>
                     <span className={`text-[9px] font-black px-2 py-1 rounded-lg flex-shrink-0 ${
-                      isPass ? 'bg-green-600 text-white' : isFail ? 'bg-red-600 text-white' : 'bg-slate-500 text-white'
+                      test.testType === 'firing' && r.firingDetails?.grading
+                        ? firingClassColor(r.firingDetails.grading)
+                        : isPass ? 'bg-green-600 text-white' : isFail ? 'bg-red-600 text-white' : 'bg-slate-500 text-white'
                     }`}>
-                      {r.status.toUpperCase()}
+                      {test.testType === 'firing' && r.firingDetails?.grading
+                        ? r.firingDetails.grading
+                        : r.status.toUpperCase()}
                     </span>
                   </button>
 
                   {isOpen && (
                     <div className="bg-white border-t border-white/70 px-3 py-2 space-y-2">
                       <div className="grid grid-cols-2 gap-2">
-                        {[
-                          ['Chest No', r.chestNo || '—'],
-                          ['Reg No', r.regNo || '—'],
-                          ['Platoon', r.platoon || '—'],
-                          ['Marks', `${r.marks}/${maxMarks}`],
-                          ['Percentage', `${pct}%`],
-                          ['Grade', r.grade || '—'],
-                          ['Status', r.status.toUpperCase()],
-                          ['Remarks', r.remarks || '—'],
-                        ].map(([label, value]) => (
+                        {(test.testType === 'firing'
+                          ? [
+                              ['Chest No', r.chestNo || '—'],
+                              ['Reg No', r.regNo || '—'],
+                              ['Platoon', r.platoon || '—'],
+                              ['Rank / Name', r.traineeName || '—'],
+                            ]
+                          : [
+                              ['Chest No', r.chestNo || '—'],
+                              ['Reg No', r.regNo || '—'],
+                              ['Platoon', r.platoon || '—'],
+                              ['Marks', `${r.marks}/${maxMarks}`],
+                              ['Percentage', `${pct}%`],
+                              ['Grade', r.grade || '—'],
+                              ['Status', r.status.toUpperCase()],
+                              ['Remarks', r.remarks || '—'],
+                            ]
+                        ).map(([label, value]) => (
                           <div key={label} className="rounded bg-slate-50 border border-slate-100 px-2 py-1">
                             <p className="text-[8px] font-black text-slate-400 uppercase">{label}</p>
                             <p className="text-[10px] font-bold text-slate-800 break-words">{String(value)}</p>
@@ -164,38 +182,7 @@ const TestResultDetailsPanel: React.FC<{ test: TestRecord }> = ({ test }) => {
                       )}
 
                       {test.testType === 'firing' && (test.firingConfig || r.firingDetails) && (
-                        <div className="space-y-1">
-                          <p className="text-[9px] font-black text-orange-700 uppercase">Firing range — original info</p>
-                          {test.firingConfig && (
-                            <p className="text-[10px] text-orange-800 font-bold">
-                              {test.firingConfig.weaponType} · {test.firingConfig.exerciseName}
-                              {test.firingConfig.exerciseNo ? ` · Ex ${test.firingConfig.exerciseNo}` : ''}
-                              {' '}· {test.firingConfig.distance} · {test.firingConfig.targetType}
-                              {' '}· {test.firingConfig.totalRounds} rds
-                            </p>
-                          )}
-                          {r.firingDetails?.laneNo && (
-                            <p className="text-[10px] text-slate-600">Lane {r.firingDetails.laneNo}</p>
-                          )}
-                          {r.firingDetails?.ringValues && r.firingDetails.ringValues.length > 0 && (
-                            <div className="flex flex-wrap gap-1">
-                              {r.firingDetails.ringValues.map((ring, ri) => (
-                                <span key={ri} className={`text-[9px] font-black px-1.5 py-0.5 rounded border ${
-                                  ring >= 8 ? 'bg-green-50 border-green-300 text-green-700' :
-                                  ring >= 5 ? 'bg-amber-50 border-amber-300 text-amber-700' :
-                                  'bg-red-50 border-red-300 text-red-700'
-                                }`}>
-                                  R{ri + 1}: {ring}/10
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                          {r.firingDetails?.classification && (
-                            <span className={`inline-block text-[9px] font-black px-2 py-0.5 rounded ${firingClassColor(r.firingDetails.classification)}`}>
-                              {r.firingDetails.classification} · {r.firingDetails.actualScore}/{r.firingDetails.maxScore}
-                            </span>
-                          )}
-                        </div>
+                        <FiringRegisterView config={test.firingConfig} details={r.firingDetails} />
                       )}
 
                       {r.weakAreas && r.weakAreas.length > 0 && (
@@ -363,12 +350,13 @@ const TestRecordsScreen: React.FC = () => {
     };
 
     if (testForm.testType === 'firing') {
-      const maxScore = firingConfig.totalRounds * 10;
+      const maxScore = firingMaxScore(firingConfig);
       finalForm.firingConfig = firingConfig;
       finalForm.totalMarks = maxScore;
       finalForm.passingMarks = Math.round(maxScore * 0.5);
       finalForm.passingPercent = 50;
       finalForm.venue = finalForm.venue || 'Firing Range';
+      if (!finalForm.testName) finalForm.testName = firingPracticeLabel(firingConfig);
     }
 
     if (testForm.testType === 'fpt') {
@@ -402,20 +390,14 @@ const TestRecordsScreen: React.FC = () => {
 
     if (test.results.length > 0) {
       if (test.testType === 'firing' && test.firingConfig) {
-        const rounds = test.firingConfig.totalRounds || 5;
-        setResults(test.results.map(r => {
-          const rings = [...(r.firingDetails?.ringValues || [])];
-          while (rings.length < rounds) rings.push(0);
-          return {
-            ...r,
-            firingDetails: {
-              ...r.firingDetails,
-              ringValues: rings.slice(0, rounds),
-              totalRounds: rounds,
-              maxScore: rounds * 10,
-            },
-          };
-        }));
+        setResults(test.results.map(r => ({
+          ...r,
+          firingDetails: applyFiringFields(
+            test.firingConfig!,
+            { ...emptyFiringDetails(test.firingConfig!), ...(r.firingDetails || {}) },
+            {},
+          ),
+        })));
       } else {
         setResults(test.results);
       }
@@ -435,15 +417,7 @@ const TestRecordsScreen: React.FC = () => {
         };
 
         if (test.testType === 'firing' && test.firingConfig) {
-          const rounds = test.firingConfig.totalRounds || 5;
-          base.firingDetails = {
-            laneNo: '',
-            ringValues: Array(rounds).fill(0),
-            totalRounds: rounds,
-            actualScore: 0,
-            maxScore: rounds * 10,
-            classification: '',
-          };
+          base.firingDetails = emptyFiringDetails(test.firingConfig);
         }
 
         // Add FPT events for FPT tests
@@ -556,40 +530,15 @@ const TestRecordsScreen: React.FC = () => {
     }));
   };
 
-  const updateFiringRound = (traineeId: string, roundIdx: number, ring: number) => {
+  const updateFiringField = (traineeId: string, patch: Partial<FiringDetails>) => {
     setResults(prev => prev.map(r => {
-      if (r.traineeId !== traineeId) return r;
-      const rounds = selectedTest?.firingConfig?.totalRounds || r.firingDetails?.totalRounds || 5;
-      const rings = [...(r.firingDetails?.ringValues || Array(rounds).fill(0))];
-      while (rings.length < rounds) rings.push(0);
-      rings[roundIdx] = Math.max(0, Math.min(10, Number(ring) || 0));
-      const actual = rings.reduce((s, v) => s + Number(v || 0), 0);
-      const maxScore = rounds * 10;
-      const cls = getFiringClassification(actual, maxScore);
-      const percent = maxScore > 0 ? (actual / maxScore) * 100 : 0;
-      return {
-        ...r,
-        marks: actual,
-        grade: calculateGrade(percent),
-        status: percent >= 50 ? 'pass' as const : 'fail' as const,
-        firingDetails: {
-          ...r.firingDetails,
-          ringValues: rings,
-          totalRounds: rounds,
-          actualScore: actual,
-          maxScore,
-          classification: cls,
-        },
-      };
+      if (r.traineeId !== traineeId || r.status === 'absent') return r;
+      const cfg = selectedTest?.firingConfig;
+      if (!cfg) return r;
+      const details = applyFiringFields(cfg, r.firingDetails || emptyFiringDetails(cfg), patch);
+      const fin = finalizeFiringResult(cfg, details);
+      return { ...r, ...fin };
     }));
-  };
-
-  const updateFiringLane = (traineeId: string, laneNo: string) => {
-    setResults(prev => prev.map(r =>
-      r.traineeId === traineeId
-        ? { ...r, firingDetails: { ...(r.firingDetails || {}), laneNo } }
-        : r
-    ));
   };
 
   const markAbsent = (traineeId: string) => {
@@ -603,29 +552,12 @@ const TestRecordsScreen: React.FC = () => {
   const handleSaveResultsSubmit = async () => {
     if (!selectedTest) return;
     let toSave = results;
-    if (selectedTest.testType === 'firing') {
-      const rounds = selectedTest.firingConfig?.totalRounds || 5;
-      const maxScore = rounds * 10;
+    if (selectedTest.testType === 'firing' && selectedTest.firingConfig) {
+      const cfg = selectedTest.firingConfig;
       toSave = results.map(r => {
         if (r.status === 'absent') return r;
-        const ringVals = r.firingDetails?.ringValues || [];
-        const actual = ringVals.reduce((s, v) => s + Number(v || 0), 0);
-        const cls = getFiringClassification(actual, maxScore);
-        const percent = maxScore > 0 ? (actual / maxScore) * 100 : 0;
-        return {
-          ...r,
-          marks: actual,
-          grade: calculateGrade(percent),
-          status: percent >= 50 ? 'pass' as const : 'fail' as const,
-          firingDetails: {
-            ...r.firingDetails,
-            ringValues: ringVals,
-            totalRounds: rounds,
-            actualScore: actual,
-            maxScore,
-            classification: cls,
-          },
-        };
+        const fin = finalizeFiringResult(cfg, r.firingDetails || emptyFiringDetails(cfg));
+        return { ...r, ...fin };
       });
       setResults(toSave);
     }
@@ -1167,16 +1099,9 @@ const TestRecordsScreen: React.FC = () => {
 
                                         {test.testType === 'firing' && test.firingConfig && (
                       <div className="bg-orange-50 border border-orange-200 rounded-lg p-2">
-                        <p className="text-[10px] font-bold text-orange-800 uppercase mb-1">Firing Range Register</p>
+                        <p className="text-[10px] font-bold text-orange-800 uppercase mb-1">STC Firing Register</p>
                         <div className="flex flex-wrap gap-1">
-                          {[
-                            test.firingConfig.weaponType,
-                            test.firingConfig.exerciseName,
-                            test.firingConfig.exerciseNo ? `Ex ${test.firingConfig.exerciseNo}` : '',
-                            test.firingConfig.distance,
-                            test.firingConfig.targetType,
-                            `${test.firingConfig.totalRounds} Rds`,
-                          ].filter(Boolean).map((chip, i) => (
+                          {firingConfigChips(test.firingConfig).map((chip, i) => (
                             <span key={i} className="text-[9px] px-1.5 py-0.5 rounded bg-white text-orange-800 border border-orange-200 font-bold">
                               {chip}
                             </span>
@@ -1579,12 +1504,16 @@ const TestRecordsScreen: React.FC = () => {
           )}
 
                     
-          {/* FIRING RANGE REGISTER — BSF PATTERN */}
+          {/* STC FIRING REGISTERS — Format A ammo + Format B classification */}
           {testForm.testType === 'firing' && (
             <div className="bg-orange-50 border-2 border-orange-300 rounded-xl p-4 space-y-3">
-              <h3 className="text-xs font-black text-orange-800 uppercase flex items-center gap-1">
-                🎯 Firing Range Register — BSF Pattern
+              <h3 className="text-xs font-black text-orange-800 uppercase">
+                STC Firing Registers — Ammunition + Classification
               </h3>
+              <p className="text-[10px] text-orange-800">
+                Range pe 2 kitabein chalti hain: Kot ammo issue register, aur classification score ledger.
+                Practice type select karo — distance, target aur scoring auto set hoga. Result me Marksman / 1st Class / 2nd Class / Failed dikhega, sirf pass-fail nahi.
+              </p>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-[10px] font-bold text-orange-700 uppercase mb-1">Weapon Type *</label>
@@ -1594,16 +1523,33 @@ const TestRecordsScreen: React.FC = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-orange-700 uppercase mb-1">Exercise Name *</label>
-                  <select value={firingConfig.exerciseName} onChange={e => setFiringConfig(p => ({...p, exerciseName: e.target.value}))}
+                  <label className="block text-[10px] font-bold text-orange-700 uppercase mb-1">Practice Type *</label>
+                  <select
+                    value={firingConfig.practiceType || firingConfig.exerciseName}
+                    onChange={e => {
+                      const next = applyFiringPractice(e.target.value, firingConfig);
+                      setFiringConfig(next);
+                      setTestForm(prev => {
+                        const autoNames = FIRING_PRACTICE_TYPES.map(p => p.name);
+                        if (!prev.testName || autoNames.includes(prev.testName) || prev.testName === firingConfig.practiceType || prev.testName === firingConfig.exerciseName) {
+                          return { ...prev, testName: next.practiceType, venue: prev.venue || 'Firing Range' };
+                        }
+                        return { ...prev, venue: prev.venue || 'Firing Range' };
+                      });
+                    }}
                     className="w-full px-3 py-2 border border-orange-300 rounded-lg text-sm font-bold">
-                    {FIRING_EXERCISES.map(e => <option key={e}>{e}</option>)}
+                    {FIRING_PRACTICE_TYPES.map(p => <option key={p.name}>{p.name}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-orange-700 uppercase mb-1">Exercise No</label>
-                  <input type="text" value={firingConfig.exerciseNo || ''} onChange={e => setFiringConfig(p => ({...p, exerciseNo: e.target.value}))}
+                  <label className="block text-[10px] font-bold text-orange-700 uppercase mb-1">Detail No.</label>
+                  <input type="text" value={firingConfig.detailNo || ''} onChange={e => setFiringConfig(p => ({...p, detailNo: e.target.value}))}
                     className="w-full px-3 py-2 border border-orange-300 rounded-lg text-sm" placeholder="e.g., 1" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-orange-700 uppercase mb-1">Practice No.</label>
+                  <input type="text" value={firingConfig.exerciseNo || ''} onChange={e => setFiringConfig(p => ({...p, exerciseNo: e.target.value}))}
+                    className="w-full px-3 py-2 border border-orange-300 rounded-lg text-sm" placeholder="I / II / III" />
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold text-orange-700 uppercase mb-1">Distance *</label>
@@ -1620,17 +1566,24 @@ const TestRecordsScreen: React.FC = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-orange-700 uppercase mb-1">Rounds Per Firer *</label>
+                  <label className="block text-[10px] font-bold text-orange-700 uppercase mb-1">Rounds Issued / RCT *</label>
                   <select value={firingConfig.totalRounds} onChange={e => setFiringConfig(p => ({...p, totalRounds: Number(e.target.value)}))}
                     className="w-full px-3 py-2 border border-orange-300 rounded-lg text-sm font-bold">
                     {FIRING_ROUND_OPTIONS.map(n => <option key={n} value={n}>{n} Rounds</option>)}
                   </select>
                 </div>
               </div>
-              <div className="bg-white border border-orange-200 rounded p-2 text-[10px] text-orange-700">
-                Auto: Total Marks = {firingConfig.totalRounds} × 10 = <strong>{firingConfig.totalRounds * 10}</strong>
-                {' '}| Passing = <strong>{Math.round(firingConfig.totalRounds * 10 * 0.5)}</strong> (50%)
-                {' '}| Classification: MM ≥80% | FC ≥60% | SS ≥50% | FAIL &lt;50%
+              <div className="bg-white border border-orange-200 rounded p-2 text-[10px] text-orange-800 space-y-1">
+                <p>
+                  Register: <strong>{firingScoringMode(firingConfig) === 'grouping' ? 'Grouping (group size in inches)' : `Application (hits + score / ${firingMaxScore(firingConfig)})`}</strong>
+                  {' '}· {firingConfig.weaponType} · {firingConfig.distance} · {firingConfig.targetType} · {firingConfig.totalRounds} rds
+                </p>
+                <p>
+                  Grading auto: <strong>Marksman</strong> {firingScoringMode(firingConfig) === 'grouping' ? '≤2 in' : '≥80%'}
+                  {' · '}<strong>1st Class</strong> {firingScoringMode(firingConfig) === 'grouping' ? '≤4 in' : '≥60%'}
+                  {' · '}<strong>2nd Class</strong> {firingScoringMode(firingConfig) === 'grouping' ? '≤6 in' : '≥50%'}
+                  {' · '}<strong>Failed</strong> / Not Qualified
+                </p>
               </div>
             </div>
           )}
@@ -1940,7 +1893,7 @@ const TestRecordsScreen: React.FC = () => {
           selectedTest?.testType === 'fpt'
             ? `${selectedTest.fptEvents?.length || 0} events • Overall Pass: ${selectedTest.overallPassPercent}%`
             : selectedTest?.testType === 'firing' && selectedTest.firingConfig
-              ? `${selectedTest.firingConfig.weaponType} · ${selectedTest.firingConfig.exerciseName} · ${selectedTest.firingConfig.distance} · ${selectedTest.firingConfig.targetType} · ${selectedTest.firingConfig.totalRounds} Rds`
+              ? `${selectedTest.firingConfig.weaponType} · ${firingPracticeLabel(selectedTest.firingConfig)} · ${selectedTest.firingConfig.distance} · ${selectedTest.firingConfig.totalRounds} rds issued`
             : `Total: ${selectedTest?.totalMarks} | Passing: ${selectedTest?.passingMarks}`
         }
         onClose={() => setShowBulkModal(false)}
@@ -1958,13 +1911,25 @@ const TestRecordsScreen: React.FC = () => {
                 className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm"
               />
             </div>
-            <div className="flex gap-2 text-xs">
-              <span className="bg-green-100 text-green-700 px-2 py-1 rounded-full font-bold">
-                Pass: {results.filter(r => r.status === 'pass').length}
-              </span>
-              <span className="bg-red-100 text-red-700 px-2 py-1 rounded-full font-bold">
-                Fail: {results.filter(r => r.status === 'fail' && r.marks > 0).length}
-              </span>
+            <div className="flex gap-2 text-xs flex-wrap">
+              {selectedTest?.testType === 'firing' ? (
+                <>
+                  {FIRING_GRADINGS.map(g => (
+                    <span key={g} className={`px-2 py-1 rounded-full font-bold ${firingClassColor(g)}`}>
+                      {g}: {results.filter(r => r.firingDetails?.grading === g).length}
+                    </span>
+                  ))}
+                </>
+              ) : (
+                <>
+                  <span className="bg-green-100 text-green-700 px-2 py-1 rounded-full font-bold">
+                    Pass: {results.filter(r => r.status === 'pass').length}
+                  </span>
+                  <span className="bg-red-100 text-red-700 px-2 py-1 rounded-full font-bold">
+                    Fail: {results.filter(r => r.status === 'fail' && r.marks > 0).length}
+                  </span>
+                </>
+              )}
             </div>
           </div>
 
@@ -1975,14 +1940,15 @@ const TestRecordsScreen: React.FC = () => {
           )}
           {selectedTest?.testType === 'firing' && selectedTest.firingConfig && (
             <div className="bg-orange-50 border border-orange-200 rounded p-2 text-[10px] text-orange-800 space-y-1">
-              <p className="font-black uppercase">Range register — original setup, not a single number</p>
+              <p className="font-black uppercase">Format A ammo + Format B classification — not a single marks box</p>
+              <p>{firingConfigChips(selectedTest.firingConfig).join(' · ')}</p>
               <p>
-                {selectedTest.firingConfig.weaponType} · {selectedTest.firingConfig.exerciseName}
-                {selectedTest.firingConfig.exerciseNo ? ` · Ex ${selectedTest.firingConfig.exerciseNo}` : ''}
-                {' '}· {selectedTest.firingConfig.distance} · {selectedTest.firingConfig.targetType}
-                {' '}· {selectedTest.firingConfig.totalRounds} rounds × 10 = {selectedTest.firingConfig.totalRounds * 10}
+                Issued / Fired / Empty cases auto-count misfires.
+                {firingScoringMode(selectedTest.firingConfig) === 'grouping'
+                  ? ' Grouping: hits + group size (inches). Marksman ≤2" · 1st ≤4" · 2nd ≤6" · else Failed.'
+                  : ` Application: hits + score / ${firingMaxScore(selectedTest.firingConfig)}. Marksman ≥80% · 1st ≥60% · 2nd ≥50% · else Failed.`}
+                {' '}Remarks dropdown = standard range-book wording.
               </p>
-              <p>Each round = ring 0–10 · Classification: MM ≥80% | FC ≥60% | SS ≥50% | FAIL &lt;50%</p>
             </div>
           )}
 
@@ -1995,10 +1961,6 @@ const TestRecordsScreen: React.FC = () => {
                   </th>
                   <th className="px-2 py-2 text-left text-[9px] font-bold text-slate-500 uppercase">Name</th>
 
-                  {selectedTest?.testType === 'firing' && (
-                    <th className="px-2 py-2 text-center text-[9px] font-bold text-slate-500 uppercase">Lane</th>
-                  )}
-
                   {selectedTest?.testType === 'fpt' && selectedTest.fptEvents ? (
                     selectedTest.fptEvents.map((e, i) => (
                       <th key={i} className="px-2 py-2 text-center text-[9px] font-bold text-slate-500 uppercase whitespace-nowrap min-w-[100px]">
@@ -2007,20 +1969,34 @@ const TestRecordsScreen: React.FC = () => {
                       </th>
                     ))
                   ) : selectedTest?.testType === 'firing' && selectedTest.firingConfig ? (
-                    Array.from({ length: selectedTest.firingConfig.totalRounds }).map((_, i) => (
-                      <th key={i} className="px-1 py-2 text-center text-[9px] font-bold text-orange-700 uppercase whitespace-nowrap min-w-[52px]">
-                        R{i + 1}
-                        <div className="text-[8px] text-slate-400 font-normal">/10</div>
-                      </th>
-                    ))
+                    <>
+                      <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase">Lane</th>
+                      <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase">Issued</th>
+                      <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase">Fired</th>
+                      <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase">Cases</th>
+                      <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase">Misfire</th>
+                      <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase">Hits</th>
+                      {firingScoringMode(selectedTest.firingConfig) === 'grouping' ? (
+                        <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase whitespace-nowrap">Group "</th>
+                      ) : (
+                        <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase whitespace-nowrap">Score /{firingMaxScore(selectedTest.firingConfig)}</th>
+                      )}
+                      <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase">Grading</th>
+                      <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase">Re-fire</th>
+                      <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase min-w-[160px]">Remarks</th>
+                    </>
                   ) : (
                     <th className="px-2 py-2 text-center text-[9px] font-bold text-slate-500 uppercase">
                       Marks (/{selectedTest?.totalMarks})
                     </th>
                   )}
 
-                  <th className="px-2 py-2 text-center text-[9px] font-bold text-slate-500 uppercase">Total</th>
-                  <th className="px-2 py-2 text-center text-[9px] font-bold text-slate-500 uppercase">Result</th>
+                  {selectedTest?.testType !== 'firing' && (
+                    <>
+                      <th className="px-2 py-2 text-center text-[9px] font-bold text-slate-500 uppercase">Total</th>
+                      <th className="px-2 py-2 text-center text-[9px] font-bold text-slate-500 uppercase">Result</th>
+                    </>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -2031,18 +2007,6 @@ const TestRecordsScreen: React.FC = () => {
                   }>
                     <td className="px-2 py-1.5 font-mono font-bold text-xs sticky left-0 bg-white">{r.chestNo}</td>
                     <td className="px-2 py-1.5 text-xs font-medium max-w-[120px] truncate">{r.traineeName}</td>
-
-                    {selectedTest?.testType === 'firing' && (
-                      <td className="px-2 py-1.5 text-center">
-                        <input
-                          type="text"
-                          value={r.firingDetails?.laneNo || ''}
-                          onChange={e => updateFiringLane(r.traineeId, e.target.value)}
-                          placeholder="L"
-                          className="w-12 px-1 py-1 border border-orange-200 rounded text-center text-[10px] font-mono"
-                        />
-                      </td>
-                    )}
 
                     {/* FPT Event Cells */}
                     {selectedTest?.testType === 'fpt' && r.events ? (
@@ -2083,26 +2047,79 @@ const TestRecordsScreen: React.FC = () => {
                         </td>
                       ))
                     ) : selectedTest?.testType === 'firing' && selectedTest.firingConfig ? (
-                      Array.from({ length: selectedTest.firingConfig.totalRounds }).map((_, roundIdx) => {
-                        const ring = r.firingDetails?.ringValues?.[roundIdx] ?? 0;
-                        return (
-                          <td key={roundIdx} className="px-1 py-1.5 text-center">
-                            <input
-                              type="number"
-                              value={ring}
-                              onChange={e => updateFiringRound(r.traineeId, roundIdx, Number(e.target.value))}
-                              min={0}
-                              max={10}
-                              className={`w-12 text-xs border-2 px-1 py-1 font-mono font-black text-center rounded ${
-                                ring >= 8 ? 'border-green-400 bg-green-50 text-green-700' :
-                                ring >= 5 ? 'border-amber-400 bg-amber-50 text-amber-700' :
-                                ring > 0 ? 'border-red-400 bg-red-50 text-red-700' :
-                                'border-slate-300 bg-white'
-                              }`}
-                            />
+                      <>
+                        <td className="px-1 py-1.5 text-center">
+                          <input type="text" value={r.firingDetails?.laneNo || ''} onChange={e => updateFiringField(r.traineeId, { laneNo: e.target.value })}
+                            placeholder="L" className="w-10 px-1 py-1 border border-orange-200 rounded text-center text-[10px] font-mono" />
+                        </td>
+                        <td className="px-1 py-1.5 text-center">
+                          <input type="number" min={0} value={r.firingDetails?.roundsIssued ?? selectedTest.firingConfig.totalRounds}
+                            onChange={e => updateFiringField(r.traineeId, { roundsIssued: Number(e.target.value) })}
+                            className="w-12 px-1 py-1 border border-orange-200 rounded text-center text-[10px] font-mono" />
+                        </td>
+                        <td className="px-1 py-1.5 text-center">
+                          <input type="number" min={0} value={r.firingDetails?.roundsFired ?? ''}
+                            onChange={e => updateFiringField(r.traineeId, { roundsFired: Number(e.target.value) })}
+                            className="w-12 px-1 py-1 border border-orange-200 rounded text-center text-[10px] font-mono" />
+                        </td>
+                        <td className="px-1 py-1.5 text-center">
+                          <input type="number" min={0} value={r.firingDetails?.emptyCasesReturned ?? ''}
+                            onChange={e => updateFiringField(r.traineeId, { emptyCasesReturned: Number(e.target.value) })}
+                            className="w-12 px-1 py-1 border border-orange-200 rounded text-center text-[10px] font-mono" />
+                        </td>
+                        <td className="px-1 py-1.5 text-center text-[10px] font-black text-red-700">
+                          {r.firingDetails?.misfires ?? 0}
+                        </td>
+                        <td className="px-1 py-1.5 text-center">
+                          <input type="number" min={0} value={r.firingDetails?.hitsOnTarget ?? ''}
+                            onChange={e => updateFiringField(r.traineeId, { hitsOnTarget: Number(e.target.value) })}
+                            className="w-12 px-1 py-1 border-2 border-orange-300 rounded text-center text-[10px] font-black" />
+                        </td>
+                        {firingScoringMode(selectedTest.firingConfig) === 'grouping' ? (
+                          <td className="px-1 py-1.5 text-center">
+                            <input type="number" min={0} step={0.1} value={r.firingDetails?.groupSizeInches ?? ''}
+                              onChange={e => updateFiringField(r.traineeId, { groupSizeInches: Number(e.target.value) })}
+                              className="w-14 px-1 py-1 border-2 border-orange-300 rounded text-center text-[10px] font-black" />
                           </td>
-                        );
-                      })
+                        ) : (
+                          <td className="px-1 py-1.5 text-center">
+                            <input type="number" min={0} max={firingMaxScore(selectedTest.firingConfig)} value={r.firingDetails?.score ?? ''}
+                              onChange={e => updateFiringField(r.traineeId, { score: Number(e.target.value) })}
+                              className="w-14 px-1 py-1 border-2 border-orange-300 rounded text-center text-[10px] font-black" />
+                          </td>
+                        )}
+                        <td className="px-1 py-1.5 text-center">
+                          <select
+                            value={r.firingDetails?.grading || ''}
+                            onChange={e => updateFiringField(r.traineeId, { grading: e.target.value as FiringDetails['grading'] })}
+                            className={`w-[92px] text-[9px] font-black border-2 px-1 py-1 rounded ${r.firingDetails?.grading ? firingClassColor(r.firingDetails.grading) : 'bg-white text-slate-700 border-slate-300'}`}
+                          >
+                            <option value="">—</option>
+                            {FIRING_GRADINGS.map(g => <option key={g} value={g}>{g}</option>)}
+                          </select>
+                        </td>
+                        <td className="px-1 py-1.5 text-center">
+                          <select
+                            value={r.firingDetails?.reFiringNeeded ? 'yes' : 'no'}
+                            onChange={e => updateFiringField(r.traineeId, { reFiringNeeded: e.target.value === 'yes' })}
+                            className="w-[70px] text-[9px] font-bold border border-slate-300 rounded px-1 py-1"
+                          >
+                            <option value="no">No</option>
+                            <option value="yes">Yes</option>
+                          </select>
+                        </td>
+                        <td className="px-1 py-1.5">
+                          <select
+                            value={r.firingDetails?.remarksCode || ''}
+                            onChange={e => updateFiringField(r.traineeId, { remarksCode: e.target.value })}
+                            className="w-full min-w-[150px] text-[9px] font-bold border border-amber-300 bg-amber-50 rounded px-1 py-1"
+                          >
+                            {FIRING_REMARK_OPTIONS.map(opt => (
+                              <option key={opt.id} value={opt.id}>{opt.label}</option>
+                            ))}
+                          </select>
+                        </td>
+                      </>
                     ) : (
                       <td className="px-2 py-1.5 text-center">
                         <input
@@ -2116,26 +2133,24 @@ const TestRecordsScreen: React.FC = () => {
                       </td>
                     )}
 
-                    <td className="px-2 py-1.5 text-center text-xs font-bold">
-                      {r.marks > 0 ? `${r.marks}/${selectedTest?.totalMarks || (r.events?.reduce((s, e) => s + e.maxMarks, 0) || 0)}` : '—'}
-                    </td>
-                    <td className="px-2 py-1.5 text-center">
-                      {r.marks > 0 ? (
-                        selectedTest?.testType === 'firing' && r.firingDetails?.classification ? (
-                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${firingClassColor(r.firingDetails.classification)}`}>
-                            {r.firingDetails.classification}
-                          </span>
-                        ) : (
-                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
-                            r.status === 'pass' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
-                          }`}>
-                            {r.status === 'pass' ? '✅' : '❌'} {r.grade}
-                          </span>
-                        )
-                      ) : (
-                        <span className="text-[9px] text-slate-300">—</span>
-                      )}
-                    </td>
+                    {selectedTest?.testType !== 'firing' && (
+                      <>
+                        <td className="px-2 py-1.5 text-center text-xs font-bold">
+                          {r.marks > 0 ? `${r.marks}/${selectedTest?.totalMarks || (r.events?.reduce((s, e) => s + e.maxMarks, 0) || 0)}` : '—'}
+                        </td>
+                        <td className="px-2 py-1.5 text-center">
+                          {r.marks > 0 ? (
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                              r.status === 'pass' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+                            }`}>
+                              {r.status === 'pass' ? '✅' : '❌'} {r.grade}
+                            </span>
+                          ) : (
+                            <span className="text-[9px] text-slate-300">—</span>
+                          )}
+                        </td>
+                      </>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -2154,6 +2169,31 @@ const TestRecordsScreen: React.FC = () => {
             >
               {submitting ? <><Loader2 size={14} className="animate-spin" /> Saving...</> : <><Save size={14} /> Save All ({trainees.length})</>}
             </button>
+          </div>
+        </div>
+      </FormModal>
+
+      {/* DELETE CONFIRM */}
+      <ConfirmDialog
+        isOpen={showDeleteDialog}
+        title="Delete Test"
+        message={`Delete "${selectedTest?.testName}"? All results will be lost.`}
+        confirmLabel="Yes, Delete"
+        confirmColor="red"
+        onConfirm={handleDeleteConfirm}
+        onCancel={() => {
+          setShowDeleteDialog(false);
+          setSelectedTest(null);
+        }}
+        loading={submitting}
+      />
+
+      
+    </div>
+  );
+};
+
+export default TestRecordsScreen;            </button>
           </div>
         </div>
       </FormModal>
