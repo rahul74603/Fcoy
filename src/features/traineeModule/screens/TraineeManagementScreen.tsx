@@ -69,6 +69,10 @@ export const TraineeManagementScreen: React.FC = () => {
     targetPlatoon: 'all', expiresAt: '',
   });
 
+  // Updates inbox filter
+  const [updFilter, setUpdFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
+  const [updSearch, setUpdSearch] = useState('');
+
   // Reject modal
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState('');
@@ -303,12 +307,51 @@ export const TraineeManagementScreen: React.FC = () => {
         </div>
       )}
 
-      {/* UPDATES TAB */}
+      {/* UPDATES TAB — CLERK INBOX */}
       {tab === 'updates' && (
         <div className="space-y-3">
-          {updates.length === 0 ? (
-            <div className="bg-white rounded-xl p-8 text-center"><ClipboardList size={40} className="mx-auto text-slate-300 mb-2" /><p className="text-sm font-bold text-slate-400">Koi update nahi</p></div>
-          ) : updates.map(u => {
+          {/* Inbox toolbar */}
+          <div className="bg-white rounded-xl shadow p-3 flex flex-wrap items-center gap-2">
+            {([
+              { k: 'pending', label: 'Pending', n: updates.filter(u => u.status === 'pending').length },
+              { k: 'approved', label: 'Approved', n: updates.filter(u => u.status === 'approved').length },
+              { k: 'rejected', label: 'Rejected', n: updates.filter(u => u.status === 'rejected').length },
+              { k: 'all', label: 'All', n: updates.length },
+            ] as const).map(f => (
+              <button key={f.k} onClick={() => setUpdFilter(f.k)}
+                className={`px-3 py-1.5 rounded-lg text-[11px] font-bold ${
+                  updFilter === f.k ? 'bg-green-700 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}>
+                {f.label} ({f.n})
+              </button>
+            ))}
+            <div className="relative flex-1 min-w-[180px]">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input value={updSearch} onChange={e => setUpdSearch(e.target.value)}
+                placeholder="Chest no / naam se dhundo…"
+                className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs" />
+            </div>
+          </div>
+
+          {(() => {
+            const q = updSearch.trim().toLowerCase();
+            const visible = updates
+              .filter(u => updFilter === 'all' || u.status === updFilter)
+              .filter(u => !q
+                || String(u.chestNo || '').toLowerCase().includes(q)
+                || String(u.traineeName || '').toLowerCase().includes(q)
+                || String(u.title || '').toLowerCase().includes(q));
+            if (visible.length === 0) {
+              return (
+                <div className="bg-white rounded-xl p-8 text-center">
+                  <ClipboardList size={40} className="mx-auto text-slate-300 mb-2" />
+                  <p className="text-sm font-bold text-slate-400">
+                    {updFilter === 'pending' ? 'Koi pending report nahi — sab clear' : 'Koi update nahi'}
+                  </p>
+                </div>
+              );
+            }
+            return visible.map(u => {
             const cat = UPDATE_CATEGORIES.find(c => c.value === u.category) || { icon: '📝', label: u.category };
             return (
               <div key={u.id} className={`bg-white rounded-xl shadow p-4 border-l-4 ${
@@ -323,14 +366,30 @@ export const TraineeManagementScreen: React.FC = () => {
                       <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${PRIORITY_COLORS[u.priority]}`}>{u.priority}</span>
                     </div>
                     <p className="text-xs text-slate-600">{u.description}</p>
-                    <p className="text-[10px] text-slate-400 mt-1">
-                      {u.chestNo} — {u.traineeName} · {u.submittedBy} ({u.submittedByRole}) · {new Date(u.submittedAt).toLocaleDateString('en-IN')}
+                    <p className="text-[11px] font-bold text-slate-700 mt-1">
+                      Chest {u.chestNo} — {u.traineeName}{u.platoon ? ` · ${u.platoon}` : ''}
                     </p>
+                    {(u.fromDate || u.activity) && (
+                      <p className="text-[10px] text-slate-500 mt-0.5">
+                        {u.fromDate || ''}{u.toDate && u.toDate !== u.fromDate ? ` → ${u.toDate}` : ''}
+                        {u.activity ? ` · ${u.activity}` : ''}
+                        {u.absentType ? ` · Type ${u.absentType}` : ''}
+                      </p>
+                    )}
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Bheja: {u.submittedBy} ({u.submittedByRole}) · {new Date(u.submittedAt).toLocaleDateString('en-IN')}
+                      {u.onBehalf ? ' · on behalf' : ''}
+                    </p>
+                    {u.status === 'approved' && (
+                      <p className="text-[10px] text-green-700 font-bold mt-1">
+                        ✅ Absent list + {['S','H','R','M'].includes(u.absentType || '') ? 'MI register' : 'attendance'} + company roll + notice board — sab update ho gaya
+                      </p>
+                    )}
                     {u.rejectionReason && <p className="text-[10px] text-red-600 mt-1">Rejection: {u.rejectionReason}</p>}
                   </div>
                   {u.status === 'pending' && (
-                    <div className="flex gap-2 ml-4">
-                      <button onClick={() => handleApprove(u.id)} className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold hover:bg-green-700 flex items-center gap-1">
+                    <div className="flex flex-col gap-2 ml-4">
+                      <button onClick={() => handleApprove(u.id)} className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold hover:bg-green-700 flex items-center gap-1 whitespace-nowrap">
                         <CheckCircle2 size={12} /> Approve
                       </button>
                       <button onClick={() => setRejectId(u.id)} className="bg-red-100 text-red-700 px-3 py-1.5 rounded-lg text-[10px] font-bold hover:bg-red-200">
@@ -341,7 +400,8 @@ export const TraineeManagementScreen: React.FC = () => {
                 </div>
               </div>
             );
-          })}
+            });
+          })()}
         </div>
       )}
 

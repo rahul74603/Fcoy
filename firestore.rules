@@ -450,25 +450,57 @@ service cloud.firestore {
       allow read: if isStaff() && canReadDevData();
       allow write: if canManage() && canWriteDevData();
     }
+    // Notice / Information board. Trainees MUST be able to read it — that is
+    // the whole point of the board (approved sick/hospital/rest reports and
+    // clerk announcements land here). Only Clerk/CC publish or delete.
     match /traineeNotices/{id} {
-      allow read: if isStaff() && canReadDevData();
+      allow read: if isTrainee() || (isStaff() && canReadDevData());
       allow write: if canManage() && canWriteDevData();
     }
+
+    // ──────────────────────────────────────────────────────────────────
+    // TRAINEE REPORTS → CLERK INBOX
+    // ──────────────────────────────────────────────────────────────────
+    // Flow: a trainee (incl. a senior/course-senior trainee) raises a report
+    // for HIMSELF or ON BEHALF of any trainee in his batch — sick, hospital,
+    // PT miss, rest, leave. It arrives in the Clerk's inbox tagged with the
+    // subject's chest number. ONLY Clerk/CC may approve; approval is what
+    // writes absentRecords / medicalRecords / trainee status / notice board.
+    //
+    // A trainee therefore may:
+    //   • create a PENDING report, stamped with his own uid as submitter
+    //   • never self-approve (status/approvedBy/approvedAt are forced empty)
+    //   • never edit or delete a report once submitted (audit trail)
+    //   • read reports (own + batch) so he can track approval status
     match /traineeUpdates/{id} {
       allow read: if isTrainee() || (isStaff() && canReadDevData());
-      // Trainee may only CREATE a pending self-report. Clerk/CC approve/reject.
+
       allow create: if canWriteDevData() && (
         canManage()
         ||
         (isTrainee() && isActive()
+          // must be pending — a trainee can never file a pre-approved report
           && request.resource.data.status == 'pending'
-          && request.resource.data.submittedByUid == request.auth.uid
           && request.resource.data.get('approvedBy', '') == ''
-          && request.resource.data.get('approvedAt', '') == '')
+          && request.resource.data.get('approvedAt', '') == ''
+          // submitter identity is forced to the caller — no impersonation
+          && request.resource.data.submittedByUid == request.auth.uid
+          // the report must name the trainee it is about
+          && request.resource.data.traineeId is string
+          && request.resource.data.traineeId != ''
+          && request.resource.data.batchId is string
+          && request.resource.data.batchId != ''
+          // approval side-effect links must NOT be pre-set by the client
+          && request.resource.data.get('appliedToAbsentId', '') == ''
+          && request.resource.data.get('appliedToMedicalId', '') == ''
+          && request.resource.data.get('appliedToNoticeId', '') == '')
       );
+
+      // Approval / rejection is a Clerk-CC-only privilege.
       allow update: if canManage() && canWriteDevData();
       allow delete: if isCC();
     }
+
 
     // ──────────────────────────────────────────────────────────────────
     // FINANCE DOMAIN  — CC + Quarter Master only
