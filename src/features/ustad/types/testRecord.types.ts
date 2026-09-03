@@ -79,6 +79,9 @@ export interface TraineeResult {
   events?: FPTEventResult[];      // For FPT tests
   eventsPassed?: number;
   eventsFailed?: number;
+
+  // Firing Practice (BSF range register) — not a single number
+  firingDetails?: FiringDetails;
 }
 
 // ─── Test Record (Unified) ───────────────────
@@ -108,6 +111,9 @@ export interface TestRecord {
   // FPT-specific
   fptEvents?: FPTEvent[];         // Only for FPT
   overallPassPercent?: number;
+
+  // Firing Practice (BSF range register)
+  firingConfig?: FiringConfig;
 
     // Instructors (Multiple - Support for large batches)
   instructorId: string;              // Primary (backward compat)
@@ -156,6 +162,9 @@ export interface TestFormData {
   // FPT-specific
   fptEvents?: FPTEvent[];
   overallPassPercent?: number;
+
+  // Firing Practice (BSF range register)
+  firingConfig?: FiringConfig;
 }
 
 export const DEFAULT_TEST_FORM: TestFormData = {
@@ -175,6 +184,56 @@ export const DEFAULT_TEST_FORM: TestFormData = {
   instructorIds: [],           // 🆕
   platoon: 'All Platoons (Whole Company)', // 🆕
   remarks: '',
+};
+
+export interface FiringConfig {
+  weaponType: string;
+  exerciseName: string;
+  exerciseNo?: string;
+  distance: string;
+  targetType: string;
+  totalRounds: number;
+}
+
+export interface FiringDetails {
+  laneNo?: string;
+  ringValues?: number[];
+  totalRounds?: number;
+  actualScore?: number;
+  maxScore?: number;
+  groupSize?: number;
+  classification?: string;
+}
+
+export const DEFAULT_FIRING_CONFIG: FiringConfig = {
+  weaponType: 'INSAS Rifle',
+  exerciseName: 'Grouping Practice',
+  exerciseNo: '1',
+  distance: '100 Mtrs',
+  targetType: 'Figure 11',
+  totalRounds: 5,
+};
+
+export const FIRING_WEAPONS = ['INSAS Rifle', '9mm Pistol', 'AK-47', 'AK-203', 'SLR', 'LMG', 'Carbine', 'Other'];
+export const FIRING_EXERCISES = ['Grouping Practice', 'Application Fire', 'Classification Fire', 'Night Firing', 'Snap Shooting', 'Battle Range', 'Other'];
+export const FIRING_DISTANCES = ['25 Mtrs', '50 Mtrs', '100 Mtrs', '200 Mtrs', '300 Mtrs'];
+export const FIRING_TARGETS = ['Figure 11', 'Figure 12', 'Ring Target', 'Bullseye', 'Running Target', 'Other'];
+export const FIRING_ROUND_OPTIONS = [3, 5, 8, 10, 15, 20];
+
+export const getFiringClassification = (actualScore: number, maxScore: number): string => {
+  if (maxScore <= 0) return 'FAIL';
+  const pct = (actualScore / maxScore) * 100;
+  if (pct >= 80) return 'MM (Marksman)';
+  if (pct >= 60) return 'FC (First Class)';
+  if (pct >= 50) return 'SS (Sharpshooter)';
+  return 'FAIL';
+};
+
+export const firingClassColor = (cls: string) => {
+  if (cls.includes('Marksman')) return 'bg-yellow-500 text-white';
+  if (cls.includes('First Class')) return 'bg-green-600 text-white';
+  if (cls.includes('Sharpshooter')) return 'bg-blue-600 text-white';
+  return 'bg-red-600 text-white';
 };
 
 export const DEFAULT_FPT_EVENTS: FPTEvent[] = [

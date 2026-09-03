@@ -10,7 +10,7 @@ import {
 import { db } from '../../../config/firebase';
 import {
   TestRecord, TestFormData, TestStatus,
-  TraineeResult, TestType, FPTEvent, calculateGrade,
+  TraineeResult, TestType, FPTEvent, FiringConfig, calculateGrade,
 } from '../types/testRecord.types';
 
 const COLLECTION = 'training_tests';
@@ -34,6 +34,7 @@ const docToTest = (id: string, data: Record<string, unknown>): TestRecord => ({
   passingPercent: (data.passingPercent as number) ?? 40,
   fptEvents: (data.fptEvents as FPTEvent[]) ?? undefined,
   overallPassPercent: (data.overallPassPercent as number) ?? undefined,
+  firingConfig: (data.firingConfig as FiringConfig) ?? undefined,
   instructorId: (data.instructorId as string) ?? '',
   instructorName: (data.instructorName as string) ?? '',
   results: (data.results as TraineeResult[]) ?? [],
