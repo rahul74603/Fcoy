@@ -199,11 +199,11 @@ export const RELEGATION_STATUS_COLORS = {
   cancelled: 'bg-slate-100 text-slate-700',
 };
 
-export const ABSENCE_REPORT_KINDS: { value: AbsenceReportKind; label: string; icon: string }[] = [
-  { value: 'sick', label: 'Sick Report', icon: '🤒' },
-  { value: 'hospital', label: 'Hospital', icon: '🏥' },
-  { value: 'pt_miss', label: 'PT Miss', icon: '🏃' },
-  { value: 'rest', label: 'Rest', icon: '🛌' },
-  { value: 'leave', label: 'Leave', icon: '✈️' },
-  { value: 'other', label: 'Other', icon: '📋' },
+export const ABSENCE_REPORT_KINDS: { value: AbsenceReportKind; label: string; icon: string; category: TraineeUpdateCategory; activity?: AbsenceActivity; absentType?: AbsentTypeCode; hint?: string }[] = [
+  { value: 'sick', label: 'Sick Report', icon: '🤒', category: 'Medical Issue', absentType: 'S', activity: 'Full Day', hint: 'Bimar hain — MI Room jayenge' },
+  { value: 'hospital', label: 'Hospital', icon: '🏥', category: 'Medical Issue', absentType: 'H', activity: 'Full Day', hint: 'Hospital admit — long absence' },
+  { value: 'pt_miss', label: 'PT Miss', icon: '🏃', category: 'Absent Report', absentType: 'A', activity: 'PT', hint: 'PT mein miss hua' },
+  { value: 'rest', label: 'Rest', icon: '🛌', category: 'Medical Issue', absentType: 'R', activity: 'Full Day', hint: 'B/C Rest — doctor ne diya' },
+  { value: 'leave', label: 'Leave', icon: '✈️', category: 'Leave Request', absentType: 'L', activity: 'Full Day', hint: 'Chutti chahiye' },
+  { value: 'other', label: 'Other', icon: '📋', category: 'Other', hint: 'Koi aur wajah' },
 ];

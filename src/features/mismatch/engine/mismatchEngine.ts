@@ -27,13 +27,14 @@ export const scanForMismatch = async (batchId: string): Promise<MismatchIssue[]>
 
   try {
     // Fetch all relevant data
+    const emptySnap = { docs: [] as any[], forEach: () => {} };
     const [traineesSnap, docsSnap, medicalSnap, absentSnap, testsSnap, kitSnap] = await Promise.all([
       getDocs(query(collection(db, 'trainees'), where('batchId', '==', batchId))),
-      getDocs(query(collection(db, 'documentVerifications'), where('batchId', '==', batchId))).catch(() => ({ docs: [] })),
-      getDocs(query(collection(db, 'medicalRecords'), where('batchId', '==', batchId))).catch(() => ({ docs: [] })),
-      getDocs(query(collection(db, 'absentRecords'), where('batchId', '==', batchId))).catch(() => ({ docs: [] })),
-      getDocs(query(collection(db, 'training_tests'), where('batchId', '==', batchId))).catch(() => ({ docs: [] })),
-      getDocs(query(collection(db, 'kitAllocations'), where('batchId', '==', batchId))).catch(() => ({ docs: [] })),
+      getDocs(query(collection(db, 'documentVerifications'), where('batchId', '==', batchId))).catch(() => emptySnap),
+      getDocs(query(collection(db, 'medicalRecords'), where('batchId', '==', batchId))).catch(() => emptySnap),
+      getDocs(query(collection(db, 'absentRecords'), where('batchId', '==', batchId))).catch(() => emptySnap),
+      getDocs(query(collection(db, 'training_tests'), where('batchId', '==', batchId))).catch(() => emptySnap),
+      getDocs(query(collection(db, 'kitAllocations'), where('batchId', '==', batchId))).catch(() => emptySnap),
     ]);
 
     const trainees: any[] = [];
@@ -142,7 +143,7 @@ export const scanForMismatch = async (batchId: string): Promise<MismatchIssue[]>
 
     // T-131: Attendance threshold alerts — periodAttendance
     try {
-      const periodAttnSnap = await getDocs(query(collection(db, 'periodAttendance'), where('batchId', '==', batchId))).catch(() => ({ docs: [] }));
+      const periodAttnSnap = await getDocs(query(collection(db, 'periodAttendance'), where('batchId', '==', batchId))).catch(() => emptySnap);
       const attnByTrainee: Record<string, { total: number; present: number }> = {};
       periodAttnSnap.forEach((d: any) => {
         const data = d.data();

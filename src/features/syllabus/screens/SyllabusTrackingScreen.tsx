@@ -69,7 +69,7 @@ export const SyllabusTrackingScreen: React.FC = () => {
       await updateSyllabusTopic(editingId, form);
       setTopics(prev => prev.map(t => t.id === editingId ? { ...t, ...form } : t));
     } else {
-      const id = await addSyllabusTopic({ ...form, batchId: activeBatch.id, instructorId: '', createdAt: '' });
+      const id = await addSyllabusTopic({ ...form, batchId: activeBatch.id, instructorId: '' });
       setTopics(prev => [...prev, { ...form, id, batchId: activeBatch.id, instructorId: '', createdAt: '' }]);
     }
     setShowModal(false);

@@ -153,12 +153,12 @@ const TraineeDetailModal: React.FC<{
   const activeAbs = absentRecords.filter(r => r.status === 'Active');
 
   const tabs = [
-    { key: 'overview', label: 'Overview', icon: <Eye size={11} /> },
+    { key: 'overview', label: 'Overview', icon: <Eye size={11} />, count: null },
     { key: 'docs', label: 'Documents', icon: <FileText size={11} />, count: `${docsDone}/${REQUIRED_DOCS.length}` },
     { key: 'kit', label: 'Kit Issue', icon: <Package size={11} />, count: `${kitIssued}/${kitTotal}` },
     { key: 'medical', label: 'Medical', icon: <HeartPulse size={11} />, count: activeMed.length > 0 ? String(activeMed.length) : null },
     { key: 'absent', label: 'Absence', icon: <Activity size={11} />, count: activeAbs.length > 0 ? String(activeAbs.length) : null },
-  ] as const;
+  ];
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[70] flex items-start justify-center p-4 pt-6 overflow-y-auto"
@@ -208,7 +208,7 @@ const TraineeDetailModal: React.FC<{
         {/* Tabs */}
         <div className="flex border-b border-slate-200 bg-slate-50/50 overflow-x-auto">
           {tabs.map(t => (
-            <button key={t.key} onClick={() => setActiveTab(t.key)}
+            <button key={t.key} onClick={() => setActiveTab(t.key as any)}
               className={`flex items-center gap-1.5 px-4 py-3 text-[10px] font-black uppercase border-b-2 whitespace-nowrap transition-all ${
                 activeTab === t.key ? 'border-military-700 text-military-900 bg-white' : 'border-transparent text-slate-400 hover:text-slate-600'
               }`}>

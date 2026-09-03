@@ -30,7 +30,7 @@ export const TraineeManagementScreen: React.FC = () => {
   const { activeBatch } = useBatch();
   const { user } = useAuth();
 
-  const [tab, setTab] = useState<'accounts' | 'updates' | 'notices'>('accounts');
+  const [tab, setTab] = useState<'accounts' | 'updates' | 'notices' | 'relegation'>('accounts');
   const [trainees, setTrainees] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<TraineeAccount[]>([]);
   const [updates, setUpdates] = useState<TraineeUpdate[]>([]);
@@ -203,11 +203,11 @@ export const TraineeManagementScreen: React.FC = () => {
         remainingSubjects: relegationForm.remainingSubjects.split(',').map(s => s.trim()).filter(Boolean),
         completedTraining: relegationForm.completedTraining.split(',').map(s => s.trim()).filter(Boolean),
       }, user.name);
-      setMessage();
+      setMessage('');
       setShowRelegationModal(false);
       setRelegationForm({ traineeId: '', toBatchId: '', toPlatoon: 'Platoon 1', reason: 'Medical - Injury', reasonDetail: '', medicalCertificate: false, authorityName: '', authorityRank: '', orderNumber: '', remainingSubjects: '', completedTraining: '' });
       loadData();
-    } catch (err: any) { setMessage(); }
+    } catch (err: any) { setMessage(''); }
     setTimeout(() => setMessage(''), 3000);
   };
 

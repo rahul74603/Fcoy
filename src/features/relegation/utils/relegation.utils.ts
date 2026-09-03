@@ -52,7 +52,7 @@ export function isValidRelegateId(raw: string | undefined | null): boolean {
  * Relegated trainee purane batch ki nafri me NAHI dikhta —
  * lekin record history ke liye pada rehta hai.
  */
-export function isOnStrength(trainee: { trainingStatus?: string } | null | undefined): boolean {
+export function isOnStrength(trainee: { trainingStatus?: string; [key: string]: any } | null | undefined): boolean {
   const s = String(trainee?.trainingStatus ?? 'active').toLowerCase();
   return s !== 'relegated' && s !== 'discharged' && s !== 'relieved';
 }
