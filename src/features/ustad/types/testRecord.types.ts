@@ -187,7 +187,8 @@ export const DEFAULT_TEST_FORM: TestFormData = {
 };
 
 export type FiringScoringMode = 'grouping' | 'application';
-export type FiringGrading = 'Marksman' | '1st Class' | '2nd Class' | 'Failed' | '';
+export type FiringRegisterKind = 'classification' | 'grouping' | 'tactical';
+export type FiringGrading = 'MM' | 'FC' | 'SS' | 'FAIL' | '';
 
 export interface FiringConfig {
   weaponType: string;
@@ -198,17 +199,25 @@ export interface FiringConfig {
   targetType: string;
   totalRounds: number;
   scoringMode: FiringScoringMode;
+  registerKind?: FiringRegisterKind;
+  firingPosition?: string;
   detailNo?: string;
 }
 
 export interface FiringDetails {
   laneNo?: string;
+  weaponNo?: string;
+  firingPosition?: string;
   roundsIssued?: number;
   roundsFired?: number;
   emptyCasesReturned?: number;
   misfires?: number;
   hitsOnTarget?: number;
   groupSizeInches?: number;
+  groupSizeCm?: number;
+  zeroingAction?: string;
+  timeSeconds?: number;
+  penalties?: number;
   score?: number;
   maxScore?: number;
   grading?: FiringGrading;
@@ -243,15 +252,35 @@ export const FIRING_PRACTICE_TYPES: FiringPracticeOption[] = [
   { name: 'Other', distance: '100 Mtrs', target: 'Figure 11', mode: 'application', rounds: 5, exerciseNo: '' },
 ];
 
+export const FIRING_REGISTER_KINDS: { id: FiringRegisterKind; label: string; help: string }[] = [
+  { id: 'classification', label: 'Classification & Annual Range Course', help: 'Hits + score + MM / FC / SS / FAIL' },
+  { id: 'grouping', label: 'Grouping & Zeroing', help: 'Group size in cm + sight adjustment' },
+  { id: 'tactical', label: 'Reflex / Tactical / Commando', help: 'Time taken + hits + penalties' },
+];
+
+export const FIRING_POSITIONS = ['Lying', 'Kneeling', 'Standing', 'Sitting'];
+export const FIRING_ZEROING = [
+  'Nil — Zeroed',
+  '1 Click Clock',
+  '2 Clicks Clock',
+  '1 Click Anti-clock',
+  '2 Clicks Anti-clock',
+  'Elevation Up',
+  'Elevation Down',
+  'Re-group required',
+];
+
 export const DEFAULT_FIRING_CONFIG: FiringConfig = {
   weaponType: '5.56mm INSAS Rifle',
-  practiceType: 'Grouping (25m)',
-  exerciseName: 'Grouping (25m)',
-  exerciseNo: 'I',
-  distance: '25 Mtrs',
-  targetType: 'Grouping Target',
-  totalRounds: 5,
-  scoringMode: 'grouping',
+  practiceType: 'Classification Fire',
+  exerciseName: 'Classification Fire',
+  exerciseNo: 'V',
+  distance: '100 Mtrs',
+  targetType: 'Figure 11',
+  totalRounds: 10,
+  scoringMode: 'application',
+  registerKind: 'classification',
+  firingPosition: 'Lying',
   detailNo: '1',
 };
 
@@ -271,15 +300,15 @@ export const FIRING_EXERCISES = FIRING_PRACTICE_TYPES.map(p => p.name);
 export const FIRING_DISTANCES = ['25 Mtrs', '50 Mtrs', '100 Mtrs', '200 Mtrs', '300 Mtrs'];
 export const FIRING_TARGETS = ['Grouping Target', 'Figure 11', 'Figure 12', 'Ring Target', 'Bullseye', 'Running Target', 'Other'];
 export const FIRING_ROUND_OPTIONS = [5, 10, 15, 18, 20];
-export const FIRING_GRADINGS: FiringGrading[] = ['Marksman', '1st Class', '2nd Class', 'Failed'];
+export const FIRING_GRADINGS: FiringGrading[] = ['MM', 'FC', 'SS', 'FAIL'];
 
 export const FIRING_REMARK_OPTIONS: { id: string; label: string }[] = [
   { id: '', label: '— Auto remarks —' },
-  { id: 'qualified_mm', label: 'Qualified — Marksman' },
-  { id: 'qualified_1st', label: 'Qualified — 1st Class' },
-  { id: 'qualified_2nd', label: 'Qualified — 2nd Class' },
-  { id: 'misfire', label: 'Misfire / weapon malfunction' },
-  { id: 'failed_retest', label: 'Failed — remedial + re-test' },
+  { id: 'qualified_mm', label: 'Qualified MM' },
+  { id: 'qualified_fc', label: 'Qualified FC' },
+  { id: 'qualified_ss', label: 'Qualified SS' },
+  { id: 'misfire', label: 'Misfire accounted to Kote' },
+  { id: 'failed_retest', label: 'FAIL — remedial + re-test' },
   { id: 'refire', label: 'Re-firing required' },
 ];
 
@@ -297,134 +326,191 @@ export const applyFiringPractice = (name: string, prev: FiringConfig): FiringCon
     targetType: p.target,
     scoringMode: p.mode,
     totalRounds: p.rounds,
+    registerKind: p.mode === 'grouping' ? 'grouping' : (name.toLowerCase().includes('snap') ? 'tactical' : 'classification'),
+  };
+};
+
+export const applyFiringRegisterKind = (kind: FiringRegisterKind, prev: FiringConfig): FiringConfig => {
+  if (kind === 'grouping') {
+    return {
+      ...prev,
+      registerKind: 'grouping',
+      scoringMode: 'grouping',
+      practiceType: 'Grouping (25m)',
+      exerciseName: 'Grouping (25m)',
+      exerciseNo: 'I',
+      distance: '25 Mtrs',
+      targetType: 'Grouping Target',
+      totalRounds: 5,
+      firingPosition: prev.firingPosition || 'Lying',
+    };
+  }
+  if (kind === 'tactical') {
+    return {
+      ...prev,
+      registerKind: 'tactical',
+      scoringMode: 'application',
+      practiceType: 'Snap Shooting',
+      exerciseName: 'Snap Shooting',
+      exerciseNo: 'VII',
+      distance: '100 Mtrs',
+      targetType: 'Figure 11',
+      totalRounds: 5,
+      firingPosition: 'Standing',
+    };
+  }
+  return {
+    ...prev,
+    registerKind: 'classification',
+    scoringMode: 'application',
+    practiceType: 'Classification Fire',
+    exerciseName: 'Classification Fire',
+    exerciseNo: 'V',
+    distance: '100 Mtrs',
+    targetType: 'Figure 11',
+    totalRounds: 10,
+    firingPosition: prev.firingPosition || 'Lying',
   };
 };
 
 export const firingScoringMode = (cfg?: FiringConfig): FiringScoringMode => {
   if (!cfg) return 'application';
+  if (cfg.registerKind === 'grouping' || cfg.scoringMode === 'grouping') return 'grouping';
   if (cfg.scoringMode) return cfg.scoringMode;
   const fromName = (cfg.practiceType || cfg.exerciseName || '').toLowerCase();
   if (fromName.includes('group')) return 'grouping';
   return 'application';
 };
 
-export const firingMaxScore = (cfg?: FiringConfig): number => {
-  if (!cfg) return 25;
-  if (firingScoringMode(cfg) === 'grouping') return 100;
-  return (cfg.totalRounds || 5) * 5;
+export const firingRegisterKind = (cfg?: FiringConfig): FiringRegisterKind => {
+  if (cfg?.registerKind) return cfg.registerKind;
+  if (firingScoringMode(cfg) === 'grouping') return 'grouping';
+  const name = (cfg?.practiceType || cfg?.exerciseName || '').toLowerCase();
+  if (name.includes('snap') || name.includes('tactical') || name.includes('reflex')) return 'tactical';
+  return 'classification';
 };
+
+export const firingMaxScore = (cfg?: FiringConfig): number => {
+  if (!cfg) return 40;
+  if (firingRegisterKind(cfg) === 'grouping') return 100;
+  return (cfg.totalRounds || 10) * 4;
+};
+
+export const resolvedFiringConfig = (cfg?: FiringConfig | null): FiringConfig =>
+  cfg ? { ...DEFAULT_FIRING_CONFIG, ...cfg } : DEFAULT_FIRING_CONFIG;
 
 export const firingPracticeLabel = (cfg?: FiringConfig): string =>
   cfg?.practiceType || cfg?.exerciseName || 'Firing practice';
 
 export const getFiringClassification = (actualScore: number, maxScore: number): string => {
-  if (maxScore <= 0) return 'Failed';
+  if (maxScore <= 0) return 'FAIL';
   const pct = (actualScore / maxScore) * 100;
-  if (pct >= 80) return 'Marksman';
-  if (pct >= 60) return '1st Class';
-  if (pct >= 50) return '2nd Class';
-  return 'Failed';
+  if (pct >= 80) return 'MM';
+  if (pct >= 60) return 'FC';
+  if (pct >= 50) return 'SS';
+  return 'FAIL';
 };
 
 export const legacyClassificationToGrading = (cls?: string): FiringGrading => {
   if (!cls) return '';
   const s = cls.toLowerCase();
-  if (s.includes('marksman') || s.startsWith('mm')) return 'Marksman';
-  if (s.includes('1st') || s.includes('first') || s.startsWith('fc')) return '1st Class';
-  if (s.includes('2nd') || s.includes('second') || s.includes('sharp') || s.startsWith('ss')) return '2nd Class';
-  if (s.includes('fail')) return 'Failed';
+  if (s === 'mm' || s.includes('marksman')) return 'MM';
+  if (s === 'fc' || s.includes('1st') || s.includes('first')) return 'FC';
+  if (s === 'ss' || s.includes('2nd') || s.includes('second') || s.includes('sharp')) return 'SS';
+  if (s.includes('fail')) return 'FAIL';
   return '';
 };
 
 export const firingClassColor = (cls: string) => {
   const g = legacyClassificationToGrading(cls) || cls;
-  if (g === 'Marksman' || String(cls).includes('Marksman')) return 'bg-yellow-500 text-white';
-  if (g === '1st Class' || String(cls).includes('First')) return 'bg-green-600 text-white';
-  if (g === '2nd Class' || String(cls).includes('Sharp') || String(cls).includes('Second')) return 'bg-blue-600 text-white';
+  if (g === 'MM') return 'bg-yellow-500 text-white';
+  if (g === 'FC') return 'bg-green-600 text-white';
+  if (g === 'SS') return 'bg-blue-600 text-white';
   return 'bg-red-600 text-white';
 };
 
 export const gradingToMarks = (grading: FiringGrading, maxScore: number): number => {
   switch (grading) {
-    case 'Marksman': return maxScore;
-    case '1st Class': return Math.round(maxScore * 0.75);
-    case '2nd Class': return Math.round(maxScore * 0.55);
+    case 'MM': return maxScore;
+    case 'FC': return Math.round(maxScore * 0.75);
+    case 'SS': return Math.round(maxScore * 0.55);
     default: return 0;
   }
 };
 
 export const computeFiringGrading = (cfg: FiringConfig, d: FiringDetails): FiringGrading => {
-  const mode = firingScoringMode(cfg);
+  const kind = firingRegisterKind(cfg);
   const rounds = Number(d.roundsFired || cfg.totalRounds || 5);
   const hits = Number(d.hitsOnTarget || 0);
-  const minHits = Math.max(3, Math.ceil(rounds * 0.6));
-  if (mode === 'grouping') {
-    const gs = Number(d.groupSizeInches ?? d.groupSize ?? 0);
-    if (hits < minHits || gs <= 0) return 'Failed';
-    if (gs <= 2) return 'Marksman';
-    if (gs <= 4) return '1st Class';
-    if (gs <= 6) return '2nd Class';
-    return 'Failed';
+  if (kind === 'grouping') {
+    const gs = Number(d.groupSizeCm ?? d.groupSizeInches ?? d.groupSize ?? 0);
+    if (gs <= 0) return 'FAIL';
+    if (gs <= 2.5) return 'MM';
+    if (gs <= 4) return 'FC';
+    if (gs <= 6) return 'SS';
+    return 'FAIL';
   }
   const max = Number(d.maxScore || firingMaxScore(cfg));
   const score = Number(d.score ?? d.actualScore ?? 0);
-  if (max <= 0) return 'Failed';
+  if (max <= 0) return 'FAIL';
   const pct = (score / max) * 100;
-  if (pct >= 80) return 'Marksman';
-  if (pct >= 60) return '1st Class';
-  if (pct >= 50) return '2nd Class';
-  return 'Failed';
+  if (pct >= 80) return 'MM';
+  if (pct >= 60) return 'FC';
+  if (pct >= 50) return 'SS';
+  if (hits <= 0 && score <= 0) return 'FAIL';
+  return 'FAIL';
 };
 
 export const firingRemarkText = (code: string, cfg: FiringConfig, d: FiringDetails): string => {
   const weapon = cfg.weaponType || 'service weapon';
   const practice = firingPracticeLabel(cfg);
   const practiceNo = cfg.exerciseNo ? `Practice No. ${cfg.exerciseNo}` : practice;
-  const gs = d.groupSizeInches ?? d.groupSize;
+  const gs = d.groupSizeCm ?? d.groupSizeInches ?? d.groupSize;
   const misfires = Number(d.misfires || 0);
-  const grading = d.grading || 'Failed';
-  const scoreBit = firingScoringMode(cfg) === 'grouping'
-    ? (gs ? `Achieved ${gs}-inch grouping.` : 'Grouping recorded.')
+  const grading = d.grading || 'FAIL';
+  const scoreBit = firingRegisterKind(cfg) === 'grouping'
+    ? (gs ? `Achieved ${gs} cm grouping.` : 'Grouping recorded.')
     : `Score ${Number(d.score ?? d.actualScore ?? 0)}/${Number(d.maxScore || firingMaxScore(cfg))}, hits ${Number(d.hitsOnTarget || 0)}.`;
 
   if (code === 'qualified_mm') {
-    return `Cleared ${practice} with ${weapon} on first attempt. ${scoreBit} Standard performance rated Excellent (Marksman). Cleared for advanced tactical firing operations.`;
+    return `Cleared ${practice} with ${weapon} on first attempt. ${scoreBit} Official grading Marksman (MM). Qualified.`;
   }
-  if (code === 'qualified_1st') {
-    return `Cleared ${practice} with ${weapon} on first attempt. ${scoreBit} Graded 1st Class. Qualified.`;
+  if (code === 'qualified_fc' || code === 'qualified_1st') {
+    return `Cleared ${practice} with ${weapon} on first attempt. ${scoreBit} Official grading First Class (FC). Qualified.`;
   }
-  if (code === 'qualified_2nd') {
-    return `Cleared ${practice} with ${weapon}. ${scoreBit} Graded 2nd Class. Qualified.`;
+  if (code === 'qualified_ss' || code === 'qualified_2nd') {
+    return `Cleared ${practice} with ${weapon}. ${scoreBit} Official grading Sharpshooter (SS). Qualified.`;
   }
   if (code === 'misfire') {
     return `During ${practiceNo}, ${misfires || 1} round${(misfires || 1) > 1 ? 's' : ''} failed to ignite due to a mechanical misfire (defective firing pin mechanism/hard primer). The round was safely extracted following standard safety delays, accounted for by the Range Officer, and returned to the Armoury Kote. A fresh replacement round was issued.`;
   }
   if (code === 'failed_retest') {
-    const reason = firingScoringMode(cfg) === 'grouping'
-      ? `Recruit failed to achieve the minimum required grouping size${gs ? ` (${gs} inches at ${cfg.distance || '25m'})` : ''}.`
+    const reason = firingRegisterKind(cfg) === 'grouping'
+      ? `Recruit failed to achieve the minimum required grouping size${gs ? ` (${gs} cm at ${cfg.distance || '25m'})` : ''}.`
       : `Recruit failed to achieve the minimum required score (${Number(d.score ?? 0)}/${Number(d.maxScore || firingMaxScore(cfg))}).`;
-    return `${reason} Exhibited poor trigger control and alignment deviations. Not Qualified. Shifted to remedial dry-firing training (Aiming Rest Exercises) for a period of 48 hours. Scheduled for re-test firing sequence.`;
+    return `${reason} Not Qualified (FAIL). Shifted to remedial dry-firing (Aiming Rest) for 48 hours. Scheduled for re-test.`;
   }
   if (code === 'refire') {
     return `Re-firing required for ${practice} with ${weapon}. ${scoreBit} Graded ${grading}.`;
   }
-  if (grading === 'Failed') {
+  if (grading === 'FAIL') {
     return firingRemarkText('failed_retest', cfg, { ...d, remarksCode: 'failed_retest' });
   }
-  if (grading === 'Marksman') return firingRemarkText('qualified_mm', cfg, d);
-  if (grading === '1st Class') return firingRemarkText('qualified_1st', cfg, d);
-  if (grading === '2nd Class') return firingRemarkText('qualified_2nd', cfg, d);
+  if (grading === 'MM') return firingRemarkText('qualified_mm', cfg, d);
+  if (grading === 'FC') return firingRemarkText('qualified_fc', cfg, d);
+  if (grading === 'SS') return firingRemarkText('qualified_ss', cfg, d);
   return '';
 };
 
-const AUTO_REMARK_CODES = new Set(['', 'qualified_mm', 'qualified_1st', 'qualified_2nd', 'failed_retest', 'misfire']);
+const AUTO_REMARK_CODES = new Set(['', 'qualified_mm', 'qualified_fc', 'qualified_ss', 'qualified_1st', 'qualified_2nd', 'failed_retest', 'misfire']);
 
 export const autoRemarkCode = (d: FiringDetails): string => {
   if (Number(d.misfires || 0) > 0) return 'misfire';
-  if (d.grading === 'Failed') return 'failed_retest';
-  if (d.grading === 'Marksman') return 'qualified_mm';
-  if (d.grading === '1st Class') return 'qualified_1st';
-  if (d.grading === '2nd Class') return 'qualified_2nd';
+  const g = legacyClassificationToGrading(d.grading) || d.grading;
+  if (g === 'FAIL') return 'failed_retest';
+  if (g === 'MM') return 'qualified_mm';
+  if (g === 'FC') return 'qualified_fc';
+  if (g === 'SS') return 'qualified_ss';
   return '';
 };
 
@@ -438,6 +524,12 @@ export const emptyFiringDetails = (cfg: FiringConfig): FiringDetails => {
     misfires: 0,
     hitsOnTarget: 0,
     groupSizeInches: 0,
+    groupSizeCm: 0,
+    firingPosition: cfg.firingPosition || 'Lying',
+    weaponNo: '',
+    zeroingAction: '',
+    timeSeconds: 0,
+    penalties: 0,
     score: 0,
     maxScore: firingMaxScore(cfg),
     grading: '',
@@ -477,9 +569,14 @@ export const applyFiringFields = (
   if (hits > hitCap) hits = hitCap;
   d.hitsOnTarget = hits;
 
+  if (d.groupSizeCm == null && (d.groupSizeInches != null || d.groupSize != null)) {
+    d.groupSizeCm = Number(d.groupSizeInches ?? d.groupSize ?? 0);
+  }
   if (d.groupSizeInches == null && d.groupSize != null) d.groupSizeInches = d.groupSize;
   if (d.score == null && d.actualScore != null) d.score = d.actualScore;
+  if (d.grading) d.grading = legacyClassificationToGrading(d.grading) || d.grading;
   if (!d.grading && d.classification) d.grading = legacyClassificationToGrading(d.classification);
+  if (!d.firingPosition) d.firingPosition = cfg.firingPosition || 'Lying';
 
   const maxScore = firingMaxScore(cfg);
   d.maxScore = maxScore;
@@ -487,15 +584,16 @@ export const applyFiringFields = (
 
   const started = Number(d.hitsOnTarget || 0) > 0
     || Number(d.score || 0) > 0
-    || Number(d.groupSizeInches || 0) > 0
-    || Number(d.actualScore || 0) > 0;
+    || Number(d.groupSizeCm || d.groupSizeInches || 0) > 0
+    || Number(d.actualScore || 0) > 0
+    || Number(d.timeSeconds || 0) > 0;
 
   if (patch.grading === undefined) {
     d.grading = started ? computeFiringGrading(cfg, d) : (d.grading || '');
   }
 
   if (patch.reFiringNeeded === undefined && (d.reFiringNeeded == null || AUTO_REMARK_CODES.has(d.remarksCode || ''))) {
-    d.reFiringNeeded = d.grading === 'Failed';
+    d.reFiringNeeded = d.grading === 'FAIL';
   }
 
   if (patch.remarksCode !== undefined) {
@@ -513,7 +611,7 @@ export const applyFiringFields = (
     d.score = Number(d.score || 0);
     d.actualScore = d.score;
   } else {
-    d.actualScore = gradingToMarks(d.grading || 'Failed', maxScore);
+    d.actualScore = gradingToMarks(d.grading || 'FAIL', maxScore);
     d.score = d.actualScore;
   }
   return d;
@@ -524,9 +622,9 @@ export const finalizeFiringResult = (cfg: FiringConfig, details: FiringDetails) 
   const max = firingMaxScore(cfg);
   const marks = firingScoringMode(cfg) === 'application'
     ? Number(d.score || 0)
-    : gradingToMarks(d.grading || 'Failed', max);
+    : gradingToMarks(d.grading || 'FAIL', max);
   const percent = max > 0 ? (marks / max) * 100 : 0;
-  const passed = d.grading !== 'Failed' && d.grading !== '';
+  const passed = d.grading === 'MM' || d.grading === 'FC' || d.grading === 'SS';
   return {
     firingDetails: d,
     marks,
@@ -546,7 +644,8 @@ export const firingConfigChips = (cfg?: FiringConfig): string[] => {
     cfg.distance,
     cfg.targetType,
     `${cfg.totalRounds} Rds issued`,
-    firingScoringMode(cfg) === 'grouping' ? 'Grouping register' : 'Application register',
+    cfg.firingPosition || '',
+    firingRegisterKind(cfg) === 'grouping' ? 'Grouping & Zeroing' : firingRegisterKind(cfg) === 'tactical' ? 'Tactical register' : 'Classification register',
   ].filter(Boolean);
 };
 

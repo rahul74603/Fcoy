@@ -24,10 +24,11 @@ import {
   gradeToMarks, BSF_PLATOONS,
   DEFAULT_FIRING_CONFIG, FIRING_WEAPONS, FIRING_PRACTICE_TYPES,
   FIRING_DISTANCES, FIRING_TARGETS, FIRING_ROUND_OPTIONS, FIRING_GRADINGS,
-  FIRING_REMARK_OPTIONS, applyFiringPractice, applyFiringFields, emptyFiringDetails,
+  FIRING_REMARK_OPTIONS, FIRING_REGISTER_KINDS, FIRING_POSITIONS, FIRING_ZEROING,
+  applyFiringPractice, applyFiringRegisterKind, applyFiringFields, emptyFiringDetails,
   finalizeFiringResult, firingConfigChips, firingMaxScore, firingScoringMode,
-  firingPracticeLabel, firingClassColor,
-  type FiringConfig, type FiringDetails,
+  firingPracticeLabel, firingClassColor, firingRegisterKind, resolvedFiringConfig,
+  type FiringConfig, type FiringDetails, type FiringRegisterKind,
 } from '../types/testRecord.types';
 import FormModal from '../components/shared/FormModal';
 import { FiringRegisterView } from '../components/FiringRegisterView';
@@ -386,15 +387,18 @@ const TestRecordsScreen: React.FC = () => {
   // RESULTS ENTRY
   // ═══════════════════════════════════════════
   const openResultsModal = (test: TestRecord, bulk: boolean = false) => {
-    setSelectedTest(test);
+    const firingCfg = test.testType === 'firing' ? resolvedFiringConfig(test.firingConfig) : test.firingConfig;
+    const readyTest = test.testType === 'firing' ? { ...test, firingConfig: firingCfg } : test;
+    setSelectedTest(readyTest);
 
     if (test.results.length > 0) {
-      if (test.testType === 'firing' && test.firingConfig) {
+      if (test.testType === 'firing') {
+        const cfg = firingCfg!;
         setResults(test.results.map(r => ({
           ...r,
           firingDetails: applyFiringFields(
-            test.firingConfig!,
-            { ...emptyFiringDetails(test.firingConfig!), ...(r.firingDetails || {}) },
+            cfg,
+            { ...emptyFiringDetails(cfg), ...(r.firingDetails || {}) },
             {},
           ),
         })));
@@ -416,8 +420,8 @@ const TestRecordsScreen: React.FC = () => {
           weakAreas: [],
         };
 
-        if (test.testType === 'firing' && test.firingConfig) {
-          base.firingDetails = emptyFiringDetails(test.firingConfig);
+        if (test.testType === 'firing') {
+          base.firingDetails = emptyFiringDetails(firingCfg || DEFAULT_FIRING_CONFIG);
         }
 
         // Add FPT events for FPT tests
@@ -533,8 +537,8 @@ const TestRecordsScreen: React.FC = () => {
   const updateFiringField = (traineeId: string, patch: Partial<FiringDetails>) => {
     setResults(prev => prev.map(r => {
       if (r.traineeId !== traineeId || r.status === 'absent') return r;
-      const cfg = selectedTest?.firingConfig;
-      if (!cfg) return r;
+      const cfg = resolvedFiringConfig(selectedTest?.firingConfig);
+      if (!selectedTest || selectedTest.testType !== 'firing') return r;
       const details = applyFiringFields(cfg, r.firingDetails || emptyFiringDetails(cfg), patch);
       const fin = finalizeFiringResult(cfg, details);
       return { ...r, ...fin };
@@ -552,8 +556,8 @@ const TestRecordsScreen: React.FC = () => {
   const handleSaveResultsSubmit = async () => {
     if (!selectedTest) return;
     let toSave = results;
-    if (selectedTest.testType === 'firing' && selectedTest.firingConfig) {
-      const cfg = selectedTest.firingConfig;
+    if (selectedTest.testType === 'firing') {
+      const cfg = resolvedFiringConfig(selectedTest.firingConfig);
       toSave = results.map(r => {
         if (r.status === 'absent') return r;
         const fin = finalizeFiringResult(cfg, r.firingDetails || emptyFiringDetails(cfg));
@@ -1508,12 +1512,31 @@ const TestRecordsScreen: React.FC = () => {
           {testForm.testType === 'firing' && (
             <div className="bg-orange-50 border-2 border-orange-300 rounded-xl p-4 space-y-3">
               <h3 className="text-xs font-black text-orange-800 uppercase">
-                STC Firing Registers — Ammunition + Classification
+                STC Range Register
               </h3>
               <p className="text-[10px] text-orange-800">
-                Range pe 2 kitabein chalti hain: Kot ammo issue register, aur classification score ledger.
-                Practice type select karo — distance, target aur scoring auto set hoga. Result me Marksman / 1st Class / 2nd Class / Failed dikhega, sirf pass-fail nahi.
+                Pehle register type chuno. Result me Marks/100 nahi — Hits, Score, Group cm, MM / FC / SS / FAIL dikhega.
               </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                {FIRING_REGISTER_KINDS.map(k => {
+                  const selected = firingRegisterKind(firingConfig) === k.id;
+                  return (
+                    <button
+                      key={k.id}
+                      type="button"
+                      onClick={() => {
+                        const next = applyFiringRegisterKind(k.id as FiringRegisterKind, firingConfig);
+                        setFiringConfig(next);
+                        setTestForm(prev => ({ ...prev, testName: next.practiceType, venue: prev.venue || 'Firing Range' }));
+                      }}
+                      className={`text-left px-3 py-2 rounded-lg border-2 ${selected ? 'bg-orange-100 border-orange-500' : 'bg-white border-orange-200'}`}
+                    >
+                      <p className="text-[10px] font-black text-orange-900">{k.label}</p>
+                      <p className="text-[9px] text-orange-700">{k.help}</p>
+                    </button>
+                  );
+                })}
+              </div>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-[10px] font-bold text-orange-700 uppercase mb-1">Weapon Type *</label>
@@ -1575,14 +1598,11 @@ const TestRecordsScreen: React.FC = () => {
               </div>
               <div className="bg-white border border-orange-200 rounded p-2 text-[10px] text-orange-800 space-y-1">
                 <p>
-                  Register: <strong>{firingScoringMode(firingConfig) === 'grouping' ? 'Grouping (group size in inches)' : `Application (hits + score / ${firingMaxScore(firingConfig)})`}</strong>
-                  {' '}· {firingConfig.weaponType} · {firingConfig.distance} · {firingConfig.targetType} · {firingConfig.totalRounds} rds
+                  Register: <strong>{FIRING_REGISTER_KINDS.find(k => k.id === firingRegisterKind(firingConfig))?.label}</strong>
+                  {' '}· {firingConfig.weaponType} · {firingConfig.distance} · {firingConfig.firingPosition} · {firingConfig.totalRounds} rds
                 </p>
                 <p>
-                  Grading auto: <strong>Marksman</strong> {firingScoringMode(firingConfig) === 'grouping' ? '≤2 in' : '≥80%'}
-                  {' · '}<strong>1st Class</strong> {firingScoringMode(firingConfig) === 'grouping' ? '≤4 in' : '≥60%'}
-                  {' · '}<strong>2nd Class</strong> {firingScoringMode(firingConfig) === 'grouping' ? '≤6 in' : '≥50%'}
-                  {' · '}<strong>Failed</strong> / Not Qualified
+                  Grading: <strong>MM</strong> Marksman · <strong>FC</strong> First Class · <strong>SS</strong> Sharpshooter · <strong>FAIL</strong> Not Qualified
                 </p>
               </div>
             </div>
@@ -1664,6 +1684,9 @@ const TestRecordsScreen: React.FC = () => {
                 All
               </button>
               {selectedInstructorIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={(structorIds.length > 0 && (
                 <button
                   type="button"
                   onClick={() => setSelectedInstructorIds([])}
@@ -1892,8 +1915,8 @@ const TestRecordsScreen: React.FC = () => {
         subtitle={
           selectedTest?.testType === 'fpt'
             ? `${selectedTest.fptEvents?.length || 0} events • Overall Pass: ${selectedTest.overallPassPercent}%`
-            : selectedTest?.testType === 'firing' && selectedTest.firingConfig
-              ? `${selectedTest.firingConfig.weaponType} · ${firingPracticeLabel(selectedTest.firingConfig)} · ${selectedTest.firingConfig.distance} · ${selectedTest.firingConfig.totalRounds} rds issued`
+            : selectedTest?.testType === 'firing'
+              ? `${resolvedFiringConfig(selectedTest.firingConfig).weaponType} · ${firingPracticeLabel(resolvedFiringConfig(selectedTest.firingConfig))} · ${resolvedFiringConfig(selectedTest.firingConfig).distance} · ${resolvedFiringConfig(selectedTest.firingConfig).totalRounds} rds`
             : `Total: ${selectedTest?.totalMarks} | Passing: ${selectedTest?.passingMarks}`
         }
         onClose={() => setShowBulkModal(false)}
@@ -1938,17 +1961,16 @@ const TestRecordsScreen: React.FC = () => {
               🏃 = Running (grade dropdown) · 🔢 = Normal (number input) · Auto grade & pass/fail calculation
             </div>
           )}
-          {selectedTest?.testType === 'firing' && selectedTest.firingConfig && (
+          {selectedTest?.testType === 'firing' && (
             <div className="bg-orange-50 border border-orange-200 rounded p-2 text-[10px] text-orange-800 space-y-1">
-              <p className="font-black uppercase">Format A ammo + Format B classification — not a single marks box</p>
-              <p>{firingConfigChips(selectedTest.firingConfig).join(' · ')}</p>
-              <p>
-                Issued / Fired / Empty cases auto-count misfires.
-                {firingScoringMode(selectedTest.firingConfig) === 'grouping'
-                  ? ' Grouping: hits + group size (inches). Marksman ≤2" · 1st ≤4" · 2nd ≤6" · else Failed.'
-                  : ` Application: hits + score / ${firingMaxScore(selectedTest.firingConfig)}. Marksman ≥80% · 1st ≥60% · 2nd ≥50% · else Failed.`}
-                {' '}Remarks dropdown = standard range-book wording.
+              <p className="font-black uppercase">
+                {firingRegisterKind(resolvedFiringConfig(selectedTest.firingConfig)) === 'grouping'
+                  ? 'Grouping & Zeroing Register — group size in cm, not marks/100'
+                  : firingRegisterKind(resolvedFiringConfig(selectedTest.firingConfig)) === 'tactical'
+                    ? 'Reflex / Tactical Register — time + hits, not marks/100'
+                    : 'Classification Register — Hits, Score, MM / FC / SS / FAIL (not marks/100)'}
               </p>
+              <p>{firingConfigChips(resolvedFiringConfig(selectedTest.firingConfig)).join(' · ')}</p>
             </div>
           )}
 
@@ -1968,23 +1990,36 @@ const TestRecordsScreen: React.FC = () => {
                         <div className="text-[8px] text-slate-400 font-normal">/{e.maxMarks} P:{e.passingMarks}</div>
                       </th>
                     ))
-                  ) : selectedTest?.testType === 'firing' && selectedTest.firingConfig ? (
-                    <>
-                      <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase">Lane</th>
-                      <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase">Issued</th>
-                      <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase">Fired</th>
-                      <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase">Cases</th>
-                      <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase">Misfire</th>
-                      <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase">Hits</th>
-                      {firingScoringMode(selectedTest.firingConfig) === 'grouping' ? (
-                        <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase whitespace-nowrap">Group "</th>
-                      ) : (
-                        <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase whitespace-nowrap">Score /{firingMaxScore(selectedTest.firingConfig)}</th>
-                      )}
-                      <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase">Grading</th>
-                      <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase">Re-fire</th>
-                      <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase min-w-[160px]">Remarks</th>
-                    </>
+                  ) : selectedTest?.testType === 'firing' ? (
+                    firingRegisterKind(resolvedFiringConfig(selectedTest.firingConfig)) === 'grouping' ? (
+                      <>
+                        <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase">Regt No</th>
+                        <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase">Wpn No</th>
+                        <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase">Rds</th>
+                        <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase">Group cm</th>
+                        <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase">Zeroing</th>
+                        <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase min-w-[140px]">Remarks</th>
+                      </>
+                    ) : firingRegisterKind(resolvedFiringConfig(selectedTest.firingConfig)) === 'tactical' ? (
+                      <>
+                        <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase">Time s</th>
+                        <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase">Hits</th>
+                        <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase">Penalties</th>
+                        <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase">Score</th>
+                        <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase min-w-[140px]">Remarks</th>
+                      </>
+                    ) : (
+                      <>
+                        <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase">Regt No</th>
+                        <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase">Wpn No</th>
+                        <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase">Position</th>
+                        <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase">Issued</th>
+                        <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase">Hits</th>
+                        <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase">Score</th>
+                        <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase">Grading</th>
+                        <th className="px-2 py-2 text-center text-[9px] font-bold text-orange-700 uppercase min-w-[140px]">RO Remarks</th>
+                      </>
+                    )
                   ) : (
                     <th className="px-2 py-2 text-center text-[9px] font-bold text-slate-500 uppercase">
                       Marks (/{selectedTest?.totalMarks})
@@ -2046,81 +2081,123 @@ const TestRecordsScreen: React.FC = () => {
                           )}
                         </td>
                       ))
-                    ) : selectedTest?.testType === 'firing' && selectedTest.firingConfig ? (
-                      <>
-                        <td className="px-1 py-1.5 text-center">
-                          <input type="text" value={r.firingDetails?.laneNo || ''} onChange={e => updateFiringField(r.traineeId, { laneNo: e.target.value })}
-                            placeholder="L" className="w-10 px-1 py-1 border border-orange-200 rounded text-center text-[10px] font-mono" />
-                        </td>
-                        <td className="px-1 py-1.5 text-center">
-                          <input type="number" min={0} value={r.firingDetails?.roundsIssued ?? selectedTest.firingConfig.totalRounds}
-                            onChange={e => updateFiringField(r.traineeId, { roundsIssued: Number(e.target.value) })}
-                            className="w-12 px-1 py-1 border border-orange-200 rounded text-center text-[10px] font-mono" />
-                        </td>
-                        <td className="px-1 py-1.5 text-center">
-                          <input type="number" min={0} value={r.firingDetails?.roundsFired ?? ''}
-                            onChange={e => updateFiringField(r.traineeId, { roundsFired: Number(e.target.value) })}
-                            className="w-12 px-1 py-1 border border-orange-200 rounded text-center text-[10px] font-mono" />
-                        </td>
-                        <td className="px-1 py-1.5 text-center">
-                          <input type="number" min={0} value={r.firingDetails?.emptyCasesReturned ?? ''}
-                            onChange={e => updateFiringField(r.traineeId, { emptyCasesReturned: Number(e.target.value) })}
-                            className="w-12 px-1 py-1 border border-orange-200 rounded text-center text-[10px] font-mono" />
-                        </td>
-                        <td className="px-1 py-1.5 text-center text-[10px] font-black text-red-700">
-                          {r.firingDetails?.misfires ?? 0}
-                        </td>
-                        <td className="px-1 py-1.5 text-center">
-                          <input type="number" min={0} value={r.firingDetails?.hitsOnTarget ?? ''}
-                            onChange={e => updateFiringField(r.traineeId, { hitsOnTarget: Number(e.target.value) })}
-                            className="w-12 px-1 py-1 border-2 border-orange-300 rounded text-center text-[10px] font-black" />
-                        </td>
-                        {firingScoringMode(selectedTest.firingConfig) === 'grouping' ? (
+                    ) : selectedTest?.testType === 'firing' ? (() => {
+                      const cfg = resolvedFiringConfig(selectedTest.firingConfig);
+                      const kind = firingRegisterKind(cfg);
+                      if (kind === 'grouping') {
+                        return (
+                          <>
+                            <td className="px-1 py-1.5 text-center text-[10px] font-mono">{r.regNo || '—'}</td>
+                            <td className="px-1 py-1.5 text-center">
+                              <input type="text" value={r.firingDetails?.weaponNo || ''} onChange={e => updateFiringField(r.traineeId, { weaponNo: e.target.value })}
+                                placeholder="W-" className="w-16 px-1 py-1 border border-orange-200 rounded text-center text-[10px] font-mono" />
+                            </td>
+                            <td className="px-1 py-1.5 text-center">
+                              <input type="number" min={0} value={r.firingDetails?.roundsIssued ?? cfg.totalRounds}
+                                onChange={e => updateFiringField(r.traineeId, { roundsIssued: Number(e.target.value), roundsFired: Number(e.target.value) })}
+                                className="w-12 px-1 py-1 border border-orange-200 rounded text-center text-[10px] font-mono" />
+                            </td>
+                            <td className="px-1 py-1.5 text-center">
+                              <input type="number" min={0} step={0.1} value={r.firingDetails?.groupSizeCm ?? ''}
+                                onChange={e => updateFiringField(r.traineeId, { groupSizeCm: Number(e.target.value) })}
+                                className="w-14 px-1 py-1 border-2 border-orange-400 rounded text-center text-[10px] font-black" />
+                            </td>
+                            <td className="px-1 py-1.5 text-center">
+                              <select value={r.firingDetails?.zeroingAction || ''} onChange={e => updateFiringField(r.traineeId, { zeroingAction: e.target.value })}
+                                className="w-[130px] text-[9px] font-bold border border-orange-200 rounded px-1 py-1">
+                                <option value="">—</option>
+                                {FIRING_ZEROING.map(z => <option key={z}>{z}</option>)}
+                              </select>
+                            </td>
+                            <td className="px-1 py-1.5">
+                              <select value={r.firingDetails?.remarksCode || ''} onChange={e => updateFiringField(r.traineeId, { remarksCode: e.target.value })}
+                                className="w-full min-w-[140px] text-[9px] font-bold border border-amber-300 bg-amber-50 rounded px-1 py-1">
+                                {FIRING_REMARK_OPTIONS.map(opt => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
+                              </select>
+                            </td>
+                          </>
+                        );
+                      }
+                      if (kind === 'tactical') {
+                        return (
+                          <>
+                            <td className="px-1 py-1.5 text-center">
+                              <input type="number" min={0} value={r.firingDetails?.timeSeconds ?? ''}
+                                onChange={e => updateFiringField(r.traineeId, { timeSeconds: Number(e.target.value) })}
+                                className="w-14 px-1 py-1 border-2 border-orange-400 rounded text-center text-[10px] font-black" />
+                            </td>
+                            <td className="px-1 py-1.5 text-center">
+                              <input type="number" min={0} value={r.firingDetails?.hitsOnTarget ?? ''}
+                                onChange={e => updateFiringField(r.traineeId, { hitsOnTarget: Number(e.target.value) })}
+                                className="w-12 px-1 py-1 border-2 border-orange-400 rounded text-center text-[10px] font-black" />
+                            </td>
+                            <td className="px-1 py-1.5 text-center">
+                              <input type="number" min={0} value={r.firingDetails?.penalties ?? ''}
+                                onChange={e => updateFiringField(r.traineeId, { penalties: Number(e.target.value) })}
+                                className="w-12 px-1 py-1 border border-orange-200 rounded text-center text-[10px] font-mono" />
+                            </td>
+                            <td className="px-1 py-1.5 text-center">
+                              <input type="number" min={0} value={r.firingDetails?.score ?? ''}
+                                onChange={e => updateFiringField(r.traineeId, { score: Number(e.target.value) })}
+                                className="w-14 px-1 py-1 border-2 border-orange-400 rounded text-center text-[10px] font-black" />
+                            </td>
+                            <td className="px-1 py-1.5">
+                              <select value={r.firingDetails?.remarksCode || ''} onChange={e => updateFiringField(r.traineeId, { remarksCode: e.target.value })}
+                                className="w-full min-w-[140px] text-[9px] font-bold border border-amber-300 bg-amber-50 rounded px-1 py-1">
+                                {FIRING_REMARK_OPTIONS.map(opt => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
+                              </select>
+                            </td>
+                          </>
+                        );
+                      }
+                      return (
+                        <>
+                          <td className="px-1 py-1.5 text-center text-[10px] font-mono">{r.regNo || '—'}</td>
                           <td className="px-1 py-1.5 text-center">
-                            <input type="number" min={0} step={0.1} value={r.firingDetails?.groupSizeInches ?? ''}
-                              onChange={e => updateFiringField(r.traineeId, { groupSizeInches: Number(e.target.value) })}
-                              className="w-14 px-1 py-1 border-2 border-orange-300 rounded text-center text-[10px] font-black" />
+                            <input type="text" value={r.firingDetails?.weaponNo || ''} onChange={e => updateFiringField(r.traineeId, { weaponNo: e.target.value })}
+                              placeholder="W-" className="w-16 px-1 py-1 border border-orange-200 rounded text-center text-[10px] font-mono" />
                           </td>
-                        ) : (
                           <td className="px-1 py-1.5 text-center">
-                            <input type="number" min={0} max={firingMaxScore(selectedTest.firingConfig)} value={r.firingDetails?.score ?? ''}
+                            <select value={r.firingDetails?.firingPosition || cfg.firingPosition || 'Lying'}
+                              onChange={e => updateFiringField(r.traineeId, { firingPosition: e.target.value })}
+                              className="w-[90px] text-[9px] font-bold border border-orange-200 rounded px-1 py-1">
+                              {FIRING_POSITIONS.map(pos => <option key={pos}>{pos}</option>)}
+                            </select>
+                          </td>
+                          <td className="px-1 py-1.5 text-center">
+                            <input type="number" min={0} value={r.firingDetails?.roundsIssued ?? cfg.totalRounds}
+                              onChange={e => updateFiringField(r.traineeId, { roundsIssued: Number(e.target.value) })}
+                              className="w-12 px-1 py-1 border border-orange-200 rounded text-center text-[10px] font-mono" />
+                          </td>
+                          <td className="px-1 py-1.5 text-center">
+                            <input type="number" min={0} value={r.firingDetails?.hitsOnTarget ?? ''}
+                              onChange={e => updateFiringField(r.traineeId, { hitsOnTarget: Number(e.target.value) })}
+                              className="w-12 px-1 py-1 border-2 border-orange-400 rounded text-center text-[10px] font-black" />
+                          </td>
+                          <td className="px-1 py-1.5 text-center">
+                            <input type="number" min={0} max={firingMaxScore(cfg)} value={r.firingDetails?.score ?? ''}
                               onChange={e => updateFiringField(r.traineeId, { score: Number(e.target.value) })}
-                              className="w-14 px-1 py-1 border-2 border-orange-300 rounded text-center text-[10px] font-black" />
+                              className="w-14 px-1 py-1 border-2 border-orange-400 rounded text-center text-[10px] font-black" />
                           </td>
-                        )}
-                        <td className="px-1 py-1.5 text-center">
-                          <select
-                            value={r.firingDetails?.grading || ''}
-                            onChange={e => updateFiringField(r.traineeId, { grading: e.target.value as FiringDetails['grading'] })}
-                            className={`w-[92px] text-[9px] font-black border-2 px-1 py-1 rounded ${r.firingDetails?.grading ? firingClassColor(r.firingDetails.grading) : 'bg-white text-slate-700 border-slate-300'}`}
-                          >
-                            <option value="">—</option>
-                            {FIRING_GRADINGS.map(g => <option key={g} value={g}>{g}</option>)}
-                          </select>
-                        </td>
-                        <td className="px-1 py-1.5 text-center">
-                          <select
-                            value={r.firingDetails?.reFiringNeeded ? 'yes' : 'no'}
-                            onChange={e => updateFiringField(r.traineeId, { reFiringNeeded: e.target.value === 'yes' })}
-                            className="w-[70px] text-[9px] font-bold border border-slate-300 rounded px-1 py-1"
-                          >
-                            <option value="no">No</option>
-                            <option value="yes">Yes</option>
-                          </select>
-                        </td>
-                        <td className="px-1 py-1.5">
-                          <select
-                            value={r.firingDetails?.remarksCode || ''}
-                            onChange={e => updateFiringField(r.traineeId, { remarksCode: e.target.value })}
-                            className="w-full min-w-[150px] text-[9px] font-bold border border-amber-300 bg-amber-50 rounded px-1 py-1"
-                          >
-                            {FIRING_REMARK_OPTIONS.map(opt => (
-                              <option key={opt.id} value={opt.id}>{opt.label}</option>
-                            ))}
-                          </select>
-                        </td>
-                      </>
-                    ) : (
+                          <td className="px-1 py-1.5 text-center">
+                            <select
+                              value={r.firingDetails?.grading || ''}
+                              onChange={e => updateFiringField(r.traineeId, { grading: e.target.value as FiringDetails['grading'] })}
+                              className={`w-[72px] text-[9px] font-black border-2 px-1 py-1 rounded ${r.firingDetails?.grading ? firingClassColor(r.firingDetails.grading) : 'bg-white text-slate-700 border-slate-300'}`}
+                            >
+                              <option value="">—</option>
+                              {FIRING_GRADINGS.map(g => <option key={g} value={g}>{g}</option>)}
+                            </select>
+                          </td>
+                          <td className="px-1 py-1.5">
+                            <select value={r.firingDetails?.remarksCode || ''} onChange={e => updateFiringField(r.traineeId, { remarksCode: e.target.value })}
+                              className="w-full min-w-[140px] text-[9px] font-bold border border-amber-300 bg-amber-50 rounded px-1 py-1">
+                              {FIRING_REMARK_OPTIONS.map(opt => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
+                            </select>
+                          </td>
+                        </>
+                      );
+                    })() : (
                       <td className="px-2 py-1.5 text-center">
                         <input
                           type="number"

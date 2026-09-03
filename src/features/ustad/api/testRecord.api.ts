@@ -10,7 +10,7 @@ import {
 import { db } from '../../../config/firebase';
 import {
   TestRecord, TestFormData, TestStatus,
-  TraineeResult, TestType, FPTEvent, FiringConfig, calculateGrade,
+  TraineeResult, TestType, FPTEvent, FiringConfig, DEFAULT_FIRING_CONFIG, calculateGrade,
 } from '../types/testRecord.types';
 
 const COLLECTION = 'training_tests';
@@ -93,8 +93,8 @@ export const createTest = async (
       payload.overallPassPercent = formData.overallPassPercent ?? 50;
     }
 
-    if (formData.testType === 'firing' && formData.firingConfig) {
-      payload.firingConfig = formData.firingConfig;
+    if (formData.testType === 'firing') {
+      payload.firingConfig = formData.firingConfig || DEFAULT_FIRING_CONFIG;
     }
 
     const docRef = await addDoc(collection(db, COLLECTION), payload);

@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  firingClassColor, firingConfigChips, firingMaxScore, firingPracticeLabel, firingScoringMode,
+  firingClassColor, firingConfigChips, firingMaxScore, firingPracticeLabel, firingRegisterKind,
   type FiringConfig, type FiringDetails,
 } from '../types/testRecord.types';
 
@@ -18,16 +18,19 @@ const Cell: React.FC<{ label: string; value: React.ReactNode; alert?: boolean }>
 
 export const FiringRegisterView: React.FC<Props> = ({ config, details }) => {
   if (!config && !details) return null;
-  const mode = firingScoringMode(config);
+  const kind = firingRegisterKind(config);
   const grading = details?.grading || details?.classification || '';
   const max = details?.maxScore || firingMaxScore(config);
   const score = details?.score ?? details?.actualScore;
-  const gs = details?.groupSizeInches ?? details?.groupSize;
+  const gs = details?.groupSizeCm ?? details?.groupSizeInches ?? details?.groupSize;
   const misfires = Number(details?.misfires || 0);
+  const qualified = grading === 'MM' || grading === 'FC' || grading === 'SS';
 
   return (
     <div className="space-y-2">
-      <p className="text-[9px] font-black text-orange-700 uppercase">STC Firing Register — original record</p>
+      <p className="text-[9px] font-black text-orange-700 uppercase">
+        {kind === 'grouping' ? 'Grouping & Zeroing Register' : kind === 'tactical' ? 'Reflex / Tactical Register' : 'Classification & Annual Range Course'}
+      </p>
 
       {config && (
         <div className="flex flex-wrap gap-1">
@@ -39,70 +42,45 @@ export const FiringRegisterView: React.FC<Props> = ({ config, details }) => {
         </div>
       )}
 
-      <div>
-        <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Format A — Ammunition Issue & Expense</p>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5">
-          <Cell label="Rounds issued" value={details?.roundsIssued ?? config?.totalRounds ?? '—'} />
-          <Cell label="Rounds fired" value={details?.roundsFired ?? '—'} />
-          <Cell label="Empty cases returned" value={details?.emptyCasesReturned ?? '—'} />
-          <Cell label="Misfires" value={misfires} alert={misfires > 0} />
-        </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5">
+        <Cell label="Weapon / No" value={[config?.weaponType, details?.weaponNo].filter(Boolean).join(' / ') || '—'} />
+        <Cell label="Practice" value={firingPracticeLabel(config)} />
+        <Cell label="Distance" value={config?.distance || '—'} />
+        <Cell label="Position" value={details?.firingPosition || config?.firingPosition || '—'} />
+        <Cell label="Ammunition issued" value={details?.roundsIssued ?? config?.totalRounds ?? '—'} />
+        <Cell label="Hits recorded" value={details?.hitsOnTarget ?? '—'} />
+        {kind === 'grouping' ? (
+          <>
+            <Cell label="Group size" value={gs != null && Number(gs) > 0 ? `${gs} cm` : '—'} />
+            <Cell label="Zeroing action" value={details?.zeroingAction || '—'} />
+          </>
+        ) : kind === 'tactical' ? (
+          <>
+            <Cell label="Time (sec)" value={details?.timeSeconds ?? '—'} />
+            <Cell label="Penalties / misses" value={details?.penalties ?? '—'} />
+          </>
+        ) : (
+          <>
+            <Cell label="Total score" value={score != null ? `${score}/${max}` : '—'} />
+            <Cell label="Misfires" value={misfires} alert={misfires > 0} />
+          </>
+        )}
       </div>
-
-      <div>
-        <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Format B — Score & Classification</p>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5">
-          <Cell label="Practice type" value={firingPracticeLabel(config)} />
-          <Cell label="Lane" value={details?.laneNo || '—'} />
-          <Cell label="Hits on target" value={details?.hitsOnTarget ?? '—'} />
-          {mode === 'grouping' ? (
-            <Cell label="Group size (inches)" value={gs != null && Number(gs) > 0 ? `${gs} in` : '—'} />
-          ) : (
-            <Cell label="Score" value={score != null ? `${score}/${max}` : '—'} />
-          )}
-        </div>
-      </div>
-
-      {details?.ringValues && details.ringValues.some(v => Number(v) > 0) && (
-        <div className="flex flex-wrap gap-1">
-          {details.ringValues.map((ring, i) => (
-            <span key={i} className={`text-[9px] font-black px-1.5 py-0.5 rounded border ${
-              ring >= 8 ? 'bg-green-50 border-green-300 text-green-700' :
-              ring >= 5 ? 'bg-amber-50 border-amber-300 text-amber-700' :
-              'bg-red-50 border-red-300 text-red-700'
-            }`}>R{i + 1}: {ring}</span>
-          ))}
-        </div>
-      )}
 
       <div className="flex flex-wrap items-center gap-2">
         {grading && (
           <span className={`inline-block text-[10px] font-black px-2 py-0.5 rounded ${firingClassColor(String(grading))}`}>
-            {grading}
-            {mode === 'application' && score != null ? ` · ${score}/${max}` : ''}
-            {mode === 'grouping' && gs ? ` · ${gs} in` : ''}
+            {grading === 'MM' ? 'MM (Marksman)' : grading === 'FC' ? 'FC (First Class)' : grading === 'SS' ? 'SS (Sharpshooter)' : grading === 'FAIL' ? 'FAIL' : grading}
           </span>
         )}
-        {details?.reFiringNeeded && (
-          <span className="text-[9px] font-black px-2 py-0.5 rounded bg-red-100 text-red-700 border border-red-200">
-            Re-firing needed
-          </span>
-        )}
-        {grading && grading !== 'Failed' && grading !== '' && (
-          <span className="text-[9px] font-black px-2 py-0.5 rounded bg-green-100 text-green-700 border border-green-200">
-            Qualified
-          </span>
-        )}
-        {grading === 'Failed' && (
-          <span className="text-[9px] font-black px-2 py-0.5 rounded bg-red-600 text-white">
-            Not Qualified
-          </span>
-        )}
+        {qualified && <span className="text-[9px] font-black px-2 py-0.5 rounded bg-green-100 text-green-700 border border-green-200">Qualified</span>}
+        {(grading === 'FAIL' || grading === 'Failed') && <span className="text-[9px] font-black px-2 py-0.5 rounded bg-red-600 text-white">Not Qualified</span>}
+        {details?.reFiringNeeded && <span className="text-[9px] font-black px-2 py-0.5 rounded bg-red-100 text-red-700 border border-red-200">Re-firing needed</span>}
       </div>
 
       {details?.remarks && (
         <div className="rounded bg-amber-50 border border-amber-200 px-2 py-1.5">
-          <p className="text-[8px] font-black text-amber-700 uppercase">Register remarks</p>
+          <p className="text-[8px] font-black text-amber-700 uppercase">Range Officer remarks</p>
           <p className="text-[10px] font-medium text-amber-950 leading-snug">{details.remarks}</p>
         </div>
       )}
