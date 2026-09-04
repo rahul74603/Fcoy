@@ -291,6 +291,53 @@ describe('Firestore rules', () => {
         authedDb(testEnv, QM).doc('subscriptionPlans/monthly')
           .set({ price: 1 }));
     });
+
+    // ── SELF-RENEWAL BYPASS (the real threat) ──
+    // The Company Commander is the party the licence bills. Rules previously
+    // said `allow write: if isCC()`, so a CC could open the browser console
+    // and grant themselves an unlimited free licence. The client-side owner
+    // key never protected anything — Firestore never saw it.
+    it('CC CANNOT extend their own licence expiry', async () => {
+      await adminDb(testEnv).doc('subscription/current').set({
+        planId: 'monthly', planName: 'Monthly', endDate: '2020-01-01T00:00:00.000Z',
+      });
+      await adminDb(testEnv).doc('config/firstRun').set({ done: true });
+      await assert.isRejected(
+        authedDb(testEnv, CC).doc('subscription/current')
+          .set({ planId: 'monthly', endDate: '2099-12-31T00:00:00.000Z' }));
+    });
+    it('CC CANNOT patch endDate with a partial update', async () => {
+      await adminDb(testEnv).doc('subscription/current').set({
+        planId: 'monthly', endDate: '2020-01-01T00:00:00.000Z',
+      });
+      await adminDb(testEnv).doc('config/firstRun').set({ done: true });
+      await assert.isRejected(
+        authedDb(testEnv, CC).doc('subscription/current')
+          .update({ endDate: '2099-12-31T00:00:00.000Z' }));
+    });
+    it('CC CANNOT delete the licence to reset to unlicensed', async () => {
+      await adminDb(testEnv).doc('subscription/current').set({ planId: 'monthly' });
+      await adminDb(testEnv).doc('config/firstRun').set({ done: true });
+      await assert.isRejected(
+        authedDb(testEnv, CC).doc('subscription/current').delete());
+    });
+    it('CC CANNOT rewrite or delete billing history', async () => {
+      await adminDb(testEnv).doc('subscriptionHistory/h1').set({ action: 'RENEWED' });
+      await assert.isRejected(
+        authedDb(testEnv, CC).doc('subscriptionHistory/h1').update({ action: 'CANCELLED' }));
+      await assert.isRejected(
+        authedDb(testEnv, CC).doc('subscriptionHistory/h1').delete());
+    });
+    // The licence must stay READABLE or the login-time listener hangs forever.
+    it('licence stays readable to a signed-in user', async () => {
+      await adminDb(testEnv).doc('subscription/current').set({ planId: 'monthly' });
+      await assert.isFulfilled(authedDb(testEnv, CLERK).doc('subscription/current').get());
+    });
+    // The setup wizard must still be able to seed the very first licence.
+    it('first-run seeding still works before config/firstRun exists', async () => {
+      await assert.isFulfilled(
+        authedDb(testEnv, CC).doc('subscription/current').set({ planId: '' }));
+    });
     it('normal user cannot write customers/bridge', async () => {
       await assert.isRejected(
         authedDb(testEnv, CLERK).doc('customers/c1').set({ x: 1 }));

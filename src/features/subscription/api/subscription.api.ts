@@ -10,6 +10,19 @@ import {
   HistoryAction, DEFAULT_PLANS, addMonths,
 } from '../types/subscription.types';
 import { verifyOwnerKey, hashOwnerKey, generateSalt } from '../utils/ownerKey';
+import { getFunctions, httpsCallable, connectFunctionsEmulator } from 'firebase/functions';
+import { app } from '../../../config/firebase';
+
+let cachedFns: ReturnType<typeof getFunctions> | null = null;
+function subscriptionFunctions() {
+  if (cachedFns) return cachedFns;
+  const region = (import.meta.env.VITE_FUNCTIONS_REGION as string | undefined) || 'us-central1';
+  cachedFns = getFunctions(app, region);
+  if (import.meta.env.VITE_USE_FUNCTIONS_EMULATOR === 'true') {
+    connectFunctionsEmulator(cachedFns, 'localhost', 5001);
+  }
+  return cachedFns;
+}
 
 // ─────────────────────────────────────────────
 // COLLECTION PATHS
@@ -118,7 +131,9 @@ export const activatePlan = async (
     updatedBy: by,
   };
 
-  await setDoc(doc(db, 'subscription', 'current'), sub);
+  try {
+    await setDoc(doc(db, 'subscription', 'current'), sub);
+  } catch (err) { throw licenceWriteError(err); }
   await logHistory({
     action, planId: plan.id, planName: plan.name, amount: plan.price,
     startDate: sub.startDate, endDate: sub.endDate,
@@ -143,7 +158,9 @@ export const extendSubscription = async (
     updatedAt: new Date().toISOString(),
     updatedBy: by,
   };
-  await setDoc(doc(db, 'subscription', 'current'), updated);
+  try {
+    await setDoc(doc(db, 'subscription', 'current'), updated);
+  } catch (err) { throw licenceWriteError(err); }
   await logHistory({
     action: 'EXTENDED', planId: sub.planId, planName: sub.planName, amount: 0,
     startDate: sub.startDate, endDate: updated.endDate,
@@ -203,94 +220,79 @@ export { CURRENT_DOC, PLANS_COL, HISTORY_COL };
 // Expired ho chuki ho to AAJ se fresh period start hota hai;
 // warna existing endDate ke aage extend hota hai.
 // ─────────────────────────────────────────────
+/**
+ * Owner renewal — ab SERVER par hota hai.
+ *
+ * Pehle ye poora flow browser me chalta tha: owner key yahin verify hoti thi
+ * aur phir client seedhe `subscription/current` par likh deta tha. Kyunki
+ * rules kehte the `allow write: if isCC()`, Company Commander — yaani wahi
+ * banda jiski licence hai — console se `endDate: 2099` likhkar khud ko
+ * unlimited licence de sakta tha. Owner key ka koi matlab nahi tha:
+ * Firestore ne wo key kabhi dekhi hi nahi, wo sirf React me check hoti thi.
+ *
+ * Ab rules har client write mana karte hain aur ye callable Admin SDK par
+ * chalta hai: key server par verify hoti hai, plan/duration/amount server ke
+ * plan document se aate hain, aur dates server clock se bante hain.
+ */
+// ═══════════════════════════════════════════════════════════════════════
+// ⚠️ CLIENT-SIDE LICENCE WRITES AB BLOCKED HAIN
+// ───────────────────────────────────────────────────────────────────────
+// firestore.rules ab `subscription/current` par har client write mana karta
+// hai. Wajah: Company Commander wahi party hai jiski licence ye document
+// control karta hai — pehle wo browser console se apni hi expiry aage
+// badha sakta tha.
+//
+// Neeche ke helpers (activatePlan / extendSubscription / cancelSubscription)
+// ab Firestore se permission-denied paayenge. Inhe jaan-boojhkar HATAYA
+// NAHI gaya — SubscriptionScreen (App Owner ka master tool) inhe use karta
+// hai, aur inka error ab saaf batata hai ki kya karna hai. Renewal ka asli
+// raasta `renewWithOwnerKey()` hai, jo server callable par jaata hai.
+// ═══════════════════════════════════════════════════════════════════════
+
+/** Rules-denied write ko samajhne layak message me badlo. */
+const licenceWriteError = (err: unknown): Error => {
+  const code = String((err as { code?: string })?.code ?? '');
+  if (code === 'permission-denied') {
+    return new Error(
+      'Licence ab client se badli nahi ja sakti (security). Owner key ke saath '
+      + 'renewal panel use karo — wo server par verify hoti hai.',
+    );
+  }
+  return err instanceof Error ? err : new Error(String(err));
+};
+
 export const renewWithOwnerKey = async (
   ownerKey: string,
   months: number,
   paymentMode: string,
   paymentRef: string,
-): Promise<{ endDate: string }> => {
-  const snap = await getDoc(doc(db, CURRENT_DOC));
-  if (!snap.exists()) throw new Error('Is app pe koi subscription nahi mili (wizard nahi chala?).');
-  const sub = snap.data() as UnitSubscription & {
-    ownerKey?: string; ownerKeyHash?: string; ownerKeySalt?: string;
-  };
-  if (!sub.ownerKeyHash && !sub.ownerKey) {
-    throw new Error('Is app pe owner key set nahi hai (purane setup ki app) — Owner se key mangwa lo.');
+): Promise<{ endDate: string; nextOwnerKey?: string }> => {
+  // Client sirf planId bhejta hai; duration/price server plan doc se aate hain.
+  const plans = await fetchPlans();
+  const plan = plans.find(p => p.durationMonths === months) ?? plans[0];
+  if (!plan) throw new Error('Koi plan define nahi mila (subscriptionPlans khaali).');
+
+  const callable = httpsCallable<
+    { planId: string; ownerKey: string; paymentMode: string; paymentRef: string },
+    { planId: string; planName: string; startDate: string; endDate: string; nextOwnerKey: string }
+  >(subscriptionFunctions(), 'renewSubscription');
+
+  try {
+    const res = await callable({ planId: plan.id, ownerKey, paymentMode, paymentRef });
+    return { endDate: res.data.endDate, nextOwnerKey: res.data.nextOwnerKey };
+  } catch (e: any) {
+    const code = e?.code ?? '';
+    if (code === 'permission-denied') throw new Error(e?.message ?? 'Owner key GALAT hai.');
+    if (code === 'invalid-argument' || code === 'failed-precondition') {
+      throw new Error(e?.message ?? 'Renewal ki details galat hain.');
+    }
+    if (code === 'unauthenticated') throw new Error('Pehle login karo.');
+    if (code === 'not-found' || /not.?found/i.test(e?.message ?? '')) {
+      throw new Error('Renewal function deploy nahi hua. Chalao: firebase deploy --only functions');
+    }
+    if (code === 'unavailable' || code === 'deadline-exceeded') {
+      throw new Error('Server abhi reachable nahi. Thodi der baad koshish karo.');
+    }
+    throw new Error(e?.message ?? 'Renew fail ho gaya');
   }
-  // 🔒 Verify against the salted hash; plaintext is never trusted going
-  // forward (and is migrated to a hash on this successful renewal).
-  const ok = await verifyOwnerKey(ownerKey, sub);
-  if (!ok) throw new Error('Owner key GALAT hai.');
-
-  // Security fields written on every owner renewal: replace any legacy
-  // plaintext key with a fresh salted hash.
-  const salt = sub.ownerKeySalt ?? generateSalt();
-  const ownerKeyHash = await hashOwnerKey(ownerKey, salt);
-  const securityFields = {
-    ownerKeyHash,
-    ownerKeySalt: salt,
-    ownerKey: deleteField(), // remove legacy plaintext if present
-  };
-
-  // ── FIRST ACTIVATION: wizard ne plan PENDING rakha tha (planId khaali) ──
-  if (!sub.planId) {
-    const plans = await fetchPlans();
-    const actPlan = plans.find(p => p.durationMonths === months) ?? plans[0];
-    if (!actPlan) throw new Error('Koi plan define nahi mila (subscriptionPlans khaali).');
-    const actStart = new Date();
-    const actEnd = addMonths(actStart, actPlan.durationMonths);
-    const actISO = actStart.toISOString();
-    const activated: UnitSubscription = {
-      ...sub,
-      planId: actPlan.id,
-      planName: actPlan.name,
-      durationMonths: actPlan.durationMonths,
-      amount: actPlan.price,
-      startDate: actISO,
-      endDate: actEnd.toISOString(),
-      paymentMode,
-      paymentRef,
-      remarks: `Owner FIRST activation: ${paymentRef}`,
-      updatedAt: actISO,
-      updatedBy: 'OWNER-RENEW',
-      ...securityFields,
-    } as unknown as UnitSubscription;
-    await setDoc(doc(db, CURRENT_DOC), activated);
-    await logHistory({
-      action: 'ACTIVATED',
-      planId: actPlan.id, planName: actPlan.name, amount: actPlan.price,
-      startDate: activated.startDate, endDate: activated.endDate,
-      remarks: `Owner first activation via key — ${paymentMode} · ${paymentRef}`,
-      by: 'OWNER-RENEW',
-    });
-    return { endDate: activated.endDate };
-  }
-
-  const now = new Date();
-  const expired = new Date(sub.endDate) < now;
-  const base = expired ? now : new Date(sub.endDate);
-  const end = addMonths(base, months);
-  const nowISO = now.toISOString();
-
-  const updated: UnitSubscription = {
-    ...sub,
-    startDate: expired ? nowISO : sub.startDate,
-    endDate: end.toISOString(),
-    paymentMode,
-    paymentRef,
-    remarks: `Owner renewal (+${months}m): ${paymentRef}`,
-    updatedAt: nowISO,
-    updatedBy: 'OWNER-RENEW',
-    ...securityFields,
-  } as unknown as UnitSubscription;
-  await setDoc(doc(db, CURRENT_DOC), updated);
-  await logHistory({
-    action: 'RENEWED',
-    planId: sub.planId, planName: sub.planName, amount: sub.amount,
-    startDate: updated.startDate, endDate: updated.endDate,
-    remarks: `Owner renewal via key (+${months}m) — ${paymentMode} · ${paymentRef}`,
-    by: 'OWNER-RENEW',
-  });
-  return { endDate: updated.endDate };
 };
-

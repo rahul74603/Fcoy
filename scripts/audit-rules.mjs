@@ -49,6 +49,38 @@ check(/match \/stock_ledgers/.test(fsRules), 'stock_ledgers collection governed'
 check(/isDevData/.test(fsRules) && /canReadDevData/.test(fsRules),
   'dev/test data isolation rules present');
 check(/match \/subscription\/\{docId\}/.test(fsRules), 'subscription write governed');
+
+// ── SUBSCRIPTION SELF-RENEWAL BYPASS ──
+// The Company Commander is the party the licence bills. If rules let a CC
+// write subscription/current, they can set endDate far in the future from
+// the browser console and licence enforcement is meaningless.
+const subBlock = fsRules.match(/match \/subscription\/\{docId\}[\s\S]*?\n    \}/);
+check(!!subBlock, 'subscription block parseable');
+if (subBlock) {
+  check(!/allow write: if isCC\(\)/.test(subBlock[0]),
+    'CC cannot self-write the licence document');
+  check(/firstRunOpen\(\)/.test(subBlock[0]),
+    'first-run seeding window preserved');
+  check(/allow read: if signedIn\(\)/.test(subBlock[0]),
+    'licence remains readable for the login-time listener');
+}
+const histBlock = fsRules.match(/match \/subscriptionHistory\/\{id\}[\s\S]*?\n    \}/);
+check(!!histBlock, 'subscriptionHistory block parseable');
+if (histBlock) {
+  check(/allow update, delete: if false/.test(histBlock[0]),
+    'billing history is append-only (nobody may rewrite it)');
+}
+
+// ── SERVER-SIDE ENFORCEMENT MUST EXIST ──
+const fnIndex = read('functions/index.js');
+check(/renewSubscription/.test(fnIndex), 'server-side renewal callable exists');
+check(/assertSubscriptionAllows/.test(fnIndex), 'server-side licence check wired into functions');
+check(/assertAiAuthorizedAndLicensed/.test(fnIndex),
+  'AI callables gated on licence (paid third-party spend)');
+const aiGated = (fnIndex.match(/assertAiAuthorizedAndLicensed\(request\)/g) || []).length;
+check(aiGated >= 4, `all AI callables licence-gated (found ${aiGated})`);
+check(/await assertSubscriptionAllows\(getDb\(\)\);[\s\S]{0,400}normalizeStaffInput/.test(fnIndex),
+  'staff provisioning gated on licence');
 check(/match \/customers/.test(fsRules), 'customers/bridge collections governed');
 
 console.log('\n■ STORAGE RULES');

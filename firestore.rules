@@ -604,22 +604,36 @@ service cloud.firestore {
     // ──────────────────────────────────────────────────────────────────
     // SUBSCRIPTION / LICENSING  (master F-Coy owner tooling)
     // ──────────────────────────────────────────────────────────────────
-    // The subscription STATE document is readable by everyone (the app
-    // shows a read-only license chip) but WRITABLE ONLY by CC.
-    // No secret owner key is stored in plaintext; the owner renewal flow
-    // verifies a salted hash (ownerKeyHash) that is not client-readable.
+    // ── SUBSCRIPTION STATE — the licence itself ──
+    // THREAT: previously `allow write: if isCC()`. The Company Commander is
+    // the very party whose licence this document controls, so a CC could
+    // simply write endDate far into the future and grant themselves an
+    // unlimited free licence straight from the browser console. The client
+    // owner-key check does not help — Firestore never saw it.
+    //
+    // Renewal now happens ONLY through the `renewSubscription` callable,
+    // which runs with Admin SDK privileges (Admin SDK bypasses these rules)
+    // and verifies the owner key server-side. So the client is denied every
+    // write path here, and the legitimate renewal flow is unaffected.
+    //
+    // firstRunOpen() is preserved: the setup wizard must be able to seed the
+    // very first document before any account exists. That window closes
+    // permanently once config/firstRun is written.
     match /subscription/{docId} {
       // Login-time listener (SubscriptionContext). Do not require isStaff()
       // or the green spinner never ends when role bootstrap is still loading.
       allow read: if signedIn();
-      allow write: if isCC()
-        || (signedIn() && firstRunOpen());
+      // No client write path. Renewal/extension/cancellation = callable only.
+      allow write: if signedIn() && firstRunOpen();
     }
+    // Licence history = the billing audit trail. It must not be rewritable by
+    // the party being billed, otherwise a tampered renewal can be hidden.
+    // Entries are written by the renewal callable (Admin SDK). Nobody may
+    // edit or delete them — not even the CC.
     match /subscriptionHistory/{id} {
       allow read: if isStaff();
-      allow create: if isCC()
-        || (signedIn() && firstRunOpen());
-      allow update, delete: if isCC();
+      allow create: if signedIn() && firstRunOpen();
+      allow update, delete: if false;
     }
     match /subscriptionPlans/{id} {
       allow read: if isStaff();

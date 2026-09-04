@@ -39,6 +39,10 @@ import {
   assertCallerIsCommander, normalizeStaffInput, provisionStaff, ProvisioningError,
   repairStaffAccount, auditStaffAccounts,
 } from './staffProvisioning.mjs';
+import {
+  assertSubscriptionAllows, normalizeRenewInput, renewSubscriptionServerSide,
+  evaluateSubscription, SubscriptionError,
+} from './subscriptionAuth.mjs';
 
 // ───────────────────────────────────────────────────────────────────────
 // LAZY firebase-admin initialization.
@@ -144,6 +148,28 @@ async function assertAiAuthorized(request) {
   return { uid, email: request.auth.token?.email || data.email || '' };
 }
 
+/**
+ * AI callables ke liye: role check + LICENCE check.
+ *
+ * AI har call par paise kharch karta hai (Groq/Gemini/Pinecone). Expired
+ * licence wali company ko ye kharcha nahi karne dena chahiye.
+ *
+ * Ye jaan-boojhkar assertAiAuthorized() ke andar NAHI daala gaya —
+ * renewSubscription bhi wahi helper use karta hai, aur agar wahan licence
+ * check lag jaata to expired company kabhi renew hi nahi kar paati
+ * (permanent lockout).
+ */
+async function assertAiAuthorizedAndLicensed(request) {
+  const caller = await assertAiAuthorized(request);
+  try {
+    await assertSubscriptionAllows(getDb());
+  } catch (err) {
+    if (err instanceof SubscriptionError) throw new HttpsError(err.code, err.message);
+    throw new HttpsError('permission-denied', 'Licence verify nahi ho paayi.');
+  }
+  return caller;
+}
+
 // Never echo a secret into an error/response.
 function safeError(status, message, err) {
   if (err) logger.warn(message, { detail: String(err?.message || err).slice(0, 300) });
@@ -174,7 +200,7 @@ async function callGroqOnce(key, body) {
 export const aiGroq = onCall(
   { secrets: GROQ_SECRETS, timeoutSeconds: 90, memory: '512MiB' },
   async (request) => {
-    await assertAiAuthorized(request);
+    await assertAiAuthorizedAndLicensed(request);
 
     const { messages, temperature = 0.1, maxTokens = 1000, responseFormat, tools, toolChoice, model } =
       request.data || {};
@@ -233,7 +259,7 @@ export const aiGroq = onCall(
 export const aiGemini = onCall(
   { secrets: GEMINI_SECRETS, timeoutSeconds: 60, memory: '256MiB' },
   async (request) => {
-    await assertAiAuthorized(request);
+    await assertAiAuthorizedAndLicensed(request);
 
     const { contents, generationConfig, systemInstruction } = request.data || {};
     if (!contents || (Array.isArray(contents) ? contents.length === 0 : !contents)) {
@@ -296,7 +322,7 @@ export const aiGemini = onCall(
 export const aiPineconeQuery = onCall(
   { secrets: PINECONE_SECRETS, timeoutSeconds: 30, memory: '256MiB' },
   async (request) => {
-    await assertAiAuthorized(request);
+    await assertAiAuthorizedAndLicensed(request);
     const { vector, topK = 5 } = request.data || {};
     if (!Array.isArray(vector) || vector.length === 0) {
       throw new HttpsError('invalid-argument', 'vector[] is required.');
@@ -332,7 +358,7 @@ export const aiPineconeQuery = onCall(
 export const aiPineconeUpsert = onCall(
   { secrets: PINECONE_SECRETS, timeoutSeconds: 120, memory: '512MiB' },
   async (request) => {
-    await assertAiAuthorized(request);
+    await assertAiAuthorizedAndLicensed(request);
     const { vectors } = request.data || {};
     if (!Array.isArray(vectors) || vectors.length === 0) {
       throw new HttpsError('invalid-argument', 'vectors[] is required.');
@@ -379,6 +405,10 @@ export const createStaffAccount = onCall(
       const callerSnap = await getDb().collection('users').doc(request.auth.uid).get();
       assertCallerIsCommander(callerSnap.exists ? callerSnap.data() : null);
 
+      // Expired licence par naye user accounts nahi ban sakte. Ye callable
+      // client-side gate ko bypass karne ka seedha raasta tha.
+      await assertSubscriptionAllows(getDb());
+
       const input = normalizeStaffInput(request.data || {});
       const result = await provisionStaff(getAdminAuth(), getDb(), { uid: caller.uid }, input);
       // Only non-sensitive identity fields are returned — never password,
@@ -386,6 +416,7 @@ export const createStaffAccount = onCall(
       return { uid: result.uid, email: result.email, role: result.role };
     } catch (err) {
       if (err instanceof HttpsError) throw err;
+      if (err instanceof SubscriptionError) throw new HttpsError(err.code, err.message);
       if (err instanceof ProvisioningError) {
         // Map the domain error code to the matching callable status.
         const statusByCode = {
@@ -465,6 +496,61 @@ export const repairStaffLogin = onCall(
       }
       logger.error('Staff login repair failed', { uid: request.auth?.uid, err: String(err) });
       throw new HttpsError('internal', 'Repair nahi ho paya.');
+    }
+  },
+);
+
+// ───────────────────────────────────────────────────────────────────────
+// SUBSCRIPTION — SERVER-SIDE ENFORCEMENT
+// ───────────────────────────────────────────────────────────────────────
+// firestore.rules ab har client write mana karte hain, isliye renewal ka
+// ek hi raasta bacha hai: ye callable. Ye Admin SDK par chalta hai (rules
+// bypass), isliye saari validation yahan hoti hai — owner key server par
+// verify hoti hai aur dates/amount server plan doc se aate hain.
+// ───────────────────────────────────────────────────────────────────────
+export const renewSubscription = onCall(
+  { timeoutSeconds: 60, memory: '256MiB' },
+  async (request) => {
+    const caller = await assertAiAuthorized(request);
+    try {
+      const callerSnap = await getDb().collection('users').doc(request.auth.uid).get();
+      assertCallerIsCommander(callerSnap.exists ? callerSnap.data() : null);
+
+      const input = normalizeRenewInput(request.data || {});
+      return await renewSubscriptionServerSide(getDb(), { uid: caller.uid }, input);
+    } catch (err) {
+      if (err instanceof HttpsError) throw err;
+      if (err instanceof SubscriptionError) throw new HttpsError(err.code, err.message);
+      if (err instanceof ProvisioningError) {
+        throw new HttpsError(
+          err.code === 'permission-denied' ? 'permission-denied' : 'internal', err.message);
+      }
+      logger.error('Subscription renewal failed', { uid: request.auth?.uid, err: String(err) });
+      throw new HttpsError('internal', 'Renewal nahi ho paya.');
+    }
+  },
+);
+
+// ───────────────────────────────────────────────────────────────────────
+// getSubscriptionStatus — server ka faisla, client ki ganit nahi.
+// UI apna gate isse cross-check kar sakta hai. Read-only.
+// ───────────────────────────────────────────────────────────────────────
+export const getSubscriptionStatus = onCall(
+  { timeoutSeconds: 30, memory: '256MiB' },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Login karo.');
+    try {
+      const snap = await getDb().collection('subscription').doc('current').get();
+      const verdict = evaluateSubscription(snap.exists ? snap.data() : null);
+      // Sirf faisla — koi owner key / hash / salt kabhi bahar nahi jaata.
+      return { allowed: verdict.allowed, status: verdict.status, reason: verdict.reason };
+    } catch {
+      // FAIL CLOSED — pata nahi chala to allow mat karo.
+      return {
+        allowed: false,
+        status: 'unknown',
+        reason: 'Licence verify nahi ho paayi.',
+      };
     }
   },
 );
