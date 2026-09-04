@@ -34,7 +34,12 @@ import type { DimensionKey } from './types/welfare.types';
 
 type TabKey = 'overview' | 'festivals' | 'roster';
 
-export const WelfareDemographicsScreen: React.FC = () => {
+interface WelfareScreenProps {
+  /** true = CC dashboard ke andar card ke roop me (apna page header/padding nahi) */
+  embedded?: boolean;
+}
+
+export const WelfareDemographicsScreen: React.FC<WelfareScreenProps> = ({ embedded = false }) => {
   const {
     filtered, facetStats, filteredStats, summary, festivalPlans,
     loading, error, filters, activeDimensions, activeFilterCount,
@@ -128,7 +133,7 @@ export const WelfareDemographicsScreen: React.FC = () => {
   }
 
   return (
-    <div className="space-y-3 pb-6">
+    <div className={embedded ? 'space-y-3' : 'space-y-3 pb-6'}>
 
       {/* ══════════ HEADER ══════════ */}
       <div className="bg-military-900 px-4 py-3 flex items-center justify-between flex-wrap gap-3">
@@ -138,7 +143,7 @@ export const WelfareDemographicsScreen: React.FC = () => {
           </div>
           <div>
             <h1 className="text-sm font-black text-white uppercase tracking-widest">
-              Welfare & Demographics Cell
+              {embedded ? 'Company Information Board' : 'Welfare & Demographics Cell'}
             </h1>
             <p className="text-[9.5px] text-military-300">
               कल्याण एवं जनसांख्यिकी — त्योहार आधारित विशेष सुविधा योजना
