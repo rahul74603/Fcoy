@@ -242,6 +242,38 @@ export const rejectTraineeUpdate = async (id: string, approvedBy: string, reason
  */
 export const approveAbsenceReport = async (update: TraineeUpdate, approvedBy: string): Promise<void> => {
   const now = new Date().toISOString();
+
+  // ── GENERAL report: koi absent/medical record nahi banta. Sirf approve
+  //    hota hai aur notice board par chala jata hai (agar clerk chahe). ──
+  const meta0 = kindMeta(update.reportKind || kindFromCategory(update.category));
+  if (update.isGeneral || meta0.general) {
+    const patchG: Record<string, any> = { status: 'approved', approvedBy, approvedAt: now };
+    try {
+      const noticeRef = await addDoc(collection(db, 'traineeNotices'), {
+        batchId: update.batchId,
+        title: `${meta0.icon} ${update.title}`,
+        content: `${update.description || ''}\n\nReported by ${update.submittedBy} · Approved by ${approvedBy}`,
+        category: 'General Notice',
+        priority: update.priority === 'urgent' ? 'urgent'
+          : update.priority === 'high' ? 'important' : 'normal',
+        targetPlatoon: 'all',
+        targetTraineeIds: [],
+        targetTraineeLabel: '',
+        publishedBy: approvedBy,
+        publishedAt: now,
+        isActive: true,
+        source: 'traineeReport',
+        traineeUpdateId: update.id,
+        createdAt: now,
+      });
+      patchG.appliedToNoticeId = noticeRef.id;
+    } catch (err) {
+      console.error('general notice sync failed', err);
+    }
+    await updateDoc(doc(db, 'traineeUpdates', update.id), patchG);
+    return;
+  }
+
   const fromDate = update.fromDate || now.split('T')[0];
   const toDate = update.toDate || fromDate;
   const absentType: AbsentTypeCode =
@@ -363,10 +395,11 @@ export const approveAbsenceReport = async (update: TraineeUpdate, approvedBy: st
   await updateDoc(doc(db, 'traineeUpdates', update.id), patch);
 };
 
-/** Senior trainee kisi bhi trainee ke liye report bhej sakta hai */
+/** Senior trainee kisi bhi trainee ke liye — ya general — report bhej sakta hai */
 export const submitReportForTrainee = async (
   data: {
-    trainee: Record<string, any>;
+    /** General report me null bhej sakte ho */
+    trainee: Record<string, any> | null;
     batchId: string;
     reportKind: AbsenceReportKind;
     fromDate: string;
@@ -378,29 +411,33 @@ export const submitReportForTrainee = async (
   submittedBy: string, submittedByRole: string, submittedByUid: string,
   onBehalf: boolean,
 ): Promise<string> => {
-  const t = data.trainee;
   const meta = kindMeta(data.reportKind);
+  const isGeneral = !!meta.general || !data.trainee;
+  const t = data.trainee;
   const now = new Date().toISOString();
   const ref = await addDoc(collection(db, 'traineeUpdates'), {
-    traineeId: t.id,
-    traineeName: t.name || '',
-    chestNo: t.chestNo || '',
-    regNo: t.regNo || '',
+    // General report kisi trainee par nahi lagti — khaali strings taaki
+    // clerk inbox ka filter/search bina crash ke chale.
+    traineeId: isGeneral ? '' : String(t?.id || ''),
+    traineeName: isGeneral ? '' : String(t?.name || ''),
+    chestNo: isGeneral ? '' : String(t?.chestNo || ''),
+    regNo: isGeneral ? '' : String(t?.regNo || ''),
     batchId: data.batchId,
-    platoon: t.platoon || '',
+    platoon: isGeneral ? '' : String(t?.platoon || ''),
     category: meta.category,
     title: data.title,
     description: data.description,
-    priority: data.reportKind === 'hospital' ? 'urgent'
-      : data.reportKind === 'sick' ? 'high' : 'medium',
+    priority: meta.priority || 'medium',
     reportKind: data.reportKind,
-    fromDate: data.fromDate,
-    toDate: data.toDate || data.fromDate,
-    activity: data.activity || meta.activity || '',
-    absentType: meta.absentType || 'A',
+    // General reports me date range ka matlab nahi — aaj ki date stamp.
+    fromDate: isGeneral ? now.split('T')[0] : data.fromDate,
+    toDate: isGeneral ? now.split('T')[0] : (data.toDate || data.fromDate),
+    activity: isGeneral ? '' : (data.activity || meta.activity || ''),
+    absentType: isGeneral ? '' : (meta.absentType || 'A'),
     status: 'pending',
-    onBehalf,
-    reportedForChestNo: t.chestNo || '',
+    isGeneral,
+    onBehalf: isGeneral ? false : onBehalf,
+    reportedForChestNo: isGeneral ? '' : String(t?.chestNo || ''),
     submittedBy, submittedByRole, submittedByUid,
     approvedBy: '', approvedAt: '',
     submittedAt: now, createdAt: now,

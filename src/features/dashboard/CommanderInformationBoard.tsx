@@ -20,7 +20,7 @@ import { ChevronDown, HeartHandshake } from 'lucide-react';
 import { WelfareDemographicsScreen } from '../welfare/WelfareDemographicsScreen';
 
 export const CommanderInformationBoard: React.FC = () => {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
 
   return (
     <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm border-l-4 border-l-rose-500">

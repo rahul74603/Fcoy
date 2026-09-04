@@ -485,11 +485,15 @@ service cloud.firestore {
           && request.resource.data.get('approvedAt', '') == ''
           // submitter identity is forced to the caller — no impersonation
           && request.resource.data.submittedByUid == request.auth.uid
-          // the report must name the trainee it is about
-          && request.resource.data.traineeId is string
-          && request.resource.data.traineeId != ''
+          // Two valid shapes:
+          //  • trainee report  → must name the trainee it is about
+          //  • general report  → isGeneral == true, no trainee attached
+          //    (mess, kit, maintenance, complaint, suggestion, urgent help)
           && request.resource.data.batchId is string
           && request.resource.data.batchId != ''
+          && ( request.resource.data.get('isGeneral', false) == true
+               || ( request.resource.data.traineeId is string
+                    && request.resource.data.traineeId != '' ) )
           // approval side-effect links must NOT be pre-set by the client
           && request.resource.data.get('appliedToAbsentId', '') == ''
           && request.resource.data.get('appliedToMedicalId', '') == ''

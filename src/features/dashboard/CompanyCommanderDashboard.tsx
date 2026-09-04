@@ -643,7 +643,7 @@ const CollapsibleSection: React.FC<{
   urgentCount?: number; defaultOpen?: boolean;
   headerRight?: React.ReactNode; children: React.ReactNode;
   accentColor?: string;
-}> = ({ title, subtitle, icon, action, urgentCount, defaultOpen = true, headerRight, children, accentColor = 'border-l-military-700' }) => {
+}> = ({ title, subtitle, icon, action, urgentCount, defaultOpen = false, headerRight, children, accentColor = 'border-l-military-700' }) => {
   const [open, setOpen] = useState(defaultOpen);
 
   return (
@@ -1326,8 +1326,8 @@ const [staffLoading, setStaffLoading] = useState(false);
   const [rosterFilter, setRosterFilter] = useState<string>('ALL');
   const [selectedTrainee, setSelectedTrainee] = useState<TraineeInfo | null>(null);
   // Dashboard sections ka open/band state (baaki CollapsibleSection ki tarah)
-  const [awayOpen, setAwayOpen] = useState(true);
-  const [platoonOpen, setPlatoonOpen] = useState(true);
+  const [awayOpen, setAwayOpen] = useState(false);
+  const [platoonOpen, setPlatoonOpen] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [lastRefresh, setLastRefresh] = useState(new Date());
@@ -2361,7 +2361,7 @@ const [staffLoading, setStaffLoading] = useState(false);
               onClick: () => go('/staff'),
             }}
             accentColor="border-l-blue-600"
-            defaultOpen={true}
+            defaultOpen={false}
           >
             {staffLoading ? (
               <div className="flex justify-center py-8">

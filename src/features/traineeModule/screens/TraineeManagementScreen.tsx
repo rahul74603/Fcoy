@@ -86,7 +86,7 @@ export const TraineeManagementScreen: React.FC = () => {
   const [noticeSearch, setNoticeSearch] = useState('');
 
   // Updates inbox filter
-  const [updFilter, setUpdFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
+  const [updFilter, setUpdFilter] = useState<'pending' | 'urgent' | 'general' | 'approved' | 'rejected' | 'all'>('pending');
   const [updSearch, setUpdSearch] = useState('');
 
   // Reject modal
@@ -347,6 +347,8 @@ export const TraineeManagementScreen: React.FC = () => {
           <div className="bg-white rounded-xl shadow p-3 flex flex-wrap items-center gap-2">
             {([
               { k: 'pending', label: 'Pending', n: updates.filter(u => u.status === 'pending').length },
+              { k: 'urgent', label: '🚨 Urgent', n: updates.filter(u => u.priority === 'urgent' && u.status === 'pending').length },
+              { k: 'general', label: '📢 General', n: updates.filter(u => u.isGeneral).length },
               { k: 'approved', label: 'Approved', n: updates.filter(u => u.status === 'approved').length },
               { k: 'rejected', label: 'Rejected', n: updates.filter(u => u.status === 'rejected').length },
               { k: 'all', label: 'All', n: updates.length },
@@ -369,11 +371,18 @@ export const TraineeManagementScreen: React.FC = () => {
           {(() => {
             const q = updSearch.trim().toLowerCase();
             const visible = updates
-              .filter(u => updFilter === 'all' || u.status === updFilter)
+              .filter(u => {
+                if (updFilter === 'all') return true;
+                if (updFilter === 'urgent') return u.priority === 'urgent' && u.status === 'pending';
+                if (updFilter === 'general') return !!u.isGeneral;
+                return u.status === updFilter;
+              })
               .filter(u => !q
                 || String(u.chestNo || '').toLowerCase().includes(q)
                 || String(u.traineeName || '').toLowerCase().includes(q)
-                || String(u.title || '').toLowerCase().includes(q));
+                || String(u.title || '').toLowerCase().includes(q)
+                || String(u.category || '').toLowerCase().includes(q)
+                || String(u.submittedBy || '').toLowerCase().includes(q));
             if (visible.length === 0) {
               return (
                 <div className="bg-white rounded-xl p-8 text-center">
@@ -388,7 +397,9 @@ export const TraineeManagementScreen: React.FC = () => {
             const cat = UPDATE_CATEGORIES.find(c => c.value === u.category) || { icon: '📝', label: u.category };
             return (
               <div key={u.id} className={`bg-white rounded-xl shadow p-4 border-l-4 ${
-                u.status === 'pending' ? 'border-yellow-500' : u.status === 'approved' ? 'border-green-500' : 'border-red-500'
+                u.status === 'pending' && u.priority === 'urgent' ? 'border-red-600 ring-2 ring-red-200'
+                  : u.status === 'pending' ? 'border-yellow-500'
+                  : u.status === 'approved' ? 'border-green-500' : 'border-red-500'
               }`}>
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
@@ -399,10 +410,16 @@ export const TraineeManagementScreen: React.FC = () => {
                       <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${PRIORITY_COLORS[u.priority]}`}>{u.priority}</span>
                     </div>
                     <p className="text-xs text-slate-600">{u.description}</p>
-                    <p className="text-[11px] font-bold text-slate-700 mt-1">
-                      Chest {u.chestNo} — {u.traineeName}{u.platoon ? ` · ${u.platoon}` : ''}
-                    </p>
-                    {(u.fromDate || u.activity) && (
+                    {u.isGeneral ? (
+                      <p className="text-[11px] font-bold text-blue-700 mt-1">
+                        📢 General report — poore group ke liye (kisi ek trainee par nahi)
+                      </p>
+                    ) : (
+                      <p className="text-[11px] font-bold text-slate-700 mt-1">
+                        Chest {u.chestNo} — {u.traineeName}{u.platoon ? ` · ${u.platoon}` : ''}
+                      </p>
+                    )}
+                    {!u.isGeneral && (u.fromDate || u.activity) && (
                       <p className="text-[10px] text-slate-500 mt-0.5">
                         {u.fromDate || ''}{u.toDate && u.toDate !== u.fromDate ? ` → ${u.toDate}` : ''}
                         {u.activity ? ` · ${u.activity}` : ''}
@@ -415,7 +432,9 @@ export const TraineeManagementScreen: React.FC = () => {
                     </p>
                     {u.status === 'approved' && (
                       <p className="text-[10px] text-green-700 font-bold mt-1">
-                        ✅ Absent list + {['S','H','R','M'].includes(u.absentType || '') ? 'MI register' : 'attendance'} + company roll + notice board — sab update ho gaya
+                        {u.isGeneral
+                          ? '✅ Notice board par publish ho gaya'
+                          : `✅ Absent list + ${['S','H','R','M'].includes(u.absentType || '') ? 'MI register' : 'attendance'} + company roll + notice board — sab update ho gaya`}
                       </p>
                     )}
                     {u.rejectionReason && <p className="text-[10px] text-red-600 mt-1">Rejection: {u.rejectionReason}</p>}
