@@ -23,6 +23,7 @@ import {
   TRAINEE_REPORT_KINDS, GENERAL_REPORT_KINDS, ABSENCE_REPORT_KINDS, STATUS_COLORS,
   type AbsenceReportKind, type TraineeUpdate,
 } from '../types/trainee.types';
+import { attnMeta, type AvailabilityEntry } from '../../shared/availability';
 
 interface Props {
   myTrainee: Record<string, any> | null;
@@ -34,6 +35,12 @@ interface Props {
   userRole?: string;
   reports: TraineeUpdate[];
   onSubmitted: () => void;
+  /**
+   * Har trainee ka aaj ka asli duty status (absent + MI register se).
+   * Isse picker me pata chalta hai kaun pehle se sick/chutti par hai —
+   * warna usi trainee ki dobara report chali jati thi.
+   */
+  availability?: Record<string, AvailabilityEntry>;
 }
 
 type Mode = 'trainee' | 'general';
@@ -42,6 +49,7 @@ const todayISO = () => new Date().toISOString().split('T')[0];
 
 export const AbsenceReportPanel: React.FC<Props> = ({
   myTrainee, trainees, batchId, userName, userUid, userRole, reports, onSubmitted,
+  availability = {},
 }) => {
   const [mode, setMode] = useState<Mode>('trainee');
   const [selected, setSelected] = useState<Record<string, any> | null>(myTrainee);
@@ -73,6 +81,15 @@ export const AbsenceReportPanel: React.FC<Props> = ({
       String(t.platoon || '').toLowerCase().includes(q)
     );
   }, [trainees, search]);
+
+  const statusOf = (t: Record<string, any> | null) => (t ? availability[t.id] : undefined);
+
+  /** Is trainee ki koi report abhi clerk ke paas pending to nahi? */
+  const pendingFor = (tid?: string) =>
+    !!tid && reports.some(r => r.traineeId === tid && r.status === 'pending');
+
+  const selectedStatus = statusOf(selected);
+  const selectedPending = pendingFor(selected?.id);
 
   const resetForm = () => { setTitle(''); setDescription(''); };
 
@@ -164,6 +181,18 @@ export const AbsenceReportPanel: React.FC<Props> = ({
                   {selected.platoon || 'Platoon —'}{selected.regNo ? ` · Reg ${selected.regNo}` : ''}
                   {myTrainee && selected.id === myTrainee.id ? ' · (aap khud)' : ' · doosre trainee ke liye'}
                 </p>
+                {selectedStatus && !selectedStatus.available && (
+                  <p className={`text-[10px] font-black mt-1 ${selectedStatus.meta.color}`}>
+                    {selectedStatus.meta.icon} Pehle se {selectedStatus.meta.shortLabel}
+                    {selectedStatus.toDate ? ` — ${selectedStatus.toDate} tak` : ''}
+                    {selectedStatus.reason ? ` · ${selectedStatus.reason}` : ''}
+                  </p>
+                )}
+                {selectedPending && (
+                  <p className="text-[10px] font-black text-amber-700 mt-0.5">
+                    ⏳ Iski ek report clerk ke paas pending hai
+                  </p>
+                )}
               </div>
               <button type="button" onClick={() => { setPickerOpen(true); setSearch(''); }}
                 className="text-[10px] font-bold text-green-800 underline whitespace-nowrap">Change</button>
@@ -195,14 +224,34 @@ export const AbsenceReportPanel: React.FC<Props> = ({
                       selected?.id === t.id ? 'bg-green-50' : ''
                     }`}
                   >
-                    <span className="text-xs font-bold text-slate-800">
+                    <span className="text-xs font-bold text-slate-800 min-w-0 truncate">
                       {t.chestNo || '—'} · {t.name || '—'}
                     </span>
-                    <span className="text-[10px] text-slate-500">{t.platoon || ''}</span>
+                    <span className="flex items-center gap-1.5 shrink-0">
+                      {pendingFor(t.id) && (
+                        <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-300">⏳ pending</span>
+                      )}
+                      {(() => {
+                        const st = availability[t.id];
+                        if (!st || st.available) return null;
+                        return (
+                          <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border ${st.meta.bgColor} ${st.meta.color}`}>
+                            {st.meta.icon} {st.meta.shortLabel}
+                          </span>
+                        );
+                      })()}
+                      <span className="text-[10px] text-slate-500">{t.platoon || ''}</span>
+                    </span>
                   </button>
                 ))}
               </div>
-              <p className="text-[10px] text-slate-400">{filtered.length} trainees</p>
+              <p className="text-[10px] text-slate-400">
+                {filtered.length} trainees
+                {(() => {
+                  const away = filtered.filter(t => availability[t.id] && !availability[t.id].available).length;
+                  return away > 0 ? ` · ${away} pehle se away (sick / chutti / hospital)` : '';
+                })()}
+              </p>
             </>
           )}
         </div>
@@ -216,6 +265,25 @@ export const AbsenceReportPanel: React.FC<Props> = ({
             <b>Trainee select karne ki zaroorat nahi.</b> Ye report poore group / company ke liye hai —
             clerk ke paas seedha pahunch jayegi. Approve hone par notice board par sabko dikh jayegi.
           </p>
+        </div>
+      )}
+
+      {/* ══ DUPLICATE WARNING — pehle se away ya pending report ══ */}
+      {mode === 'trainee' && selected && ((selectedStatus && !selectedStatus.available) || selectedPending) && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 flex items-start gap-2">
+          <AlertTriangle size={15} className="text-amber-700 flex-shrink-0 mt-0.5" />
+          <div className="text-[11px] text-amber-900">
+            <b>Dhyan do —</b>{' '}
+            {selectedStatus && !selectedStatus.available && (
+              <>
+                Chest {selected.chestNo} pehle se <b>{selectedStatus.meta.label}</b> par hai
+                {selectedStatus.toDate ? ` (${selectedStatus.toDate} tak)` : ''}
+                {selectedStatus.source === 'medical' ? ' — MI room register me darj hai.' : ' — absent register me darj hai.'}{' '}
+              </>
+            )}
+            {selectedPending && <>Iski ek report clerk ke paas <b>abhi pending</b> hai. </>}
+            Nayi report tabhi bhejo jab wajah alag ho ya duration badhani ho.
+          </div>
         </div>
       )}
 

@@ -17,6 +17,10 @@ import { getTraineeUpdates, getUpdatesSubmittedBy, getNotices, findMyTrainee } f
 import { ChangePasswordModal } from '../../../components/ChangePasswordModal';
 import { AbsenceReportPanel } from '../components/AbsenceReportPanel';
 import { FilesPanel } from '../components/FilesPanel';
+import {
+  buildAvailabilityMap, summarizeAvailability, attnMeta,
+  type AvailabilityEntry,
+} from '../../shared/availability';
 import type { TraineeUpdate, TraineeNotice } from '../types/trainee.types';
 import { UPDATE_CATEGORIES, NOTICE_CATEGORIES, PRIORITY_COLORS, STATUS_COLORS } from '../types/trainee.types';
 import { getDocs, collection, query, where } from 'firebase/firestore';
@@ -36,6 +40,8 @@ export const TraineeDashboard: React.FC = () => {
   const [updates, setUpdates] = useState<TraineeUpdate[]>([]);
   const [notices, setNotices] = useState<TraineeNotice[]>([]);
   const [attendanceData, setAttendanceData] = useState<Record<string, { present: number; absent: number; total: number }>>({});
+  // Asli duty status — absentRecords + medicalRecords + nominal roll se
+  const [availability, setAvailability] = useState<Record<string, AvailabilityEntry>>({});
   const [loading, setLoading] = useState(true);
   const isTraineeUser = user?.role === 'Trainee' || /trainee/i.test(String(user?.role ?? ''));
   const [activeTab, setActiveTab] = useState<'report' | 'platoon' | 'updates' | 'notices' | 'files' | 'myinfo'>(
@@ -70,6 +76,25 @@ export const TraineeDashboard: React.FC = () => {
         return (a.chestNo || '').localeCompare(b.chestNo || '');
       });
       setTrainees(tList);
+
+      // ── ASLI STATUS: absent + medical register se availability banao ──
+      // Sirf periodAttendance par bharosa nahi kar sakte — jis din period
+      // mark nahi hui, us din sab "available" dikhte the, chahe clerk ne
+      // sick/leave approve kar diya ho.
+      try {
+        const [absSnap, medSnap] = await Promise.all([
+          getDocs(query(collection(db, 'absentRecords'), where('batchId', '==', batch.id))),
+          getDocs(query(collection(db, 'medicalRecords'), where('batchId', '==', batch.id))),
+        ]);
+        const absList: any[] = []; absSnap.forEach(d => absList.push({ id: d.id, ...d.data() }));
+        const medList: any[] = []; medSnap.forEach(d => medList.push({ id: d.id, ...d.data() }));
+        setAvailability(buildAvailabilityMap({
+          trainees: tList, absentRecords: absList, medicalRecords: medList, date: selectedDate,
+        }));
+      } catch (err) {
+        console.error('availability load failed', err);
+        setAvailability({});
+      }
 
       // Load today's attendance
       try {
@@ -129,31 +154,42 @@ export const TraineeDashboard: React.FC = () => {
     setLoading(false);
   };
 
-  // Get platoon data
+  // Kisi bhi trainee ka aaj ka asli status — CC dashboard jaisa hi
+  const statusOf = (t: any) => availability[t.id] || {
+    code: 'P' as const, meta: attnMeta('P'), available: true,
+    reason: '', fromDate: '', toDate: '', totalDays: null,
+    source: 'roster' as const, traineeId: t.id,
+  };
+
+  // Get platoon data — availability se, periodAttendance se nahi
   const getPlatoonData = (platoon: string) => {
     const platoonTrainees = trainees.filter(t => t.platoon === platoon);
-    const platoonAttendance = platoonTrainees.map(t => attendanceData[t.id] || { present: 0, absent: 0, total: 0 });
-    const totalPresent = platoonAttendance.reduce((s, a) => s + a.present, 0);
-    const totalAbsent = platoonAttendance.reduce((s, a) => s + a.absent, 0);
-    const totalPeriods = platoonAttendance.reduce((s, a) => s + a.total, 0);
+    const sum = summarizeAvailability(platoonTrainees, availability);
     return {
       trainees: platoonTrainees,
       commander: platoonTrainees.find(t => t.isCommander || t.isPlatoonCommander),
-      totalPresent,
-      totalAbsent,
-      totalPeriods,
-      attendanceRate: totalPeriods > 0 ? Math.round((totalPresent / totalPeriods) * 100) : 0,
+      totalPresent: sum.present,
+      totalAbsent: sum.away,
+      totalPeriods: sum.total,
+      attendanceRate: sum.attendancePct,
+      byCode: sum.byCode,
     };
   };
 
-  // Overall stats
+  // Overall stats — poori company ka asli duty state
+  const summary = summarizeAvailability(trainees, availability);
   const overallStats = {
-    total: trainees.length,
-    totalPresent: Object.values(attendanceData).reduce((s, a) => s + a.present, 0),
-    totalAbsent: Object.values(attendanceData).reduce((s, a) => s + a.absent, 0),
-    totalPeriods: Object.values(attendanceData).reduce((s, a) => s + a.total, 0),
+    total: summary.total,
+    totalPresent: summary.present,
+    totalAbsent: summary.away,
+    totalPeriods: summary.total,
+    byCode: summary.byCode,
+    pct: summary.attendancePct,
   };
-  overallStats.totalPresent > 0 ? Math.round((overallStats.totalPresent / overallStats.totalPeriods) * 100) : 0;
+  // Away trainees ki list — kaun, kis wajah se, kab tak
+  const awayTrainees = trainees
+    .filter(t => !statusOf(t).available)
+    .sort((a, b) => String(a.chestNo || '').localeCompare(String(b.chestNo || ''), undefined, { numeric: true }));
 
   if (batchLoading || loading) {
     return (
@@ -222,9 +258,9 @@ export const TraineeDashboard: React.FC = () => {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
             { label: 'Total Trainees', value: overallStats.total, icon: '👥', color: 'bg-blue-50 border-blue-200' },
-            { label: 'Total Present', value: overallStats.totalPresent, icon: '✅', color: 'bg-green-50 border-green-200' },
-            { label: 'Total Absent', value: overallStats.totalAbsent, icon: '❌', color: 'bg-red-50 border-red-200' },
-            { label: 'Attendance %', value: overallStats.totalPeriods > 0 ? Math.round((overallStats.totalPresent / overallStats.totalPeriods) * 100) : 0, icon: '📊', color: 'bg-purple-50 border-purple-200', suffix: '%' },
+            { label: 'Available', value: overallStats.totalPresent, icon: '✅', color: 'bg-green-50 border-green-200' },
+            { label: 'Away / Unavailable', value: overallStats.totalAbsent, icon: '❌', color: 'bg-red-50 border-red-200' },
+            { label: 'Attendance %', value: overallStats.pct, icon: '📊', color: 'bg-purple-50 border-purple-200', suffix: '%' },
           ].map(stat => (
             <div key={stat.label} className={`${stat.color} border rounded-xl p-3 text-center`}>
               <p className="text-xl mb-1">{stat.icon}</p>
@@ -234,6 +270,29 @@ export const TraineeDashboard: React.FC = () => {
           ))}
         </div>
       </div>
+
+      {/* STATUS BREAKDOWN — MI room / chutti / hospital sab yahin dikhta hai */}
+      {overallStats.totalAbsent > 0 && (
+        <div className="max-w-6xl mx-auto px-4 mt-3">
+          <div className="bg-white border border-slate-200 rounded-xl p-3">
+            <p className="text-[10px] font-black text-slate-500 uppercase mb-2">
+              Aaj kaun duty par nahi — {selectedDate}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {(['A', 'L', 'S', 'H', 'R', 'M'] as const)
+                .filter(c => overallStats.byCode[c] > 0)
+                .map(c => {
+                  const m = attnMeta(c);
+                  return (
+                    <span key={c} className={`text-[10px] font-black px-2.5 py-1 rounded-lg border ${m.bgColor} ${m.color}`}>
+                      {m.icon} {m.shortLabel} · {overallStats.byCode[c]}
+                    </span>
+                  );
+                })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="max-w-6xl mx-auto px-4 mt-4">
@@ -269,6 +328,7 @@ export const TraineeDashboard: React.FC = () => {
             userUid={user?.uid || ''}
             userRole={user?.role || 'Trainee'}
             reports={updates}
+            availability={availability}
             onSubmitted={loadData}
           />
         )}
@@ -310,7 +370,7 @@ export const TraineeDashboard: React.FC = () => {
                     <div className="flex items-center gap-4">
                       <div className="flex gap-3 text-xs font-bold">
                         <span className="bg-green-100 text-green-700 px-2 py-1 rounded">✅ {data.totalPresent}</span>
-                        <span className="bg-red-100 text-red-700 px-2 py-1 rounded">❌ {data.totalAbsent}</span>
+                        <span className="bg-red-100 text-red-700 px-2 py-1 rounded">🚷 {data.totalAbsent}</span>
                         <span className={`${PLATOON_BG[idx]} px-2 py-1 rounded`}>📊 {data.attendanceRate}%</span>
                       </div>
                       {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
@@ -335,23 +395,28 @@ export const TraineeDashboard: React.FC = () => {
                     <div className="px-4 pb-4">
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
                         {data.trainees.map(t => {
-                          const att = attendanceData[t.id] || { present: 0, absent: 0, total: 0 };
-                          const isAbsent = att.absent > att.present;
+                          const st = statusOf(t);
                           return (
                             <div key={t.id} className={`rounded-lg border p-3 ${
-                              isAbsent ? 'border-red-200 bg-red-50/30' : 'border-slate-200 bg-white'
+                              st.available ? 'border-slate-200 bg-white' : `${st.meta.bgColor} border-l-4 ${st.meta.rowBorder}`
                             }`}>
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <p className="text-xs font-bold text-slate-800">{t.chestNo} — {t.name}</p>
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="text-xs font-bold text-slate-800 truncate">{t.chestNo} — {t.name}</p>
                                   <p className="text-[10px] text-slate-500">{t.rank || 'Trainee'}</p>
+                                  {!st.available && st.reason && (
+                                    <p className="text-[10px] font-bold text-slate-600 mt-0.5 truncate">{st.reason}</p>
+                                  )}
                                 </div>
-                                <div className="text-right">
-                                  <p className="text-[10px] font-bold">
-                                    <span className="text-green-600">{att.present}P</span> / <span className="text-red-600">{att.absent}A</span>
-                                  </p>
-                                </div>
+                                <span className={`shrink-0 text-[9px] font-black px-2 py-1 rounded-lg ${st.meta.bgColor} ${st.meta.color}`}>
+                                  {st.meta.icon} {st.meta.shortLabel}
+                                </span>
                               </div>
+                              {!st.available && (st.fromDate || st.toDate) && (
+                                <p className="text-[9px] text-slate-500 mt-1 font-mono">
+                                  {st.fromDate || '—'} → {st.toDate || 'open'}
+                                </p>
+                              )}
                             </div>
                           );
                         })}
@@ -445,9 +510,35 @@ export const TraineeDashboard: React.FC = () => {
                 </div>
               );
               const att = attendanceData[myTrainee.id] || { present: 0, absent: 0, total: 0 };
+              const myStatus = statusOf(myTrainee);
               const myUpdates = updates.filter(u => u.traineeId === myTrainee.id);
               return (
                 <>
+                  {/* Mera aaj ka duty status — clerk ne jo approve kiya wahi */}
+                  <div className={`rounded-xl border-l-4 p-4 ${myStatus.meta.bgColor} ${myStatus.meta.rowBorder}`}>
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div>
+                        <p className="text-[10px] font-black text-slate-500 uppercase">Mera aaj ka status</p>
+                        <p className={`text-lg font-black ${myStatus.meta.color}`}>
+                          {myStatus.meta.icon} {myStatus.meta.label}
+                        </p>
+                        {myStatus.reason && <p className="text-xs font-bold text-slate-600 mt-0.5">{myStatus.reason}</p>}
+                      </div>
+                      {!myStatus.available && (
+                        <div className="text-right">
+                          <p className="text-[9px] font-black text-slate-500 uppercase">Duration</p>
+                          <p className="text-xs font-mono font-bold text-slate-700">
+                            {myStatus.fromDate || '—'} → {myStatus.toDate || 'open'}
+                          </p>
+                          {myStatus.totalDays ? <p className="text-[10px] font-black text-red-600">{myStatus.totalDays} din</p> : null}
+                          <p className="text-[9px] text-slate-400 mt-0.5">
+                            {myStatus.source === 'medical' ? 'MI room register se' : myStatus.source === 'absent' ? 'Absent register se' : 'Nominal roll se'}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                   <div className="bg-white rounded-xl shadow p-4">
                     <h3 className="text-sm font-black text-slate-700 mb-3">👤 My Profile</h3>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-3">

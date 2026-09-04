@@ -12,6 +12,7 @@ import {
   collection, getDocs, query, where, orderBy
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
+import { buildAvailabilityMap, attnMeta, type AvailabilityEntry } from '../shared/availability';
 import { useBatch } from '../../contexts/BatchContext';
 import { useNavigate } from 'react-router-dom';
 import { ReportButton } from '../../components/common/ReportButton';
@@ -265,6 +266,8 @@ export const ClerkDashboard: React.FC = () => {
 
   // ── Data States ──
   const [trainees, setTrainees]             = useState<TraineeBasic[]>([]);
+  // Asli duty status — absent + MI register se (sirf attn field kaafi nahi)
+  const [availability, setAvailability]     = useState<Record<string, AvailabilityEntry>>({});
   const [todaySessions, setTodaySessions]   = useState<TodaySession[]>([]);
   const [weeklyProgram, setWeeklyProgram]   = useState<WeeklyProgram | null>(null);
   const [udhariRecords, setUdhariRecords]   = useState<UdhariRecord[]>([]);
@@ -299,7 +302,21 @@ const navigate = useNavigate();
       const tSnap = await getDocs(tq);
       const tList: TraineeBasic[] = [];
       tSnap.forEach(d => tList.push({ id: d.id, ...d.data() } as TraineeBasic));
-      setTrainees(tList.filter(isOnStrength));
+      const onStrength = tList.filter(isOnStrength);
+      setTrainees(onStrength);
+
+      // ── Availability: absent + medical register se asli status ──
+      try {
+        const [absSnap, medSnap] = await Promise.all([
+          getDocs(query(collection(db, 'absentRecords'), where('batchId', '==', activeBatch.id))),
+          getDocs(query(collection(db, 'medicalRecords'), where('batchId', '==', activeBatch.id))),
+        ]);
+        const absList: any[] = []; absSnap.forEach(d => absList.push({ id: d.id, ...d.data() }));
+        const medList: any[] = []; medSnap.forEach(d => medList.push({ id: d.id, ...d.data() }));
+        setAvailability(buildAvailabilityMap({ trainees: onStrength, absentRecords: absList, medicalRecords: medList }));
+      } catch (err) {
+        console.error('availability load failed', err);
+      }
 
       // 2. Fetch weekly programs — find current week's program
       const wpq = query(
@@ -397,8 +414,14 @@ const navigate = useNavigate();
 
   // ── Computed Data ──
   const totalTrainees   = trainees.length;
-  const presentTrainees = trainees.filter(t => t.attn === 'P' || !t.attn);
-  const absentTrainees  = trainees.filter(t => t.attn && ABSENT_TYPES.includes(t.attn));
+  const statusOf = (t: TraineeBasic) => availability[t.id];
+  const isAvailable = (t: TraineeBasic) => {
+    const st = statusOf(t);
+    if (st) return st.available;
+    return t.attn === 'P' || !t.attn;   // data load hone tak purana behaviour
+  };
+  const presentTrainees = trainees.filter(isAvailable);
+  const absentTrainees  = trainees.filter(t => !isAvailable(t));
 
   const failedExam      = trainees.filter(t => t.weeklyExamResult === 'Fail');
   const fptFailed       = trainees.filter(t => t.fptResult === 'Fail');
@@ -756,10 +779,12 @@ const navigate = useNavigate();
           {
             label: 'Status',
             render: t => {
-              const attn = t.attn || 'A';
+              const st = statusOf(t);
+              const m = st ? st.meta : attnMeta(t.attn || 'A');
               return (
-                <span className={`px-2 py-0.5 text-[10px] font-bold border ${ABSENT_COLORS[attn] || ABSENT_COLORS['A']}`}>
-                  {ABSENT_LABELS[attn] || attn}
+                <span className={`px-2 py-0.5 text-[10px] font-bold border ${m.bgColor} ${m.color}`}
+                  title={st?.reason || ''}>
+                  {m.icon} {m.shortLabel}
                 </span>
               );
             }

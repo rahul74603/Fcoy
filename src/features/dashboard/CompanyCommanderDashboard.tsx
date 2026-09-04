@@ -15,6 +15,7 @@ import {
   collection, getDocs, query, where
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
+import { buildAvailabilityMap } from '../shared/availability';
 import { toJSDate } from '../../utils/date.utils';
 import { useBatch } from '../../contexts/BatchContext';
 import { BatchProgressOverview } from './BatchProgressOverview';
@@ -1584,7 +1585,19 @@ const [staffLoading, setStaffLoading] = useState(false);
     return 'S';
   };
 
+  // Shared availability engine — trainee dashboard, clerk dashboard aur
+  // yahan sab ek hi hisaab lagate hain: medical > absent > nominal roll,
+  // aur date range khatam hone par trainee wapas available.
+  const availabilityMap = useMemo(
+    () => buildAvailabilityMap({
+      trainees, absentRecords, medicalRecords: allMedical,
+    }),
+    [trainees, absentRecords, allMedical],
+  );
+
   const getDashboardAttnCode = (trainee: TraineeInfo): 'P' | 'A' | 'S' | 'H' | 'L' | 'R' | 'M' => {
+    const entry = availabilityMap[trainee.id];
+    if (entry) return entry.code;
     const activeMed = allMedical.find((m: any) => m.traineeId === trainee.id && m.status === 'Active');
     if (activeMed) return getMedicalAttnCode(activeMed.category);
     return getTraineeAttnCode(trainee.attn);
