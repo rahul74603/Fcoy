@@ -19,6 +19,7 @@ import {
   assertSubscriptionAllows,
   SubscriptionError,
   GRACE_DAYS,
+  backfillEndMillis,
 } from '../subscriptionAuth.mjs';
 
 const iso = (d) => d.toISOString();
@@ -355,4 +356,123 @@ test('renewal is impossible when no licence exists at all', async () => {
       normalizeRenewInput({ planId: 'monthly', ownerKey: 'K' })),
     (e) => e instanceof SubscriptionError && e.code === 'failed-precondition',
   );
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// RULES PARITY — licenceWritable() in firestore.rules
+// ───────────────────────────────────────────────────────────────────────
+// The rules cannot be executed here (no Java/emulator), so this mirrors the
+// rule's arithmetic exactly and asserts the constant and the boundary agree
+// with the server. The emulator suite proves the rule itself.
+//   rule: !exists || !('endMillis' in d) || !(d.endMillis is number)
+//         || d.endMillis + 2592000000 > request.time.toMillis()
+// ═══════════════════════════════════════════════════════════════════════
+
+import { readFileSync } from 'node:fs';
+
+const RULES = readFileSync(new URL('../../firestore.rules', import.meta.url), 'utf8');
+
+/** Faithful JS re-implementation of the rule expression. */
+const ruleWritable = (doc, nowMs) => {
+  if (!doc) return true;                               // !exists
+  if (!('endMillis' in doc)) return true;              // legacy document
+  if (typeof doc.endMillis !== 'number') return true;  // not a number
+  return doc.endMillis + 2592000000 > nowMs;
+};
+
+test('rules grace constant equals GRACE_DAYS used by the server', () => {
+  assert.match(RULES, /2592000000/);
+  assert.equal(2592000000, GRACE_DAYS * 24 * 60 * 60 * 1000);
+});
+
+test('rule parity: active licence is writable', () => {
+  const now = Date.now();
+  assert.equal(ruleWritable({ endMillis: now + 60 * 86400000 }, now), true);
+});
+
+test('rule parity: inside grace is writable', () => {
+  const now = Date.now();
+  assert.equal(ruleWritable({ endMillis: now - 5 * 86400000 }, now), true);
+});
+
+test('rule parity: past the grace window is NOT writable', () => {
+  const now = Date.now();
+  assert.equal(ruleWritable({ endMillis: now - 40 * 86400000 }, now), false);
+});
+
+test('rule parity: exact grace boundary', () => {
+  const now = Date.now();
+  // one minute inside the window → writable
+  assert.equal(ruleWritable({ endMillis: now - 2592000000 + 60000 }, now), true);
+  // exactly on the boundary → not writable (strict >)
+  assert.equal(ruleWritable({ endMillis: now - 2592000000 }, now), false);
+});
+
+test('rule parity: legacy licence without endMillis stays writable', () => {
+  assert.equal(ruleWritable({ endDate: '2020-01-01T00:00:00.000Z' }, Date.now()), true);
+});
+
+test('rule parity: no licence at all stays writable (subscription disabled)', () => {
+  assert.equal(ruleWritable(null, Date.now()), true);
+});
+
+test('rule parity: non-numeric endMillis stays writable (cannot evaluate)', () => {
+  assert.equal(ruleWritable({ endMillis: 'nope' }, Date.now()), true);
+});
+
+test('rule and server agree: expired for one is expired for the other', () => {
+  const now = new Date();
+  const past = new Date(now.getTime() - 40 * 86400000);
+  const doc = { planId: 'monthly', endDate: past.toISOString(), endMillis: past.getTime() };
+  assert.equal(ruleWritable(doc, now.getTime()), false);
+  assert.equal(evaluateSubscription(doc, now).allowed, false);
+});
+
+test('rule and server agree: grace is allowed by both', () => {
+  const now = new Date();
+  const past = new Date(now.getTime() - 5 * 86400000);
+  const doc = { planId: 'monthly', endDate: past.toISOString(), endMillis: past.getTime() };
+  assert.equal(ruleWritable(doc, now.getTime()), true);
+  assert.equal(evaluateSubscription(doc, now).allowed, true);
+});
+
+// ── BACKFILL ──
+test('backfill adds endMillis to a legacy licence', async () => {
+  let written = null;
+  const db = {
+    collection: () => ({
+      doc: () => ({
+        get: async () => ({ exists: true, data: () => ({ endDate: '2026-01-01T00:00:00.000Z' }) }),
+        set: async (d) => { written = d; },
+      }),
+    }),
+  };
+  const res = await backfillEndMillis(db);
+  assert.equal(res.updated, true);
+  assert.equal(written.endMillis, new Date('2026-01-01T00:00:00.000Z').getTime());
+});
+
+test('backfill is idempotent', async () => {
+  const db = {
+    collection: () => ({
+      doc: () => ({
+        get: async () => ({ exists: true, data: () => ({ endMillis: 123 }) }),
+        set: async () => { throw new Error('must not write'); },
+      }),
+    }),
+  };
+  assert.equal((await backfillEndMillis(db)).updated, false);
+});
+
+test('renewal writes endMillis matching endDate', async () => {
+  const salt = generateSalt();
+  const db = fakeDb({
+    current: sub(iso(daysFromNow(-5)), { ownerKeyHash: hashOwnerKey('K', salt), ownerKeySalt: salt }),
+    plan: { name: 'Monthly', durationMonths: 1, price: 1499, isActive: true },
+  });
+  await renewSubscriptionServerSide(db, CALLER,
+    normalizeRenewInput({ planId: 'monthly', ownerKey: 'K' }));
+  const w = db.writes.find(x => x.planId);
+  assert.equal(typeof w.endMillis, 'number');
+  assert.equal(w.endMillis, new Date(w.endDate).getTime());
 });

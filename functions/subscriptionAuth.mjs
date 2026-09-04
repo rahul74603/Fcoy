@@ -264,6 +264,12 @@ export async function renewSubscriptionServerSide(adminDb, caller, input, now = 
     amount: Number(plan.price) || 0,
     startDate: start.toISOString(),
     endDate: end.toISOString(),
+    // Machine-readable mirror of endDate. Firestore rules cannot parse an
+    // ISO string into a timestamp (no Date.parse equivalent), so the rules
+    // compare this epoch-ms field against request.time.toMillis() to decide
+    // whether an expired company is read-only. endDate stays the UI field;
+    // both are always written together, server-side.
+    endMillis: end.getTime(),
     paymentMode: input.paymentMode,
     paymentRef: input.paymentRef,
     remarks: input.remarks,
@@ -297,4 +303,34 @@ export async function renewSubscriptionServerSide(adminDb, caller, input, now = 
     endDate: sub.endDate,
     nextOwnerKey: rotatedKey,
   };
+}
+
+/**
+ * endMillis backfill.
+ *
+ * Licences written before the read-only-degradation change have endDate but
+ * no endMillis. licenceWritable() treats a missing endMillis as "cannot
+ * evaluate → allow", so such a company keeps working (fail-open by design —
+ * clients cannot write subscription/current anyway, so the field cannot be
+ * stripped to unlock writes). This backfill turns enforcement on for those
+ * documents without waiting for the next renewal.
+ *
+ * Idempotent: if endMillis is already present and correct, nothing happens.
+ */
+export async function backfillEndMillis(adminDb) {
+  const ref = adminDb.collection('subscription').doc('current');
+  const snap = await ref.get();
+  if (!snap.exists) return { updated: false, reason: 'no licence document' };
+
+  const data = snap.data() || {};
+  if (typeof data.endMillis === 'number') {
+    return { updated: false, reason: 'already present' };
+  }
+  if (!data.endDate) return { updated: false, reason: 'no endDate to convert' };
+
+  const ms = new Date(data.endDate).getTime();
+  if (Number.isNaN(ms)) return { updated: false, reason: 'endDate is malformed' };
+
+  await ref.set({ endMillis: ms }, { merge: true });
+  return { updated: true, endMillis: ms };
 }

@@ -107,6 +107,63 @@ service cloud.firestore {
     }
     function isActive()  { return userDocExists() && userDoc().isActive != false; }
 
+    // ══════════════════════════════════════════════════════════════════
+    // SUBSCRIPTION — READ-ONLY DEGRADATION WHEN EXPIRED
+    // ──────────────────────────────────────────────────────────────────
+    // Policy: an expired company KEEPS its data and can still read
+    // everything, log in and renew — but normal business MUTATIONS stop.
+    //   active / expiring / grace  → writes allowed
+    //   expired                    → writes DENIED (reads unaffected)
+    //   no licence configured      → writes allowed (see below)
+    //
+    // 'none' stays writable ON PURPOSE. Company deployments ship with
+    // VITE_SUBSCRIPTION_ENABLED=false and never create a licence document;
+    // denying that case would brick every existing install on day one. This
+    // mirrors evaluateSubscription() in functions/subscriptionAuth.mjs so the
+    // rules and the server enforce one identical policy.
+    //
+    // WHY endMillis AND NOT endDate:
+    // endDate is an ISO *string*. The rules language cannot parse a string
+    // into a timestamp — there is no equivalent of Date.parse(). So the
+    // server also writes endMillis (epoch ms), which rules CAN compare
+    // against request.time.toMillis(). endDate remains the human/UI field;
+    // endMillis is the machine field. Both are written together, server-side.
+    //
+    // MISSING endMillis = a licence document written before this change.
+    // It is treated as "cannot evaluate → allow", which is safe here because
+    // clients can no longer write subscription/current at all (b839025) — an
+    // attacker cannot strip the field to unlock writes. The first server-side
+    // renewal backfills it.
+    //
+    // COST: one extra get() per protected write. Firestore caches repeated
+    // get() of the SAME path within one rule evaluation, so this is a single
+    // lookup per request, not one per helper call — exactly the pattern the
+    // role helpers above already rely on. Access-call limits (10 per
+    // single-document request, 20 per batch/transaction) are not at risk:
+    // this adds one distinct document to the existing users/ lookup.
+    // Path is written inline (not returned from a helper) to match the
+    // userDoc() pattern already proven in this ruleset.
+    function licenceData() {
+      return get(/databases/$(database)/documents/subscription/current).data;
+    }
+    function licenceExists() {
+      return exists(/databases/$(database)/documents/subscription/current);
+    }
+    // GRACE_DAYS = 30, same constant as the app and functions/subscriptionAuth.mjs.
+    // 30 * 24 * 60 * 60 * 1000 written out, since rules have no named consts.
+    function licenceGraceMs() { return 2592000000; }
+
+    // `is number` (not `is int`): endMillis comes from JS Date.getTime(), and
+    // Firestore may store a whole number as either an integer or a double.
+    // A non-numeric or absent value means "cannot evaluate" → allow, which is
+    // safe because clients can no longer write subscription/current at all.
+    function licenceWritable() {
+      return !licenceExists()
+        || !('endMillis' in licenceData())
+        || !(licenceData().endMillis is number)
+        || licenceData().endMillis + licenceGraceMs() > request.time.toMillis();
+    }
+
     // Management tier = CC or Clerk (per existing business rules)
     function canManage() { return isActive() && (isCC() || isClerk()); }
     // Finance / inventory tier = CC or Quarter Master
@@ -146,8 +203,16 @@ service cloud.firestore {
     //  • the writer is CC / a developer sandbox account.
     // This prevents a regular user from either creating dev-tagged data or
     // writing into the dev/test sandbox.
+    // Every business-data write in this ruleset already passes through
+    // canWriteDevData() (75 call sites). Adding the licence gate HERE — not
+    // on each collection — makes an expired company read-only across the
+    // whole ERP in one place, with no chance of missing a collection.
+    //
+    // Deliberately NOT applied to: users, config, unitConfig, subscription*,
+    // fcm_tokens, auditLogs / staff_activity_logs / activity_logs. Those are
+    // login/bootstrap, renewal and append-only audit paths — see GROUP A.
     function canWriteDevData() {
-      return !requestIsDev() || canUseDevSandbox();
+      return (!requestIsDev() || canUseDevSandbox()) && licenceWritable();
     }
 
     // ──────────────────────────────────────────────────────────────────
@@ -220,7 +285,7 @@ service cloud.firestore {
       allow create: if canManage() && canWriteDevData();
       allow update: if canManage() && canWriteDevData()
                     && (!requestIsDev() || canUseDevSandbox());
-      allow delete: if isCC();
+      allow delete: if isCC() && licenceWritable();
     }
 
     match /config/{docId} {
@@ -259,7 +324,7 @@ service cloud.firestore {
       allow read: if isStaff() && canReadDevData();
       allow create: if canManage() && canWriteDevData();
       allow update: if canManage() && canWriteDevData();
-      allow delete: if isCC();
+      allow delete: if isCC() && licenceWritable();
     }
 
     // Staff attendance — managed by CC/Clerk; Ustad may view.
@@ -325,7 +390,7 @@ service cloud.firestore {
       );
 
       // Only CC may delete a leave record.
-      allow delete: if isCC();
+      allow delete: if isCC() && licenceWritable();
     }
 
     match /leave_types/{id} {
@@ -373,7 +438,7 @@ service cloud.firestore {
       allow read: if isTrainee() || (isStaff() && canReadDevData());
       allow create: if (canManage() || canFinance()) && canWriteDevData();
       allow update: if (canManage() || canFinance()) && canWriteDevData();
-      allow delete: if isCC();
+      allow delete: if isCC() && licenceWritable();
     }
 
     // Absence / medical records — clerk operations; staff view.
@@ -395,7 +460,7 @@ service cloud.firestore {
       allow read: if isTrainee() || (isStaff() && canReadDevData());
       allow create: if canManage() && canWriteDevData();
       allow update: if canManage() && canWriteDevData();
-      allow delete: if isCC();
+      allow delete: if isCC() && licenceWritable();
     }
 
     // FPT / weekly tests live in training_tests (Test Records screen).
@@ -535,7 +600,7 @@ service cloud.firestore {
 
       // Approval / rejection is a Clerk-CC-only privilege.
       allow update: if canManage() && canWriteDevData();
-      allow delete: if isCC();
+      allow delete: if isCC() && licenceWritable();
     }
 
 
@@ -585,7 +650,7 @@ service cloud.firestore {
       allow read: if isStaff() && canReadDevData();
       allow create: if canFinance() && canWriteDevData();
       allow update: if canFinance() && canWriteDevData();
-      allow delete: if isCC();
+      allow delete: if isCC() && licenceWritable();
     }
 
     // Authoritative stock counters used for concurrent-issue protection.
@@ -594,11 +659,13 @@ service cloud.firestore {
     match /stock_ledgers/{itemKey} {
       allow read: if isStaff();
       allow write: if canFinance()
+        && licenceWritable()
         && (request.resource.data.balance is number
             && request.resource.data.balance >= 0);
       match /sizes/{size} {
         allow read: if isStaff();
         allow write: if canFinance()
+          && licenceWritable()
           && (request.resource.data.balance is number
               && request.resource.data.balance >= 0);
       }
@@ -726,12 +793,12 @@ service cloud.firestore {
       // D3 fix: the no-draft-regression rule above means a submitted
       // inspection can never be made draft, so it cannot be deleted here.
       // Dev-tagged records may only be deleted by CC/developer accounts.
-      allow delete: if isCC()
+      allow delete: if licenceWritable() && (isCC()
         || (isActive() && isSO()
             && resource.data.batchId in userDoc().assignedBatchIds
             && resource.data.createdBy == request.auth.uid
             && resource.data.status == 'draft'
-            && (!resourceIsDev() || canUseDevSandbox()));
+            && (!resourceIsDev() || canUseDevSandbox())));
     }
 
     match /findings/{id} {
@@ -810,12 +877,12 @@ service cloud.firestore {
       // D3: a closed finding can never be reverted to open/rework (above),
       // so a verified finding cannot be deleted either. Dev-tagged records
       // are restricted to CC/developer accounts.
-      allow delete: if isCC()
+      allow delete: if licenceWritable() && (isCC()
         || (isActive() && isSO()
             && resource.data.batchId in userDoc().assignedBatchIds
             && resource.data.createdBy == request.auth.uid
             && resource.data.status in ['open', 'rework']
-            && (!resourceIsDev() || canUseDevSandbox()));
+            && (!resourceIsDev() || canUseDevSandbox())));
     }
 
     // ──────────────────────────────────────────────────────────────────

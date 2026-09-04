@@ -41,7 +41,7 @@ import {
 } from './staffProvisioning.mjs';
 import {
   assertSubscriptionAllows, normalizeRenewInput, renewSubscriptionServerSide,
-  evaluateSubscription, SubscriptionError,
+  evaluateSubscription, SubscriptionError, backfillEndMillis,
 } from './subscriptionAuth.mjs';
 
 // ───────────────────────────────────────────────────────────────────────
@@ -551,6 +551,31 @@ export const getSubscriptionStatus = onCall(
         status: 'unknown',
         reason: 'Licence verify nahi ho paayi.',
       };
+    }
+  },
+);
+
+// ───────────────────────────────────────────────────────────────────────
+// backfillSubscriptionEndMillis — one-shot maintenance, CC only.
+// Adds endMillis to a licence written before read-only degradation existed,
+// so the Firestore rules can evaluate it. Idempotent and safe to re-run.
+// ───────────────────────────────────────────────────────────────────────
+export const backfillSubscriptionEndMillis = onCall(
+  { timeoutSeconds: 60, memory: '256MiB' },
+  async (request) => {
+    await assertAiAuthorized(request);
+    try {
+      const callerSnap = await getDb().collection('users').doc(request.auth.uid).get();
+      assertCallerIsCommander(callerSnap.exists ? callerSnap.data() : null);
+      return await backfillEndMillis(getDb());
+    } catch (err) {
+      if (err instanceof HttpsError) throw err;
+      if (err instanceof ProvisioningError) {
+        throw new HttpsError(
+          err.code === 'permission-denied' ? 'permission-denied' : 'internal', err.message);
+      }
+      logger.error('endMillis backfill failed', { uid: request.auth?.uid, err: String(err) });
+      throw new HttpsError('internal', 'Backfill nahi ho paya.');
     }
   },
 );

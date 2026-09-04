@@ -967,4 +967,183 @@ describe('Firestore rules', () => {
         }));
     });
   });
+
+  // ── READ-ONLY DEGRADATION WHEN THE LICENCE EXPIRES ──────────────────
+  // Policy: expired company keeps its data, can log in, read everything and
+  // renew — but normal ERP mutations stop. Rules read subscription/current
+  // .endMillis (epoch ms) because the rules language cannot parse the ISO
+  // endDate string.
+  describe('expired subscription = read-only', () => {
+    const DAY = 86400000;
+    const GRACE = 30 * DAY;
+
+    /** Write a licence whose grace window ended `daysAgo` days ago. */
+    async function setLicence(endMillis) {
+      await adminDb(testEnv).doc('subscription/current').set({
+        planId: 'monthly', planName: 'Monthly',
+        endDate: new Date(endMillis).toISOString(),
+        endMillis,
+      });
+      await adminDb(testEnv).doc('config/firstRun').set({ done: true });
+    }
+    const expired = () => setLicence(Date.now() - GRACE - 5 * DAY);
+    const inGrace = () => setLicence(Date.now() - 5 * DAY);
+    const active  = () => setLicence(Date.now() + 60 * DAY);
+
+    // ── EXPIRED: mutations denied across every business domain ──
+    it('expired: trainee create denied', async () => {
+      await expired();
+      await assert.isRejected(
+        authedDb(testEnv, CC).collection('trainees').add({ name: 'X', chestNo: '1' }));
+    });
+    it('expired: trainee update denied', async () => {
+      await adminDb(testEnv).doc('trainees/t1').set({ name: 'X' });
+      await expired();
+      await assert.isRejected(
+        authedDb(testEnv, CC).doc('trainees/t1').update({ name: 'Y' }));
+    });
+    it('expired: trainee delete denied', async () => {
+      await adminDb(testEnv).doc('trainees/t1').set({ name: 'X' });
+      await expired();
+      await assert.isRejected(authedDb(testEnv, CC).doc('trainees/t1').delete());
+    });
+    it('expired: attendance write denied', async () => {
+      await expired();
+      await assert.isRejected(
+        authedDb(testEnv, CLERK).collection('absentRecords').add({ chestNo: '1' }));
+    });
+    it('expired: finance write denied', async () => {
+      await expired();
+      await assert.isRejected(
+        authedDb(testEnv, QM).collection('mess_fund_expenses').add({ amount: 100 }));
+    });
+    it('expired: inventory stock write denied', async () => {
+      await expired();
+      await assert.isRejected(
+        authedDb(testEnv, QM).doc('stock_ledgers/boots').set({ balance: 10 }));
+    });
+    it('expired: medical record write denied', async () => {
+      await expired();
+      await assert.isRejected(
+        authedDb(testEnv, CLERK).collection('medicalRecords').add({ chestNo: '1' }));
+    });
+    it('expired: batch write denied', async () => {
+      await expired();
+      await assert.isRejected(
+        authedDb(testEnv, CC).collection('batches').add({ batchNumber: '9' }));
+    });
+    it('expired: relegation write denied', async () => {
+      await expired();
+      await assert.isRejected(
+        authedDb(testEnv, CC).collection('relegations')
+          .add({ relegateId: 'REL-1', status: 'awaiting_rejoin' }));
+    });
+    it('expired: staff leave write denied', async () => {
+      await expired();
+      await assert.isRejected(
+        authedDb(testEnv, CLERK).collection('staff_leave').add({
+          status: 'pending', approvedBy: '', rejectionReason: '', approvalDate: '',
+        }));
+    });
+    it('expired: BATCH write denied (no multi-doc bypass)', async () => {
+      await expired();
+      const db = authedDb(testEnv, CC);
+      const b = db.batch();
+      b.set(db.doc('trainees/bulk1'), { name: 'A' });
+      b.set(db.doc('trainees/bulk2'), { name: 'B' });
+      await assert.isRejected(b.commit());
+    });
+    it('expired: TRANSACTION write denied (no transaction bypass)', async () => {
+      await adminDb(testEnv).doc('trainees/t1').set({ name: 'X' });
+      await expired();
+      const db = authedDb(testEnv, CC);
+      await assert.isRejected(db.runTransaction(async (tx) => {
+        tx.update(db.doc('trainees/t1'), { name: 'Z' });
+      }));
+    });
+
+    // ── EXPIRED: reads must keep working (this is the whole point) ──
+    it('expired: reading trainees still works', async () => {
+      await adminDb(testEnv).doc('trainees/t1').set({ name: 'X' });
+      await expired();
+      await assert.isFulfilled(authedDb(testEnv, CC).doc('trainees/t1').get());
+    });
+    it('expired: reading the licence still works (renewal screen)', async () => {
+      await expired();
+      await assert.isFulfilled(authedDb(testEnv, CC).doc('subscription/current').get());
+    });
+    it('expired: reading finance history still works', async () => {
+      await adminDb(testEnv).doc('mess_fund_expenses/e1').set({ amount: 1 });
+      await expired();
+      await assert.isFulfilled(authedDb(testEnv, QM).doc('mess_fund_expenses/e1').get());
+    });
+
+    // ── GRACE and ACTIVE keep writing ──
+    it('grace: trainee create still allowed', async () => {
+      await inGrace();
+      await assert.isFulfilled(
+        authedDb(testEnv, CC).collection('trainees').add({ name: 'G', chestNo: '2' }));
+    });
+    it('active: trainee create allowed', async () => {
+      await active();
+      await assert.isFulfilled(
+        authedDb(testEnv, CC).collection('trainees').add({ name: 'A', chestNo: '3' }));
+    });
+    it('active: finance write allowed', async () => {
+      await active();
+      await assert.isFulfilled(
+        authedDb(testEnv, QM).collection('mess_fund_expenses').add({ amount: 100 }));
+    });
+
+    // ── LIFECYCLE: the renewal must actually restore writes ──
+    it('LIFECYCLE: expired blocks, renewal restores writes immediately', async () => {
+      await expired();
+      // 1. business write denied
+      await assert.isRejected(
+        authedDb(testEnv, CC).collection('trainees').add({ name: 'X', chestNo: '9' }));
+      // 2. the client still cannot self-renew (b839025 holds)
+      await assert.isRejected(
+        authedDb(testEnv, CC).doc('subscription/current')
+          .set({ planId: 'monthly', endMillis: Date.now() + 60 * DAY }));
+      // 3. the server (Admin SDK) renews, as the callable does
+      await adminDb(testEnv).doc('subscription/current').set({
+        planId: 'monthly', endDate: new Date(Date.now() + 60 * DAY).toISOString(),
+        endMillis: Date.now() + 60 * DAY,
+      });
+      // 4. the same write now succeeds
+      await assert.isFulfilled(
+        authedDb(testEnv, CC).collection('trainees').add({ name: 'X', chestNo: '9' }));
+    });
+
+    // ── EDGE CASES ──
+    it('licence with no endMillis (legacy doc) does not lock the company out', async () => {
+      await adminDb(testEnv).doc('subscription/current').set({
+        planId: 'monthly', endDate: '2020-01-01T00:00:00.000Z',
+      });
+      await adminDb(testEnv).doc('config/firstRun').set({ done: true });
+      await assert.isFulfilled(
+        authedDb(testEnv, CC).collection('trainees').add({ name: 'L', chestNo: '4' }));
+    });
+    it('no licence at all (subscription disabled) keeps writes working', async () => {
+      await adminDb(testEnv).doc('config/firstRun').set({ done: true });
+      await assert.isFulfilled(
+        authedDb(testEnv, CC).collection('trainees').add({ name: 'N', chestNo: '5' }));
+    });
+    it('expiry exactly at the grace boundary is still writable', async () => {
+      await setLicence(Date.now() - GRACE + 60000); // 1 min inside grace
+      await assert.isFulfilled(
+        authedDb(testEnv, CC).collection('trainees').add({ name: 'B', chestNo: '6' }));
+    });
+    it('expired: firstRun latch still immutable', async () => {
+      await expired();
+      await assert.isRejected(authedDb(testEnv, CC).doc('config/firstRun').delete());
+    });
+    it('expired: users/config bootstrap paths still writable', async () => {
+      await expired();
+      await assert.isFulfilled(
+        authedDb(testEnv, CC).doc('config/activeBatch').set({ batchId: 'b1' }));
+    });
+  });
+
+
 });

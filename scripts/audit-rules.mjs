@@ -64,6 +64,26 @@ if (subBlock) {
   check(/allow read: if signedIn\(\)/.test(subBlock[0]),
     'licence remains readable for the login-time listener');
 }
+// ── READ-ONLY DEGRADATION WHEN EXPIRED ──
+// Every business write must pass a licence check, so an expired company can
+// read its data and renew but cannot mutate anything.
+check(/function licenceWritable\(\)/.test(fsRules), 'licenceWritable() helper exists');
+check(/endMillis/.test(fsRules),
+  'rules compare endMillis (rules cannot parse the ISO endDate string)');
+check(/2592000000/.test(fsRules), 'grace window matches GRACE_DAYS = 30');
+// canWriteDevData() is the choke point every business write already used.
+const cwd = fsRules.match(/function canWriteDevData\(\)[\s\S]*?\n    \}/);
+check(!!cwd && /licenceWritable\(\)/.test(cwd[0]),
+  'licence gate wired into canWriteDevData (covers the whole ERP)');
+// Paths that MUST stay writable while expired (login / renewal / audit).
+const subBlk = fsRules.match(/match \/subscription\/\{docId\}[\s\S]*?\n    \}/);
+check(!!subBlk && !/licenceWritable\(\)/.test(subBlk[0]),
+  'licence document itself is not licence-gated (renewal must work when expired)');
+// The server must write the machine-readable field.
+const subAuth = read('functions/subscriptionAuth.mjs');
+check(/endMillis: end\.getTime\(\)/.test(subAuth), 'server writes endMillis on renewal');
+check(/backfillEndMillis/.test(subAuth), 'backfill exists for pre-existing licences');
+
 // ── FIRST-RUN LATCH ──
 // firstRunOpen() gates subscription/current, subscriptionPlans, unitConfig
 // and bootstrap CC creation. `allow write` includes DELETE, so if a CC can
