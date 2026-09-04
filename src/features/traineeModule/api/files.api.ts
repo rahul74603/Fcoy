@@ -16,6 +16,7 @@ import {
   getDocs, query, where,
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+import { logAudit } from '../../../services/auditLog.service';
 import {
   uploadToStorage, deleteFromStorage, validateFileForStorage,
 } from '../../shared/storage.utils';
@@ -106,6 +107,14 @@ export const uploadTraineeFile = async (
     uploadedAt: now,
     isActive: true,
     createdAt: now,
+  });
+
+  // Lekha-jokha: kaunsi file, kisne, kiske liye bheji
+  await logAudit({
+    userId: '', userName: uploadedBy, userRole: 'Clerk',
+    action: 'Create', collection: 'traineeFiles', documentId: ref.id,
+    description: `File upload ki — "${meta.title}" (${meta.category}, ${up.fileName}) `
+      + `${meta.targetTraineeLabel || (meta.targetPlatoon && meta.targetPlatoon !== 'all' ? meta.targetPlatoon : 'poore batch')} ke liye.`,
   });
   return ref.id;
 };

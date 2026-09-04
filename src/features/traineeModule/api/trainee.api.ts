@@ -7,6 +7,7 @@ import {
   getDocs, query, where, orderBy,
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+import { logAudit } from '../../../services/auditLog.service';
 import type {
   TraineeAccount, TraineeUpdate, TraineeNotice, RelegationRecord,
   TraineeUpdateCategory, NoticeCategory, RelegationReason,
@@ -239,6 +240,11 @@ export const rejectTraineeUpdate = async (id: string, approvedBy: string, reason
     approvedAt: new Date().toISOString(),
     rejectionReason: reason,
   });
+  await logAudit({
+    userId: '', userName: approvedBy, userRole: 'Clerk',
+    action: 'Update', collection: 'traineeUpdates', documentId: id,
+    description: `Report reject ki. Wajah: ${reason}`,
+  });
 };
 
 // ─── ABSENCE REPORT APPROVAL ──────────────────────────────
@@ -282,6 +288,11 @@ export const approveAbsenceReport = async (update: TraineeUpdate, approvedBy: st
       console.error('general notice sync failed', err);
     }
     await updateDoc(doc(db, 'traineeUpdates', update.id), patchG);
+    await logAudit({
+      userId: '', userName: approvedBy, userRole: 'Clerk',
+      action: 'Update', collection: 'traineeUpdates', documentId: update.id,
+      description: `General report approve ki — "${update.title}" (${update.submittedBy} ne bheji thi). Notice board par publish hui.`,
+    });
     return;
   }
 
@@ -404,6 +415,16 @@ export const approveAbsenceReport = async (update: TraineeUpdate, approvedBy: st
 
   // ── 1. Finally mark the update approved with all links ──
   await updateDoc(doc(db, 'traineeUpdates', update.id), patch);
+
+  // ── Lekha-jokha: kisne, kab, kya, kyu approve kiya ──
+  await logAudit({
+    userId: '', userName: approvedBy, userRole: 'Clerk',
+    action: 'Update', collection: 'traineeUpdates', documentId: update.id,
+    description: `${update.chestNo || ''} ${update.traineeName || ''} ki "${update.title}" report approve ki `
+      + `(${absentType} · ${fromDate}${toDate !== fromDate ? ` se ${toDate}` : ''}, ${totalDays} din). `
+      + `Wajah: ${update.description || update.title || '—'}. `
+      + `Absent register${isMedical ? ' + MI register' : ''} + notice board update hua.`,
+  });
 };
 
 /** Senior trainee kisi bhi trainee ke liye — ya general — report bhej sakta hai */

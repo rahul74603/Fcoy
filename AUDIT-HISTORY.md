@@ -98,7 +98,18 @@ aur wire karna bhool gaye. Mera kiya hua kuch nahi hai — sab mujhse pehle ke.
 
 ---
 
-## 4. Sujhav
+## 4. Is audit ke baad kya bana
+
+- **Today Special** (`/today`) — teeno audit collections + operational
+  records ko jodkar ek daily news feed. Sabko dikhta hai, trainee bhi.
+- **Lekha-Jokha (Audit Log)** — route `/audit-log` pehle se tha par sidebar
+  me link hi nahi tha (CC tak pahunch nahi thi). Ab link jud gaya.
+- `Trainee360Screen` **jaan-boojh kar chhoda** — uski jagah Trainee Profile
+  upgrade ho chuki hai. Wo file ab safely delete ki ja sakti hai.
+
+---
+
+## 5. Sujhav
 
 1. **`Trainee360Screen`** sabse bada nuksaan hai — 838 line ka poora
    trainee 360° view banaya gaya aur kabhi jod hi nahi gaya. Ek route

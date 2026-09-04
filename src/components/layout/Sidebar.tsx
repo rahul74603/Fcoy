@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Activity, Target,
   Users, Archive, Settings,
   ChevronDown, ChevronRight, ChevronLeft,
-  Layers, CalendarDays, BarChart3,
+  Layers, CalendarDays, BarChart3, Newspaper, ScrollText,
   PieChart, Menu,
   Bot, Sparkles,
   UserCog, ClipboardList, Boxes, FlaskConical, Crown, Building2,
@@ -333,6 +333,16 @@ export const Sidebar = () => {
               NAVIGATION
           ═════════════════════════════════════ */}
           <div className="flex-1 overflow-y-auto py-3 space-y-1 custom-scrollbar">
+
+            {/* ═══════════════════════════════════════════════
+                📰 TODAY SPECIAL — sabse upar, har role ko
+                Roz ka lekha-jokha: kaun kaha gaya, kisne kya kiya.
+            ═══════════════════════════════════════════════ */}
+            <NavItem title="📰 Today Special" icon={Newspaper} path="/today" badge={<NewBadge />} />
+            {user?.role === 'Company Commander' && (
+              <NavItem title="Lekha-Jokha (Audit)" icon={ScrollText} path="/audit-log" />
+            )}
+            <div className="mx-4 my-2 h-px bg-military-800" />
 
             {/* ═══════════════════════════════════════════════
                 ⭐ COMPANY COMMANDER — FIRST

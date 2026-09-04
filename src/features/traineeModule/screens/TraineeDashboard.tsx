@@ -9,7 +9,7 @@ import {
   Shield, User, ClipboardList, Bell, LogOut, Loader2,
   ChevronDown, ChevronUp, KeyRound, AlertTriangle,
   CheckCircle2, XCircle, Award, Heart, Calendar,
-  Users, MapPin, Clock, FileText,
+  Users, MapPin, Clock, FileText, Newspaper,
 } from 'lucide-react';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useBatch } from '../../../contexts/BatchContext';
@@ -17,6 +17,7 @@ import { getTraineeUpdates, getUpdatesSubmittedBy, getNotices, findMyTrainee } f
 import { ChangePasswordModal } from '../../../components/ChangePasswordModal';
 import { AbsenceReportPanel } from '../components/AbsenceReportPanel';
 import { FilesPanel } from '../components/FilesPanel';
+import { TodaySpecialScreen } from '../../activity/screens/TodaySpecialScreen';
 import {
   buildAvailabilityMap, summarizeAvailability, attnMeta,
   type AvailabilityEntry,
@@ -44,7 +45,7 @@ export const TraineeDashboard: React.FC = () => {
   const [availability, setAvailability] = useState<Record<string, AvailabilityEntry>>({});
   const [loading, setLoading] = useState(true);
   const isTraineeUser = user?.role === 'Trainee' || /trainee/i.test(String(user?.role ?? ''));
-  const [activeTab, setActiveTab] = useState<'report' | 'platoon' | 'updates' | 'notices' | 'files' | 'myinfo'>(
+  const [activeTab, setActiveTab] = useState<'report' | 'today' | 'platoon' | 'updates' | 'notices' | 'files' | 'myinfo'>(
     isTraineeUser ? 'report' : 'platoon'
   );
   const [expandedPlatoon, setExpandedPlatoon] = useState<string | null>(null);
@@ -331,6 +332,7 @@ export const TraineeDashboard: React.FC = () => {
             { key: 'report', label: 'Bimari / PT Report', icon: <Heart size={14} />, badge: updates.filter(u => u.status === 'pending').length },
             { key: 'platoon', label: '🏢 Platoon View', icon: <Users size={14} /> },
             { key: 'updates', label: '📋 Updates', icon: <ClipboardList size={14} />, badge: updates.filter(u => u.status === 'pending').length },
+            { key: 'today', label: '📰 Today Special', icon: <Newspaper size={14} /> },
             { key: 'notices', label: '🔔 Notice Board', icon: <Bell size={14} />, badge: notices.filter(n => n.priority === 'urgent').length },
             { key: 'files', label: '📁 Files', icon: <FileText size={14} /> },
             { key: 'myinfo', label: '👤 My Info', icon: <User size={14} /> },
@@ -362,6 +364,9 @@ export const TraineeDashboard: React.FC = () => {
             onSubmitted={loadData}
           />
         )}
+
+        {/* TODAY SPECIAL — aaj ka poora lekha-jokha, trainee ko bhi */}
+        {activeTab === 'today' && <TodaySpecialScreen embedded />}
 
         {/* FILES — clerk ne jo bheji, sirf wahi */}
         {activeTab === 'files' && (() => {

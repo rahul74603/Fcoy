@@ -362,19 +362,22 @@ service cloud.firestore {
     }
 
     // Absence / medical records — clerk operations; staff view.
+    // Trainee ko read chahiye — uska dashboard availability engine
+    // (kaun sick/chutti par hai) aur Today Special feed inhi se banta hai.
+    // Likhna sirf clerk/CC ke paas hi rehta hai.
     match /absentRecords/{id} {
-      allow read: if isStaff() && canReadDevData();
+      allow read: if isTrainee() || (isStaff() && canReadDevData());
       allow write: if canManage() && canWriteDevData();
     }
     match /medicalRecords/{id} {
-      allow read: if isStaff() && canReadDevData();
+      allow read: if isTrainee() || (isStaff() && canReadDevData());
       allow write: if canManage() && canWriteDevData();
     }
 
     // Relegation register — RelID lifecycle (awaiting_rejoin → rejoined).
     // CC/Clerk write; all staff may read (strength / history). Delete = CC.
     match /relegations/{id} {
-      allow read: if isStaff() && canReadDevData();
+      allow read: if isTrainee() || (isStaff() && canReadDevData());
       allow create: if canManage() && canWriteDevData();
       allow update: if canManage() && canWriteDevData();
       allow delete: if isCC();
@@ -390,7 +393,9 @@ service cloud.firestore {
       allow write: if canManage() && canWriteDevData();
     }
     match /staff_activity_logs/{id} {
-      allow read: if isStaff() && canReadDevData();
+      // Today Special feed sabko dikhta hai (trainee bhi) — logs read-only.
+      // Likhna sirf active staff, badalna/mitana sirf CC.
+      allow read: if isTrainee() || (isStaff() && canReadDevData());
       allow create: if isActive();
       allow update, delete: if isCC();
     }
@@ -442,7 +447,9 @@ service cloud.firestore {
       allow write: if (canManage() || canFinance()) && canWriteDevData();
     }
     match /auditLogs/{id} {
-      allow read: if isStaff() && canReadDevData();
+      // Today Special feed sabko dikhta hai (trainee bhi) — logs read-only.
+      // Likhna sirf active staff, badalna/mitana sirf CC.
+      allow read: if isTrainee() || (isStaff() && canReadDevData());
       allow create: if isActive();
       allow update, delete: if isCC();
     }
@@ -586,7 +593,9 @@ service cloud.firestore {
     // ACTIVITY LOGS
     // ──────────────────────────────────────────────────────────────────
     match /activity_logs/{id} {
-      allow read: if isStaff() && canReadDevData();
+      // Today Special feed sabko dikhta hai (trainee bhi) — logs read-only.
+      // Likhna sirf active staff, badalna/mitana sirf CC.
+      allow read: if isTrainee() || (isStaff() && canReadDevData());
       // Any active staff member may log an action they performed.
       allow create: if isActive();
       allow update, delete: if isCC();

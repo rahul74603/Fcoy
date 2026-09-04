@@ -62,6 +62,7 @@ import { SyllabusTrackingScreen } from './features/syllabus/screens/SyllabusTrac
 import { JoiningWorkflowScreen } from './features/joining/screens/JoiningWorkflowScreen';
 import { SessionLogScreen } from './features/trainingSessions/screens/SessionLogScreen';
 import { AuditLogScreen } from './features/auditLog/screens/AuditLogScreen';
+import { TodaySpecialScreen } from './features/activity/screens/TodaySpecialScreen';
 import { ClearanceScreen } from './features/clearance/screens/ClearanceScreen';
 import { FinalBoardScreen } from './features/finalResult/screens/FinalBoardScreen';
 import { PeriodAttendanceScreen } from './features/periodAttendance/screens/PeriodAttendanceScreen';
@@ -137,6 +138,8 @@ function App() {
               <Route path="/clearance" element={<ProtectedRoute allowedRoles={STAFF_MANAGE_ROLES}><EnterpriseLayout><ClearanceScreen /></EnterpriseLayout></ProtectedRoute>} />
               <Route path="/joining-workflow" element={<ProtectedRoute allowedRoles={STAFF_MANAGE_ROLES}><EnterpriseLayout><JoiningWorkflowScreen /></EnterpriseLayout></ProtectedRoute>} />
               <Route path="/training-sessions" element={<ProtectedRoute allowedRoles={STAFF_MANAGE_ROLES}><EnterpriseLayout><SessionLogScreen /></EnterpriseLayout></ProtectedRoute>} />
+              {/* Today Special — sabko dikhta hai, trainee bhi shaamil */}
+              <Route path="/today" element={<ProtectedRoute><EnterpriseLayout><TodaySpecialScreen /></EnterpriseLayout></ProtectedRoute>} />
               <Route path="/audit-log" element={<ProtectedRoute allowedRoles={['Company Commander']}><EnterpriseLayout><AuditLogScreen /></EnterpriseLayout></ProtectedRoute>} />
 
               {/* ════════════════════════════════
