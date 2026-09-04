@@ -129,6 +129,16 @@ const subAuth = read('functions/subscriptionAuth.mjs');
 check(/endMillis: end\.getTime\(\)/.test(subAuth), 'server writes endMillis on renewal');
 check(/backfillEndMillis/.test(subAuth), 'backfill exists for pre-existing licences');
 
+// ── UI MUST MATCH THE RULES ──
+// The rules let an EXPIRED company read its data and renew while denying
+// mutations. If SubscriptionGate hard-locks on 'expired' the UI contradicts
+// that and the customer cannot reach their own records or the renew screen.
+const gate = read('src/features/subscription/components/SubscriptionGate.tsx');
+check(!/status === 'none' \|\| state\.status === 'expired'/.test(gate),
+  'SubscriptionGate does not hard-lock an expired company (read-only policy)');
+check(/const locked = state\.status === 'none'/.test(gate),
+  'SubscriptionGate hard-locks only a never-activated install');
+
 // ── FIRST-RUN LATCH ──
 // firstRunOpen() gates subscription/current, subscriptionPlans, unitConfig
 // and bootstrap CC creation. `allow write` includes DELETE, so if a CC can
