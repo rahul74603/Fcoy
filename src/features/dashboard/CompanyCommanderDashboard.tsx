@@ -629,6 +629,14 @@ const ProgressBar: React.FC<{
 // ─────────────────────────────────────────────
 // COLLAPSIBLE SECTION
 // ─────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// AWAY ROSTER — sirf 7 rows dikhao, baaki scroll me
+// ─────────────────────────────────────────────
+/** Kitne trainee bina scroll ke dikhein. */
+const AWAY_VISIBLE_ROWS = 7;
+/** header (~42px) + 7 rows (~46px each) — iske baad vertical scroll. */
+const AWAY_ROSTER_MAX_HEIGHT = 42 + AWAY_VISIBLE_ROWS * 46;
+
 const CollapsibleSection: React.FC<{
   title: string; subtitle?: string; icon?: React.ReactNode;
   action?: { label: string; onClick: () => void };
@@ -640,13 +648,18 @@ const CollapsibleSection: React.FC<{
 
   return (
     <div className={`bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden transition-all duration-300 border-l-4 ${accentColor}`}>
+      {/* Header = ek hi bada click target. Band hone par highlighted dikhta hai
+          taaki commander ko turant pata chale ki andar aur data chhupa hai. */}
       <button type="button" onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-slate-50/50 transition-colors">
+        aria-expanded={open}
+        className={`group w-full flex items-center justify-between px-5 py-3.5 transition-colors ${
+          open ? 'bg-white hover:bg-slate-50/60' : 'bg-military-50/70 hover:bg-military-100/80'
+        }`}>
         <div className="flex items-center gap-3">
-          {icon && <span className="text-slate-500">{icon}</span>}
+          {icon && <span className={open ? 'text-slate-500' : 'text-military-700'}>{icon}</span>}
           <div className="text-left">
             <div className="flex items-center gap-2">
-              <p className="text-[11px] font-black text-slate-700 uppercase tracking-wider">{title}</p>
+              <p className={`text-[11px] font-black uppercase tracking-wider ${open ? 'text-slate-700' : 'text-military-900'}`}>{title}</p>
               {urgentCount !== undefined && urgentCount > 0 && (
                 <span className="text-[9px] font-black bg-red-500 text-white w-5 h-5 rounded-full flex items-center justify-center animate-pulse">
                   {urgentCount}
@@ -666,8 +679,18 @@ const CollapsibleSection: React.FC<{
               {action.label} <ArrowRight size={10} />
             </span>
           )}
-          <div className={`transform transition-transform duration-300 ${open ? 'rotate-180' : ''}`}>
-            <ChevronDown size={16} className="text-slate-400" />
+          {/* Show / Hide pill — arrow ke saath saaf label */}
+          <span className={`hidden sm:flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wide transition-colors ${
+            open
+              ? 'bg-slate-100 text-slate-600 group-hover:bg-slate-200'
+              : 'bg-military-700 text-white shadow-sm group-hover:bg-military-800'
+          }`}>
+            {open ? 'Hide' : 'Click here for more'}
+          </span>
+          <div className={`flex h-7 w-7 items-center justify-center rounded-full transition-all duration-300 ${
+            open ? 'bg-slate-100 text-slate-500 rotate-180' : 'bg-military-700 text-white'
+          }`}>
+            <ChevronDown size={15} />
           </div>
         </div>
       </button>
@@ -1841,10 +1864,15 @@ const [staffLoading, setStaffLoading] = useState(false);
           {/* ═══ AWAY / ATTENTION ROSTER — intentionally kept prominent ═══ */}
           <div className="overflow-hidden rounded-2xl border-2 border-red-200 bg-white shadow-md">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-red-100 bg-gradient-to-r from-red-50 to-amber-50 px-5 py-4">
-              <div><p className="text-[10px] font-black uppercase tracking-widest text-red-700">Live attention roster</p><h2 className="mt-1 text-sm font-black uppercase text-slate-800">Trainees Not On Field ({awayTrainees.length}) — Full Details</h2><p className="mt-1 text-[10px] text-slate-500">Who is away, why, and expected return</p></div>
+              <div><p className="text-[10px] font-black uppercase tracking-widest text-red-700">Live attention roster</p><h2 className="mt-1 text-sm font-black uppercase text-slate-800">Trainees Not On Field ({awayTrainees.length}) — Full Details</h2><p className="mt-1 text-[10px] text-slate-500">Who is away, why, and expected return{awayTrainees.length > AWAY_VISIBLE_ROWS ? ` · pehle ${AWAY_VISIBLE_ROWS} dikh rahe hain, baaki scroll karo` : ''}</p></div>
               <button type="button" onClick={() => go(ROUTES.absentMgmt)} className="rounded-lg bg-red-600 px-3 py-2 text-[10px] font-black uppercase text-white hover:bg-red-700">Manage Absences →</button>
             </div>
-            {awayTrainees.length === 0 ? <div className="p-8 text-center text-sm font-bold text-emerald-700">✓ All trainees are on field.</div> : <div className="overflow-x-auto"><table className="w-full text-xs"><thead className="bg-slate-900 text-white"><tr>{['#','Chest','Name','Platoon','Status','Reason / Permission','From','Expected Return','Days','Remarks'].map(h => <th key={h} className="px-3 py-3 text-left text-[9px] font-black uppercase whitespace-nowrap">{h}</th>)}</tr></thead><tbody className="divide-y divide-red-100">{awayTrainees.map((t, idx) => { const code = getDashboardAttnCode(t); const info = getAbsentTypeInfo(code); const recs = absentRecordsByTrainee[t.id] || []; const rec = recs.find(r => r.status === 'Active') || recs[0]; const medical = activeMedicalByTrainee[t.id]; const reason = rec?.reason || medical?.diagnosis || medical?.category || 'Not recorded'; const rowColor = code === 'H' ? 'bg-purple-50/80 border-l-4 border-l-purple-500' : code === 'A' ? 'bg-red-50/80 border-l-4 border-l-red-500' : 'bg-amber-50/80 border-l-4 border-l-amber-500'; return <tr key={t.id} className={`${rowColor} hover:brightness-95`}><td className="px-3 py-3 font-black text-slate-400">{idx + 1}</td><td className="px-3 py-3 font-mono font-black">{t.chestNo || '—'}</td><td className="px-3 py-3 font-black text-slate-800 whitespace-nowrap">{t.rank || 'RCT'} {t.name}</td><td className="px-3 py-3">{t.platoon || '—'}</td><td className="px-3 py-3"><span className={`rounded-lg px-2 py-1 text-[9px] font-black ${info.bgColor} ${info.color}`}>{info.icon} {info.shortLabel}</span></td><td className="max-w-[180px] px-3 py-3 font-bold text-slate-700">{reason}</td><td className="px-3 py-3 font-mono text-[10px]">{rec?.fromDate || medical?.date || '—'}</td><td className="px-3 py-3 font-mono text-[10px] text-blue-700">{rec?.toDate || '—'}</td><td className="px-3 py-3 font-black text-red-600">{rec?.totalDays ? `${rec.totalDays}d` : '—'}</td><td className="max-w-[140px] px-3 py-3 text-[10px] text-slate-600">{rec?.remarks || '—'}</td></tr>; })}</tbody></table></div>}
+            {awayTrainees.length === 0 ? <div className="p-8 text-center text-sm font-bold text-emerald-700">✓ All trainees are on field.</div> : <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: AWAY_ROSTER_MAX_HEIGHT }}><table className="w-full text-xs"><thead className="sticky top-0 z-10 bg-slate-900 text-white"><tr>{['#','Chest','Name','Platoon','Status','Reason / Permission','From','Expected Return','Days','Remarks'].map(h => <th key={h} className="bg-slate-900 px-3 py-3 text-left text-[9px] font-black uppercase whitespace-nowrap">{h}</th>)}</tr></thead><tbody className="divide-y divide-red-100">{awayTrainees.map((t, idx) => { const code = getDashboardAttnCode(t); const info = getAbsentTypeInfo(code); const recs = absentRecordsByTrainee[t.id] || []; const rec = recs.find(r => r.status === 'Active') || recs[0]; const medical = activeMedicalByTrainee[t.id]; const reason = rec?.reason || medical?.diagnosis || medical?.category || 'Not recorded'; const rowColor = code === 'H' ? 'bg-purple-50/80 border-l-4 border-l-purple-500' : code === 'A' ? 'bg-red-50/80 border-l-4 border-l-red-500' : 'bg-amber-50/80 border-l-4 border-l-amber-500'; return <tr key={t.id} className={`${rowColor} hover:brightness-95`}><td className="px-3 py-3 font-black text-slate-400">{idx + 1}</td><td className="px-3 py-3 font-mono font-black">{t.chestNo || '—'}</td><td className="px-3 py-3 font-black text-slate-800 whitespace-nowrap">{t.rank || 'RCT'} {t.name}</td><td className="px-3 py-3">{t.platoon || '—'}</td><td className="px-3 py-3"><span className={`rounded-lg px-2 py-1 text-[9px] font-black ${info.bgColor} ${info.color}`}>{info.icon} {info.shortLabel}</span></td><td className="max-w-[180px] px-3 py-3 font-bold text-slate-700">{reason}</td><td className="px-3 py-3 font-mono text-[10px]">{rec?.fromDate || medical?.date || '—'}</td><td className="px-3 py-3 font-mono text-[10px] text-blue-700">{rec?.toDate || '—'}</td><td className="px-3 py-3 font-black text-red-600">{rec?.totalDays ? `${rec.totalDays}d` : '—'}</td><td className="max-w-[140px] px-3 py-3 text-[10px] text-slate-600">{rec?.remarks || '—'}</td></tr>; })}</tbody></table></div>}
+            {awayTrainees.length > AWAY_VISIBLE_ROWS && (
+              <div className="border-t border-red-100 bg-red-50/60 px-5 py-2 text-center text-[10px] font-black uppercase tracking-wide text-red-700">
+                ↕ Scroll karo — {awayTrainees.length - AWAY_VISIBLE_ROWS} aur trainee list me hain (total {awayTrainees.length})
+              </div>
+            )}
           </div>
 
           {/* ═══ CLEAN ROSTER BOARD ═══ */}
