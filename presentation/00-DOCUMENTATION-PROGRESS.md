@@ -2,7 +2,9 @@
 
 ## Overall Status
 
-**BATCH 1 COMPLETE — WAITING FOR USER CONFIRMATION (YES / OK / NEXT)**
+**BATCH 2 COMPLETE — WAITING FOR USER CONFIRMATION (YES / OK / NEXT)**
+
+Batch 1 confirmed by user and closed.
 
 ---
 
@@ -11,24 +13,26 @@
 - [x] `presentation/00-DOCUMENTATION-PROGRESS.md` — this tracker
 - [x] `presentation/01-PROJECT-OVERVIEW.md` — what FCOY is, module map, tech reality, verification legend
 - [x] `presentation/01-PRESENTATION-ROADMAP.md` — full presentation flow, slide order, timing, demo prerequisites
+- [x] `presentation/03-FEATURE-CATALOG.md` — 45 features, P0×7 / P1×13 / P2×20 / P3×5, plus a "never promise" table
+- [x] `presentation/04-ROLE-MATRIX.md` — role × screen access grid, per-role notes, security story
+- [x] `presentation/modules/02-cc-dashboard.md` — Commander dashboard deep dive (health score, 5 alert streams, 11 filters)
 
 ---
 
 ## Current Batch
 
-**Batch 1 — Foundation** (complete)
+**Batch 2 — Catalog, Roles & Command View** (complete)
 
-1. Progress tracker
-2. Project / module overview
-3. Presentation roadmap
+1. Feature catalog (P0–P3)
+2. Role matrix
+3. Commander dashboard module
+
+*Batch 1 — Foundation: complete (tracker, overview, roadmap).*
 
 ---
 
 ## Pending Files
 
-- [ ] `presentation/03-FEATURE-CATALOG.md` — every confirmed feature, P0–P3 priority
-- [ ] `presentation/04-ROLE-MATRIX.md` — role × screen × permission grid
-- [ ] `presentation/modules/02-cc-dashboard.md` — Company Commander dashboard deep dive
 - [ ] `presentation/05-WORKFLOW-CATALOG.md`
 - [ ] `presentation/06-WOW-FEATURES.md`
 - [ ] `presentation/07-SMART-DETAILS.md`
@@ -168,17 +172,18 @@ Anything not yet traced is listed under "Workflows Inspected" as unchecked.
 
 ## Next Batch
 
-**Batch 2 — Catalog & Command View**
+**Batch 3 — Trainee Life: Leave, Personnel & Notifications**
 
-1. `presentation/03-FEATURE-CATALOG.md` — full confirmed feature list with
-   P0/P1/P2/P3 buyer-value priority
-2. `presentation/04-ROLE-MATRIX.md` — what each role sees and can do
-3. `presentation/modules/02-cc-dashboard.md` — deep dive on the single most
-   important presentation screen
+1. `presentation/modules/03-leave-management.md` — leave request → CC
+   approval → return, including the triple-guard story
+2. `presentation/modules/04-personnel-trainees.md` — trainee registration,
+   documents, medical, absence, relegation, trainee reporting inbox
+3. `presentation/modules/05-notifications.md` — the 7 derived notification
+   sources, bell behaviour, per-device read state, and its honest limits
 
-Required inspection before writing: full read of
-`CompanyCommanderDashboard.tsx` (~2700 lines), `Sidebar.tsx` role sections,
-and each role's landing dashboard.
+Required inspection before writing: `useLeave.ts` full read,
+`TraineeManagementScreen.tsx`, `MedicalRegisterScreen.tsx`,
+`AbsentManagement.tsx`, `relegation/*`, and the notifications feature.
 
 ---
 
@@ -195,4 +200,4 @@ and each role's landing dashboard.
 
 ## Last Updated
 
-2026-09-04 04:18 (Asia/Kolkata) — Batch 1
+2026-09-04 — Batch 2 complete (feature catalog, role matrix, CC dashboard module)
