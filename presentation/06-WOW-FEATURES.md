@@ -229,6 +229,14 @@ Worth pointing at if the moment arises, but do not build a beat around them:
 | **Notification deep links** | bell | One tap lands on the Approve button |
 | **Trainee Senior can report on behalf** | trainee portal | "Record me likha rehta hai kisne bheji" |
 | **Deactivate, don't delete** | `/users` | History survives a transfer |
+| ⭐ **Final Board auto-computes the course result** | `/final-board` | "Fit for Duty / Conditional / Unfit — niyam sabke liye ek jaise" |
+| ⭐ **Festival Planner** | `/welfare-demographics` | "Jawaan ka tyohaar yaad rakhna afsar ka kaam hai — ab system yaad dilata hai" |
+| ⭐ **Mismatch Dashboard** | `/mismatch-dashboard` | "System apne aap ko check karta hai — duplicate chest number bhi pakadta hai" |
+
+> These last three were traced after the main pass and are documented in
+> `modules/15-registers-and-lifecycle.md`. Any of them can replace a
+> weaker beat if the audience fits — Festival Planner for a welfare-minded
+> commander, Final Board at end-of-course, Mismatch Dashboard for a sceptic.
 
 ---
 
@@ -241,7 +249,8 @@ Worth pointing at if the moment arises, but do not build a beat around them:
 | **Quarter Master** | #5 order-vs-paid · #4 atomic stock · size-wise kit |
 | **Clerk** | #1 cascade · #3 auto-attendance · #9 Today Special |
 | **Technical evaluator** | #4 atomic stock · #8 AI guardrails · role security (`04-ROLE-MATRIX.md` §5) |
-| **Sceptic in the room** | #10 audit register, then hand them the "Do NOT promise" lists |
+| **Sceptic in the room** | #10 audit register · **Mismatch Dashboard** · then hand them the "Do NOT promise" lists |
+| **Welfare-minded officer** | **Festival Planner** · #9 Today Special · #1 cascade |
 
 ---
 

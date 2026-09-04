@@ -346,6 +346,20 @@ hua kya hai. Yahan sab ek hi page dekh rahe hain."*
 
 ---
 
+## 🖥️ Demo 16b — Optional Extras *(only if the audience fits)*
+
+**Reference:** `modules/15-registers-and-lifecycle.md`
+
+Pick **at most one**. These are answers to *"aur kya hai?"*, not core content.
+
+| If they are… | Show | The line |
+|---|---|---|
+| A welfare-minded commander | `/welfare-demographics` → **Festival Planner** | *"Jawaan ghar se door hai. Uska tyohaar yaad rakhna afsar ka kaam hai — ab system yaad dilata hai."* |
+| Thinking about end of course | `/final-board` | *"Saare test, hazri, FPT — system khud jodta hai. Aakhir me ek line: Fit for Duty."* |
+| Sceptical about data quality | `/mismatch-dashboard` | *"System apne aap ko check karta hai. Duplicate chest number bhi pakad leta hai."* |
+
+---
+
 # PART D — TRUST & SAFETY
 
 ---

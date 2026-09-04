@@ -200,12 +200,14 @@ Bills to verify · Kit Issues · Mess Boy Salary.
 ---
 
 ### 12. Inventory & kit issue
-**Routes:** `/inventory`, `/issue-kit` · **Role:** QM, CC ·
-**UI PRESENT — END-TO-END NOT VERIFIED**
+**Routes:** `/inventory`, `/issue-kit` · **Role:** QM, CC · **CONFIRMED**
 
-Screens exist and are routed. The full issue → ledger/history trace has
-**not yet been verified** (scheduled for Batch 4). Show the screens; do not
-promise ledger behaviour until confirmed.
+Verified in Batch 4. Kit issue runs inside a **single atomic transaction** —
+stock counters, the issue ledger (`issue_records`) and the trainee's record
+all commit together or not at all, so concurrent issues can never drive
+stock below zero. 15 standard items, **size-wise stock**. The Inventory Hub
+is read-only by design. **Recovery is never auto-created** — the screen says
+so. Full detail: `modules/06-quartermaster-inventory.md`.
 
 ---
 
@@ -355,6 +357,7 @@ batches.
 
 ### 44. First-run setup
 **Route:** `/first-run` · **UI PRESENT — END-TO-END NOT VERIFIED**
+*(Unguarded by design — it runs before any user account exists.)*
 
 ### 45. Service-worker asset caching
 `public/sw.js` — caches static assets, always fetches HTML from network.

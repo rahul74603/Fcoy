@@ -4,7 +4,13 @@
 
 # ✅ DOCUMENTATION PACKAGE COMPLETE
 
-**All 8 batches done. 22 files, ~6,600 lines.**
+**All 8 batches done, plus a follow-up verification pass. 23 files, ~6,900 lines.**
+
+**Follow-up pass (2026-09-04):** the 10 routes previously marked
+*UI PRESENT — END-TO-END NOT VERIFIED* were traced. **All 10 are confirmed
+working modules** — see `modules/15-registers-and-lifecycle.md`. Labels
+updated in `09-training-delivery.md` §7 and `99-DOCUMENTATION-AUDIT.md` §7;
+three new demo options added to `06-WOW-FEATURES.md` and `02-SLIDES.md`.
 
 Start here: `99-DOCUMENTATION-AUDIT.md` (what is safe to claim), then
 `02-SLIDES.md` (the deck) and `01-PRESENTATION-ROADMAP.md` (demo prep).
@@ -36,6 +42,7 @@ Start here: `99-DOCUMENTATION-AUDIT.md` (what is safe to claim), then
 - [x] `presentation/05-WORKFLOW-CATALOG.md` — 8 end-to-end workflows in USER→SCREEN→ACTION→…→FINAL RESULT format
 - [x] `presentation/02-SLIDES.md` — 24-slide deck with on-slide text + speaker notes + presenter's card
 - [x] `presentation/99-DOCUMENTATION-AUDIT.md` — self-audit, consolidated never-promise list, orphan screens, known issues
+- [x] `presentation/modules/15-registers-and-lifecycle.md` — the 10 traced registers (Final Board, Festival Planner, Mismatch Dashboard + 7 more)
 
 ---
 
@@ -205,12 +212,11 @@ Re-audit only when the code changes. See `99-DOCUMENTATION-AUDIT.md` §11
 for when and how.
 
 Highest-value follow-up work, if anyone wants to continue:
-1. Trace the 10 routes marked UI PRESENT — NOT VERIFIED and upgrade or
-   downgrade their labels (`99-DOCUMENTATION-AUDIT.md` §7)
+1. ~~Trace the 10 unverified routes~~ — **DONE (follow-up pass)**
 2. An independent audit of `firestore.rules` before making strong security
-   claims (§10.3)
+   claims (`99-DOCUMENTATION-AUDIT.md` §10.3)
 3. Fix the known issues in §8 — especially the `/ustad` placeholder and the
-   legacy relegation tab bug
+   legacy relegation tab bug (**these are code changes**)
 
 ---
 

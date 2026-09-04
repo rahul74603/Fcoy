@@ -17,8 +17,8 @@ and batch progress.
   `/final-board`, `/weekly-program`
 
 **Verification:** CONFIRMED for test records, subjects, FPT events and
-grades. Screens listed at the end are **UI PRESENT — END-TO-END NOT
-VERIFIED**.
+grades. The related screens in §7 have also now been traced and confirmed —
+see `modules/15-registers-and-lifecycle.md`.
 
 ---
 
@@ -158,23 +158,30 @@ Two reports exist for this area: **Subject Assignment Report** and
 
 ---
 
-## 7. Screens That Exist — flag these honestly
+## 7. Related Screens — now traced (label upgraded)
 
-These routes exist and are guarded (CC + Clerk), but their end-to-end
-behaviour was **not traced** for this document:
+These routes were previously marked *UI PRESENT — END-TO-END NOT VERIFIED*
+in this document. **They have since been traced and are CONFIRMED working
+modules**, each with its own collection and full CRUD:
 
-| Route | Screen | Status |
+| Route | Screen | Verdict |
 |---|---|---|
-| `/period-attendance` | Period Attendance | UI PRESENT — END-TO-END NOT VERIFIED |
-| `/syllabus-tracking` | Syllabus Tracking | UI PRESENT — END-TO-END NOT VERIFIED |
-| `/training-sessions` | Session Log | UI PRESENT — END-TO-END NOT VERIFIED |
-| `/final-board` | Final Board | UI PRESENT — END-TO-END NOT VERIFIED |
-| `/joining-workflow`, `/clearance` | Joining & clearance | UI PRESENT — END-TO-END NOT VERIFIED |
-| `/discipline-register`, `/movement-register` | Registers | UI PRESENT — END-TO-END NOT VERIFIED |
+| `/final-board` | Final Board | ⭐ **CONFIRMED — computes the course result automatically. Demo-worthy.** |
+| `/period-attendance` | Period Attendance | **CONFIRMED** — 10 periods, 17 subjects, 8 status codes |
+| `/training-sessions` | Session Log | **CONFIRMED** — 7 session types |
+| `/syllabus-tracking` | Syllabus Tracking | **CONFIRMED (basic)** — manual topic checklist |
+| `/joining-workflow` | Joining Workflow | **CONFIRMED** — 7-stage pipeline |
+| `/clearance` | Clearance | **CONFIRMED** — 10-department no-dues |
+| `/discipline-register` | Discipline Register | **CONFIRMED** — punishments **and** awards |
+| `/movement-register` | Movement Register | **CONFIRMED** — 6 types, overdue tracking |
 
-**How to handle these in a demo:** mention them as *"ye bhi hai"* if the
-buyer asks for a tour. **Do not build a demo beat around them** and do not
-claim specific automation until someone has traced them.
+**Full detail: `modules/15-registers-and-lifecycle.md`.**
+
+⭐ **The Final Board is worth adding to a demo.** It reads the same
+`training_tests` collection that `/test-records` writes to — verified
+end-to-end — and computes percentage, subject-wise scores, FPT result,
+firing classification, attendance %, an overall grade and a
+**Fit for Duty / Conditional / Unfit** recommendation.
 
 ---
 
@@ -200,10 +207,12 @@ claim specific automation until someone has traced them.
   are defaults you can edit — not a certified standard engine.
 - ❌ **"Trainee sees his own marks."** The trainee portal shows notices,
   files and reports. Marks visibility is **NOT VERIFIED**.
-- ❌ **"Certificates or mark sheets generated."** Reports export results as
-  CSV/print. No certificate generator.
-- ❌ **"Syllabus completion percentage is live."** The screen exists;
-  end-to-end behaviour is not verified.
+- ❌ **"Certificates or mark sheets generated."** The Final Board computes
+  and saves a result, but there is no certificate generator. Reports export
+  as CSV/print.
+- ❌ **"Syllabus completion percentage is live."** `/syllabus-tracking` is a
+  manual topic checklist — status is set by hand, not driven by the timetable.
 - ❌ **"Attendance per period is linked to the timetable automatically."**
-  Not verified.
+  `/period-attendance` works, but auto-population from the schedule is not
+  verified — treat subject selection as manual.
 - ❌ **"Historical comparison across batches."** Not verified.
