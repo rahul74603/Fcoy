@@ -2,9 +2,12 @@
 
 ## Overall Status
 
-**BATCH 7 COMPLETE — WAITING FOR USER CONFIRMATION (YES / OK / NEXT)**
+# ✅ DOCUMENTATION PACKAGE COMPLETE
 
-Batches 1–6 confirmed by user and closed. Only the final batch remains.
+**All 8 batches done. 22 files, ~6,600 lines.**
+
+Start here: `99-DOCUMENTATION-AUDIT.md` (what is safe to claim), then
+`02-SLIDES.md` (the deck) and `01-PRESENTATION-ROADMAP.md` (demo prep).
 
 ---
 
@@ -31,18 +34,19 @@ Batches 1–6 confirmed by user and closed. Only the final batch remains.
 - [x] `presentation/06-WOW-FEATURES.md` — top 10 ranked highlight reel + audience selection guide
 - [x] `presentation/07-SMART-DETAILS.md` — 11 categories of polish that signal care
 - [x] `presentation/05-WORKFLOW-CATALOG.md` — 8 end-to-end workflows in USER→SCREEN→ACTION→…→FINAL RESULT format
+- [x] `presentation/02-SLIDES.md` — 24-slide deck with on-slide text + speaker notes + presenter's card
+- [x] `presentation/99-DOCUMENTATION-AUDIT.md` — self-audit, consolidated never-promise list, orphan screens, known issues
 
 ---
 
 ## Current Batch
 
-**Batch 7 — The Presentation Layer** (complete)
+**Batch 8 — FINAL** (complete)
 
-1. WOW features highlight reel
-2. Smart details
-3. Workflow catalog
+1. The slide deck
+2. The documentation audit
 
-All 13 module documents are complete.
+*All 8 batches complete. Nothing pending.*
 
 *Batch 1 — Foundation: complete.*
 *Batch 2 — Catalog, roles, CC dashboard: complete.*
@@ -50,6 +54,7 @@ All 13 module documents are complete.
 *Batch 4 — QM/inventory, finance, reports: complete.*
 *Batch 5 — Training delivery, staff/duty, inspections: complete.*
 *Batch 6 — AI, audit/today, company/master: complete.*
+*Batch 7 — WOW features, smart details, workflow catalog: complete.*
 
 ---
 
@@ -194,17 +199,18 @@ Anything not yet traced is listed under "Workflows Inspected" as unchecked.
 
 ## Next Batch
 
-**Batch 8 — FINAL**
+**None — the package is complete.**
 
-1. `presentation/02-SLIDES.md` — the actual slide deck: slide-by-slide
-   titles, on-slide text and speaker notes, built from the roadmap, the
-   WOW list and the workflow catalog
-2. `presentation/99-DOCUMENTATION-AUDIT.md` — the self-audit: what was
-   verified and how, what is labelled PARTIAL or NOT VERIFIED, the
-   consolidated "never promise" list gathered from every module, the list
-   of orphan/unrouted screens, and known open issues
+Re-audit only when the code changes. See `99-DOCUMENTATION-AUDIT.md` §11
+for when and how.
 
-After Batch 8 the documentation package is complete.
+Highest-value follow-up work, if anyone wants to continue:
+1. Trace the 10 routes marked UI PRESENT — NOT VERIFIED and upgrade or
+   downgrade their labels (`99-DOCUMENTATION-AUDIT.md` §7)
+2. An independent audit of `firestore.rules` before making strong security
+   claims (§10.3)
+3. Fix the known issues in §8 — especially the `/ustad` placeholder and the
+   legacy relegation tab bug
 
 ---
 
@@ -221,4 +227,4 @@ After Batch 8 the documentation package is complete.
 
 ## Last Updated
 
-2026-09-04 — Batch 7 complete (WOW features, smart details, workflow catalog)
+2026-09-04 — Batch 8 complete. PACKAGE FINISHED.
