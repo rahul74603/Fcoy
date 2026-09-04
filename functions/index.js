@@ -102,17 +102,34 @@ const GROQ_SECRETS    = [GROQ_API_KEY, GROQ_API_KEY_2, GROQ_API_KEY_3];
 const GEMINI_SECRETS  = [GEMINI_API_KEY, GEMINI_API_KEY_2];
 const PINECONE_SECRETS = [PINECONE_API_KEY, PINECONE_HOST];
 
+// A deploy resolves EVERY declared secret, even when only unrelated functions
+// are being deployed. On a project that never used AI there is nothing to
+// resolve, and the deploy stops with:
+//   "Cloud Secret Manager has no latest version of the secret defined by
+//    param GROQ_API_KEY"
+// The documented workaround is to store a placeholder value. Treat those
+// placeholders as NOT configured, so a placeholder can never be sent to a
+// provider as if it were a real key — the callable returns a clean
+// "not configured" error instead.
+const AI_KEY_PLACEHOLDERS = new Set([
+  'unused', 'disabled', 'none', 'placeholder', 'not-set', 'notset', 'x', '-',
+]);
+const isRealKey = (k) => {
+  const v = (k || '').trim();
+  return v.length > 0 && !AI_KEY_PLACEHOLDERS.has(v.toLowerCase());
+};
+
 /** Collect every configured Groq key (env values are '' when unset). */
 function groqKeys() {
   return [process.env.GROQ_API_KEY, process.env.GROQ_API_KEY_2, process.env.GROQ_API_KEY_3]
     .map((k) => (k || '').trim())
-    .filter(Boolean);
+    .filter(isRealKey);
 }
 /** Collect every configured Gemini key. */
 function geminiKeys() {
   return [process.env.GEMINI_API_KEY, process.env.GEMINI_API_KEY_2]
     .map((k) => (k || '').trim())
-    .filter(Boolean);
+    .filter(isRealKey);
 }
 
 // ───────────────────────────────────────────────────────────────────────

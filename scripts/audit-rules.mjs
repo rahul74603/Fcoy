@@ -129,6 +129,15 @@ const subAuth = read('functions/subscriptionAuth.mjs');
 check(/endMillis: end\.getTime\(\)/.test(subAuth), 'server writes endMillis on renewal');
 check(/backfillEndMillis/.test(subAuth), 'backfill exists for pre-existing licences');
 
+// ── AI KEY PLACEHOLDERS ──
+// A deploy resolves every declared secret, so projects that never used AI
+// must store a placeholder to deploy at all. That placeholder must never be
+// treated as a usable key.
+const fnIdx = read('functions/index.js');
+check(/AI_KEY_PLACEHOLDERS/.test(fnIdx), 'placeholder AI keys are recognised');
+check(/\.filter\(isRealKey\)/.test(fnIdx),
+  'groq/gemini key collection filters out placeholders');
+
 // ── UI MUST MATCH THE RULES ──
 // The rules let an EXPIRED company read its data and renew while denying
 // mutations. If SubscriptionGate hard-locks on 'expired' the UI contradicts
