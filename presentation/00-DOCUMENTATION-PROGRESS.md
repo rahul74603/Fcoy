@@ -2,9 +2,9 @@
 
 ## Overall Status
 
-**BATCH 2 COMPLETE — WAITING FOR USER CONFIRMATION (YES / OK / NEXT)**
+**BATCH 3 COMPLETE — WAITING FOR USER CONFIRMATION (YES / OK / NEXT)**
 
-Batch 1 confirmed by user and closed.
+Batches 1 and 2 confirmed by user and closed.
 
 ---
 
@@ -16,18 +16,22 @@ Batch 1 confirmed by user and closed.
 - [x] `presentation/03-FEATURE-CATALOG.md` — 45 features, P0×7 / P1×13 / P2×20 / P3×5, plus a "never promise" table
 - [x] `presentation/04-ROLE-MATRIX.md` — role × screen access grid, per-role notes, security story
 - [x] `presentation/modules/02-cc-dashboard.md` — Commander dashboard deep dive (health score, 5 alert streams, 11 filters)
+- [x] `presentation/modules/03-leave-management.md` — BOTH leave systems (staff + trainee), triple-guard, auto-attendance
+- [x] `presentation/modules/04-personnel-trainees.md` — trainee reporting cascade, documents, medical, absence, relegation
+- [x] `presentation/modules/05-notifications.md` — 7 derived sources, deep links, per-device read-state caveat
 
 ---
 
 ## Current Batch
 
-**Batch 2 — Catalog, Roles & Command View** (complete)
+**Batch 3 — Trainee Life: Leave, Personnel & Notifications** (complete)
 
-1. Feature catalog (P0–P3)
-2. Role matrix
-3. Commander dashboard module
+1. Leave management module (staff + trainee)
+2. Personnel & trainee life module
+3. Notifications module
 
-*Batch 1 — Foundation: complete (tracker, overview, roadmap).*
+*Batch 1 — Foundation: complete.*
+*Batch 2 — Catalog, roles, CC dashboard: complete.*
 
 ---
 
@@ -172,18 +176,18 @@ Anything not yet traced is listed under "Workflows Inspected" as unchecked.
 
 ## Next Batch
 
-**Batch 3 — Trainee Life: Leave, Personnel & Notifications**
+**Batch 4 — Stores & Money**
 
-1. `presentation/modules/03-leave-management.md` — leave request → CC
-   approval → return, including the triple-guard story
-2. `presentation/modules/04-personnel-trainees.md` — trainee registration,
-   documents, medical, absence, relegation, trainee reporting inbox
-3. `presentation/modules/05-notifications.md` — the 7 derived notification
-   sources, bell behaviour, per-device read state, and its honest limits
+1. `presentation/modules/06-quartermaster-inventory.md` — inventory, kit
+   issue, stock movement
+2. `presentation/modules/07-finance-funds.md` — the four funds, vendors,
+   vendor payments, mess boy salary, recoveries
+3. `presentation/modules/08-reports.md` — the reports centre and what can
+   actually be exported
 
-Required inspection before writing: `useLeave.ts` full read,
-`TraineeManagementScreen.tsx`, `MedicalRegisterScreen.tsx`,
-`AbsentManagement.tsx`, `relegation/*`, and the notifications feature.
+Required inspection before writing: `QuarterMasterDashboard.tsx` (1,064 L),
+`features/finance/*` (5,976 L), `trainingFund` (2,814 L), `/inventory`,
+`/issue-kit`, `/vendor-payments`, and `ReportsScreen`.
 
 ---
 
@@ -200,4 +204,4 @@ Required inspection before writing: `useLeave.ts` full read,
 
 ## Last Updated
 
-2026-09-04 — Batch 2 complete (feature catalog, role matrix, CC dashboard module)
+2026-09-04 — Batch 3 complete (leave, personnel/trainees, notifications)
