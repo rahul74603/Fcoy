@@ -23,7 +23,7 @@ import {
   TRAINEE_REPORT_KINDS, GENERAL_REPORT_KINDS, ABSENCE_REPORT_KINDS, STATUS_COLORS,
   type AbsenceReportKind, type TraineeUpdate,
 } from '../types/trainee.types';
-import { attnMeta, type AvailabilityEntry } from '../../shared/availability';
+import type { AvailabilityEntry } from '../../shared/availability';
 
 interface Props {
   myTrainee: Record<string, any> | null;

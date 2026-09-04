@@ -278,7 +278,7 @@ export const TraineeDashboard: React.FC = () => {
             <p className="text-[10px] font-black text-slate-500 uppercase mb-2">
               Aaj kaun duty par nahi — {selectedDate}
             </p>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 mb-3">
               {(['A', 'L', 'S', 'H', 'R', 'M'] as const)
                 .filter(c => overallStats.byCode[c] > 0)
                 .map(c => {
@@ -289,6 +289,36 @@ export const TraineeDashboard: React.FC = () => {
                     </span>
                   );
                 })}
+            </div>
+
+            {/* Kaun-kaun away hai — naam, wajah, kab tak */}
+            <div className="max-h-56 overflow-y-auto rounded-lg border border-slate-200">
+              <table className="w-full text-left">
+                <thead className="sticky top-0 bg-slate-100">
+                  <tr>
+                    {['Chest', 'Naam', 'Platoon', 'Status', 'Wajah', 'Tak'].map(h => (
+                      <th key={h} className="px-2 py-1.5 text-[9px] font-black uppercase text-slate-500">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {awayTrainees.map(t => {
+                    const st = statusOf(t);
+                    return (
+                      <tr key={t.id} className={`${st.meta.bgColor} border-l-4 ${st.meta.rowBorder}`}>
+                        <td className="px-2 py-1.5 font-mono text-[10px] font-black">{t.chestNo || '—'}</td>
+                        <td className="px-2 py-1.5 text-[10px] font-bold text-slate-800">{t.name || '—'}</td>
+                        <td className="px-2 py-1.5 text-[10px] text-slate-600">{t.platoon || '—'}</td>
+                        <td className="px-2 py-1.5">
+                          <span className={`text-[9px] font-black ${st.meta.color}`}>{st.meta.icon} {st.meta.shortLabel}</span>
+                        </td>
+                        <td className="px-2 py-1.5 text-[10px] text-slate-600 max-w-[140px] truncate" title={st.reason}>{st.reason || '—'}</td>
+                        <td className="px-2 py-1.5 font-mono text-[9px] text-slate-500">{st.toDate || 'open'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>

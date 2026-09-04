@@ -99,23 +99,8 @@ const DAYS_MAP: Record<number, string> = {
   4: 'Thursday', 5: 'Friday', 6: 'Saturday', 0: 'Sunday'
 };
 
-const ABSENT_TYPES = ['A', 'L', 'S', 'H', 'R'];
 
-const ABSENT_LABELS: Record<string, string> = {
-  'A': 'Absent',
-  'L': 'On Leave',
-  'S': 'Sick / MI Room',
-  'H': 'Hospitalized',
-  'R': 'Rest / Excused'
-};
 
-const ABSENT_COLORS: Record<string, string> = {
-  'A': 'bg-red-100 text-red-800 border-red-300',
-  'L': 'bg-amber-100 text-amber-800 border-amber-300',
-  'S': 'bg-orange-100 text-orange-800 border-orange-300',
-  'H': 'bg-purple-100 text-purple-800 border-purple-300',
-  'R': 'bg-blue-100 text-blue-800 border-blue-300'
-};
 
 // ─────────────────────────────────────────────
 // LIST MODAL COMPONENT
