@@ -10,6 +10,7 @@ import {
 } from '../api/testRecord.api';
 import { logActivity } from '../api/activityLog.api';
 import { useAuth } from '../../../contexts/AuthContext';
+import { actorName } from '../../../utils/actorName';
 import { useBatch } from '../../../contexts/BatchContext';
 
 interface UseTestRecordsReturn {
@@ -84,7 +85,7 @@ export const useTestRecords = (): UseTestRecordsReturn => {
 
       await logActivity(
         user?.uid ?? '',
-        user?.displayName ?? user?.email ?? '',
+        actorName(user),
         user?.role ?? 'staff',
         'Test', 'Test Created',
         { name: formData.testName, type: formData.testType, week: formData.weekNumber },
@@ -146,7 +147,7 @@ export const useTestRecords = (): UseTestRecordsReturn => {
       await saveTestResults(testId, results, totalMarks, passingMarks);
       await logActivity(
         user?.uid ?? '',
-        user?.displayName ?? user?.email ?? '',
+        actorName(user),
         user?.role ?? 'staff',
         'Test', 'Results Saved',
         { count: results.length },

@@ -24,6 +24,7 @@ import {
   type AbsenceReportKind, type TraineeUpdate,
 } from '../types/trainee.types';
 import type { AvailabilityEntry } from '../../shared/availability';
+import { displayActor } from '../../../utils/actorName';
 
 interface Props {
   myTrainee: Record<string, any> | null;
@@ -406,7 +407,7 @@ export const AbsenceReportPanel: React.FC<Props> = ({
               {!u.isGeneral && u.fromDate ? u.fromDate : ''}
               {!u.isGeneral && u.toDate && u.toDate !== u.fromDate ? ` → ${u.toDate}` : ''}
               {!u.isGeneral && u.activity ? ` · ${u.activity}` : ''}
-              {u.status === 'approved' && u.approvedBy ? ` · Clerk: ${u.approvedBy}` : ''}
+              {u.status === 'approved' && u.approvedBy ? ` · Clerk: ${displayActor(u.approvedBy)}` : ''}
               {u.status === 'rejected' && u.rejectionReason ? ` · Reject: ${u.rejectionReason}` : ''}
             </p>
             {u.status === 'approved' && (

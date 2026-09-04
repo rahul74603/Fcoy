@@ -13,6 +13,7 @@ import {
 } from '../api/schedule.api';
 import { logActivity } from '../api/activityLog.api';
 import { useAuth } from '../../../contexts/AuthContext';
+import { actorName } from '../../../utils/actorName';
 import { useBatch } from '../../../contexts/BatchContext';
 
 interface UseScheduleReturn {
@@ -108,7 +109,7 @@ export const useSchedule = (): UseScheduleReturn => {
 
       await logActivity(
         user?.uid ?? '',
-        user?.displayName ?? user?.email ?? '',
+        actorName(user),
         user?.role ?? 'staff',
         'Schedule',
         'Class Scheduled',

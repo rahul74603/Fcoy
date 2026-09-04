@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useBatch } from '../../../contexts/BatchContext';
 import { useAuth } from '../../../contexts/AuthContext';
+import { displayActor } from '../../../utils/actorName';
 import {
   createTraineeAccount, getAllTraineeAccounts, deleteTraineeAccount,
   submitTraineeUpdate, getAllUpdatesForBatch,
@@ -442,7 +443,7 @@ export const TraineeManagementScreen: React.FC = () => {
                       </p>
                     )}
                     <p className="text-[10px] text-slate-400 mt-1">
-                      Bheja: {u.submittedBy} ({u.submittedByRole}) · {new Date(u.submittedAt).toLocaleDateString('en-IN')}
+                      Bheja: {displayActor(u.submittedBy)} ({u.submittedByRole}) · {new Date(u.submittedAt).toLocaleDateString('en-IN')}
                       {u.onBehalf ? ' · on behalf' : ''}
                     </p>
                     {u.status === 'approved' && (
@@ -486,7 +487,7 @@ export const TraineeManagementScreen: React.FC = () => {
                   <h4 className="text-sm font-bold">{n.title}</h4>
                   <p className="text-xs text-slate-600 mt-1">{n.content}</p>
                   <p className="text-[10px] text-slate-400 mt-1">
-                    {n.publishedBy} · {new Date(n.publishedAt).toLocaleDateString('en-IN')} ·{' '}
+                    {displayActor(n.publishedBy)} · {new Date(n.publishedAt).toLocaleDateString('en-IN')} ·{' '}
                     {(n.targetTraineeIds && n.targetTraineeIds.length > 0)
                       ? `🎯 ${n.targetTraineeIds.length} trainee${n.targetTraineeLabel ? ` — ${n.targetTraineeLabel}` : ''}`
                       : (n.targetPlatoon === 'all' ? 'All Platoons' : n.targetPlatoon)}

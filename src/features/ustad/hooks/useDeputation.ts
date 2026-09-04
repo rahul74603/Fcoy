@@ -14,6 +14,7 @@ import {
 import { updateStaffStatus } from '../api/staff.api';
 import { logActivity } from '../api/activityLog.api';
 import { useAuth } from '../../../contexts/AuthContext';
+import { actorName } from '../../../utils/actorName';
 import { useBatch } from '../../../contexts/BatchContext';
 
 interface Summary {
@@ -109,7 +110,7 @@ export const useDeputation = (): UseDeputationReturn => {
 
       await logActivity(
         user?.uid ?? '',
-        user?.displayName ?? user?.email ?? '',
+        actorName(user),
         user?.role ?? 'staff',
         'Deputation',
         formData.direction === 'incoming' ? 'Personnel Received' : 'Personnel Deputed Out',
@@ -149,7 +150,7 @@ export const useDeputation = (): UseDeputationReturn => {
 
       await logActivity(
         user?.uid ?? '',
-        user?.displayName ?? user?.email ?? '',
+        actorName(user),
         user?.role ?? 'staff',
         'Deputation',
         'Marked Returned',

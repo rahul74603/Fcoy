@@ -13,6 +13,7 @@ import {
 
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../../config/firebase';
+import { displayActor } from '../../utils/actorName';
 import { showDoc } from '../../utils/devDataFilter';
 import { toJSDate } from '../../utils/date.utils';
 import { useAuth } from '../../contexts/AuthContext';
@@ -1440,7 +1441,7 @@ export const ReportsScreen: React.FC = () => {
       String(l.numberOfDays),
       l.reason || '—',
       l.status.toUpperCase(),
-      l.approvedByName || '—',
+      displayActor(l.approvedByName, '—'),
     ]);
 
     const pending = filtered.filter(l => l.status === 'pending').length;

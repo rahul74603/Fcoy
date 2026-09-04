@@ -21,6 +21,7 @@ import {
 } from '../api/staff.api';
 import { logActivity } from '../api/activityLog.api';
 import { useAuth } from '../../../contexts/AuthContext';
+import { actorName } from '../../../utils/actorName';
 import { useBatch } from '../../../contexts/BatchContext';
 
 interface UseStaffReturn {
@@ -120,7 +121,7 @@ export const useStaff = (): UseStaffReturn => {
 
       await logActivity(
         user?.uid ?? '',
-        user?.displayName ?? user?.email ?? 'Unknown',
+        actorName(user),
         user?.role ?? 'staff',
         'Staff',
         'Staff Added',
@@ -153,7 +154,7 @@ export const useStaff = (): UseStaffReturn => {
       await updateStaff(staffId, formData);
       await logActivity(
         user?.uid ?? '',
-        user?.displayName ?? user?.email ?? 'Unknown',
+        actorName(user),
         user?.role ?? 'staff',
         'Staff',
         'Staff Updated',
@@ -178,7 +179,7 @@ export const useStaff = (): UseStaffReturn => {
       await deleteStaff(staffId);
       await logActivity(
         user?.uid ?? '',
-        user?.displayName ?? user?.email ?? 'Unknown',
+        actorName(user),
         user?.role ?? 'staff',
         'Staff',
         'Staff Deleted',
@@ -207,7 +208,7 @@ export const useStaff = (): UseStaffReturn => {
       await updateStaffStatus(staffId, status);
       await logActivity(
         user?.uid ?? '',
-        user?.displayName ?? user?.email ?? 'Unknown',
+        actorName(user),
         user?.role ?? 'staff',
         'Staff',
         'Status Updated',

@@ -12,6 +12,7 @@ import {
   Users, MapPin, Clock, FileText, Newspaper,
 } from 'lucide-react';
 import { useAuth } from '../../../contexts/AuthContext';
+import { displayActor } from '../../../utils/actorName';
 import { useBatch } from '../../../contexts/BatchContext';
 import { getTraineeUpdates, getUpdatesSubmittedBy, getNotices, findMyTrainee } from '../api/trainee.api';
 import { ChangePasswordModal } from '../../../components/ChangePasswordModal';
@@ -487,7 +488,7 @@ export const TraineeDashboard: React.FC = () => {
                       </div>
                       <p className="text-xs text-slate-600">{u.description}</p>
                       <p className="text-[10px] text-slate-400 mt-1">
-                        {u.chestNo} — {u.traineeName} · {u.submittedBy} ({u.submittedByRole}) · {new Date(u.submittedAt).toLocaleDateString('en-IN')}
+                        {u.chestNo} — {u.traineeName} · {displayActor(u.submittedBy)} ({u.submittedByRole}) · {new Date(u.submittedAt).toLocaleDateString('en-IN')}
                       </p>
                     </div>
                   </div>
@@ -522,7 +523,7 @@ export const TraineeDashboard: React.FC = () => {
                       </div>
                       <p className="text-xs text-slate-600">{n.content}</p>
                       <p className="text-[10px] text-slate-400 mt-2">
-                        {n.publishedBy} · {new Date(n.publishedAt).toLocaleDateString('en-IN')}
+                        {displayActor(n.publishedBy)} · {new Date(n.publishedAt).toLocaleDateString('en-IN')}
                         {n.targetPlatoon !== 'all' && ` · ${n.targetPlatoon}`}
                       </p>
                     </div>

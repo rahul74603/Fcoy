@@ -18,6 +18,7 @@ import {
 } from '../api/duty.api';
 import { logActivity } from '../api/activityLog.api';
 import { useAuth } from '../../../contexts/AuthContext';
+import { actorName } from '../../../utils/actorName';
 import { useBatch } from '../../../contexts/BatchContext';
 
 // ═══════════════════════════════════════════
@@ -172,7 +173,7 @@ export const useDuty = (): UseDutyReturn => {
 
       await logActivity(
         user?.uid ?? '',
-        user?.displayName ?? user?.email ?? '',
+        actorName(user),
         user?.role ?? 'staff',
         'Duty',
         'Duty Assigned',
@@ -231,7 +232,7 @@ export const useDuty = (): UseDutyReturn => {
 
       await logActivity(
         user?.uid ?? '',
-        user?.displayName ?? user?.email ?? '',
+        actorName(user),
         user?.role ?? 'staff',
         'Duty',
         'Duty Transferred',

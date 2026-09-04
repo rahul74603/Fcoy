@@ -21,6 +21,7 @@ import {
 } from '../api/attendance.api';
 import { logActivity } from '../api/activityLog.api';
 import { useAuth } from '../../../contexts/AuthContext';
+import { actorName } from '../../../utils/actorName';
 
 import { useBatch } from '../../../contexts/BatchContext';
 interface UseAttendanceReturn {
@@ -112,7 +113,7 @@ export const useAttendance = (): UseAttendanceReturn => {
 
       await logActivity(
         user?.uid ?? '',
-        user?.displayName ?? user?.email ?? '',
+        actorName(user),
         user?.role ?? 'staff',
         'Attendance',
         'Bulk Attendance Marked',
@@ -146,7 +147,7 @@ export const useAttendance = (): UseAttendanceReturn => {
 
       await logActivity(
         user?.uid ?? '',
-        user?.displayName ?? user?.email ?? '',
+        actorName(user),
         user?.role ?? 'staff',
         'Attendance',
         'Attendance Updated',

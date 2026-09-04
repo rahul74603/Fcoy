@@ -12,6 +12,7 @@ import { logActivity } from '../api/activityLog.api';
 import { updateStaffStatus } from '../api/staff.api';  // 🆕 ADD
 import { markBulkAttendance } from '../api/attendance.api';  // 🆕 ADD
 import { useAuth } from '../../../contexts/AuthContext';
+import { actorName } from '../../../utils/actorName';
 import { useBatch } from '../../../contexts/BatchContext';
 import { localDateISOString } from '../../../utils/localDate';
 import { canApproveLeave as roleCanApproveLeave, canManageLeaveTypes as roleCanManageLeaveTypes } from '../../../config/permissions';
@@ -245,7 +246,7 @@ export const useLeave = (): UseLeaveReturn => {
 
       await logActivity(
         user?.uid ?? '',
-        user?.displayName ?? user?.email ?? '',
+        actorName(user),
         user?.role ?? 'staff',
         'Leave', 'Leave Applied',
         { staffName, leaveType: leaveType?.name, from: formData.fromDate, to: formData.toDate },
@@ -280,7 +281,7 @@ export const useLeave = (): UseLeaveReturn => {
       await approveLeave(
         leaveId,
         user?.uid ?? '',
-        user?.displayName ?? user?.email ?? ''
+        actorName(user)
       );
 
                   // 2. AUTO-UPDATE STAFF STATUS (silently skip if staff not found)
@@ -340,7 +341,7 @@ export const useLeave = (): UseLeaveReturn => {
       // 4. LOG THE APPROVAL
       await logActivity(
         user?.uid ?? '',
-        user?.displayName ?? user?.email ?? '',
+        actorName(user),
         user?.role ?? 'staff',
         'Leave',
         'Leave Approved (Auto-synced)',
@@ -377,12 +378,12 @@ export const useLeave = (): UseLeaveReturn => {
       await rejectLeave(
         leaveId,
         user?.uid ?? '',
-        user?.displayName ?? user?.email ?? '',
+        actorName(user),
         reason
       );
 
       await logActivity(
-        user?.uid ?? '', user?.displayName ?? user?.email ?? '',
+        user?.uid ?? '', actorName(user),
         user?.role ?? 'staff', 'Leave', 'Leave Rejected', { reason }, leaveId
       );
 
@@ -415,7 +416,7 @@ export const useLeave = (): UseLeaveReturn => {
 
       await logActivity(
         user?.uid ?? '',
-        user?.displayName ?? user?.email ?? '',
+        actorName(user),
         user?.role ?? 'staff',
         'Leave',
         'Leave Cancelled',
@@ -476,7 +477,7 @@ export const useLeave = (): UseLeaveReturn => {
 
       await logActivity(
         user?.uid ?? '',
-        user?.displayName ?? user?.email ?? '',
+        actorName(user),
         user?.role ?? 'staff',
         'Leave',
         'Leave Return Recorded (Auto-synced)',

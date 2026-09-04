@@ -23,6 +23,7 @@ import {
 } from '../api/subject.api';
 import { logActivity } from '../api/activityLog.api';
 import { useAuth } from '../../../contexts/AuthContext';
+import { actorName } from '../../../utils/actorName';
 
 interface UseSubjectsReturn {
   subjects: Subject[];
@@ -112,7 +113,7 @@ export const useSubjects = (): UseSubjectsReturn => {
 
       await logActivity(
         user?.uid ?? '',
-        user?.displayName ?? user?.email ?? '',
+        actorName(user),
         user?.role ?? 'staff',
         'Subject',
         'Subject Added',
@@ -141,7 +142,7 @@ export const useSubjects = (): UseSubjectsReturn => {
 
       await logActivity(
         user?.uid ?? '',
-        user?.displayName ?? user?.email ?? '',
+        actorName(user),
         user?.role ?? 'staff',
         'Subject',
         'Subject Updated',
@@ -167,7 +168,7 @@ export const useSubjects = (): UseSubjectsReturn => {
 
       await logActivity(
         user?.uid ?? '',
-        user?.displayName ?? user?.email ?? '',
+        actorName(user),
         user?.role ?? 'staff',
         'Subject',
         'Subject Deleted',
@@ -233,7 +234,7 @@ export const useSubjects = (): UseSubjectsReturn => {
 
       await logActivity(
         user?.uid ?? '',
-        user?.displayName ?? user?.email ?? '',
+        actorName(user),
         user?.role ?? 'staff',
         'Subject Assignment',
         'Subjects Assigned',
@@ -258,7 +259,7 @@ export const useSubjects = (): UseSubjectsReturn => {
 
       await logActivity(
         user?.uid ?? '',
-        user?.displayName ?? user?.email ?? '',
+        actorName(user),
         user?.role ?? 'staff',
         'Subject Assignment',
         'Assignment Removed',

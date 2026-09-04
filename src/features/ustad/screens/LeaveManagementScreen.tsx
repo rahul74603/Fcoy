@@ -16,6 +16,7 @@ import {
 } from '../types/leave.types';
 import FormModal from '../components/shared/FormModal';
 import ConfirmDialog from '../components/shared/ConfirmDialog';
+import { displayActor } from '../../../utils/actorName';
 
 // ─── Tab Config ───────────────────────────────
 const TABS = [
@@ -845,7 +846,7 @@ const LeaveManagementScreen: React.FC = () => {
                     {/* Approval Info */}
                     {leave.status === 'approved' && leave.approvedByName && (
                       <div className="text-xs text-green-600 bg-green-50 rounded-lg p-2 mb-3">
-                        ✓ Approved by {leave.approvedByName} on{' '}
+                        ✓ Approved by {displayActor(leave.approvedByName)} on{' '}
                         {formatDate(leave.approvalDate)}
                       </div>
                     )}
