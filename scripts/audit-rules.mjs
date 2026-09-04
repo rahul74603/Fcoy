@@ -77,6 +77,26 @@ check(!/emulators:exec/.test(fnPkg.scripts['test:rules'] || ''),
 // ── READ-ONLY DEGRADATION WHEN EXPIRED ──
 // Every business write must pass a licence check, so an expired company can
 // read its data and renew but cannot mutate anything.
+// ── EXPRESSION BUDGET (1000 per request) ──
+// Every role() / roleKey() call expands to exists() + get(). The old role
+// predicates called them up to FOUR times each, and the findings rule uses
+// isCC()/isSO() three times each - the emulator hit "maximum of 1000
+// expressions". Critically, several DENY tests then passed only because
+// evaluation ABORTED rather than because the security logic ran, so the
+// suite was reporting false green. Keep each predicate at one roleKey().
+for (const fn of ['isCC', 'isClerk', 'isQM', 'isUstad', 'isSO', 'isTrainee']) {
+  const blk = fsRules.match(new RegExp(`function ${fn}\\(\\)[\\s\\S]*?\\n    \\}`));
+  check(!!blk, `${fn} block parseable`);
+  if (blk) {
+    // Count BOTH role() and roleKey(); each expands to exists() + get().
+    const calls = (blk[0].match(/\browle?Key\(\)|\brole\(\)|\broleKey\(\)/g) || []).length;
+    check(calls === 1, `${fn} evaluates the role lookup exactly once (found ${calls})`);
+  }
+}
+const rk = fsRules.match(/function roleKey\(\)[\s\S]*?\n    \}/);
+check(!!rk && !/\brole\(\)/.test(rk[0].replace(/roleKey\(\)/g, '')),
+  'roleKey() reads the profile directly instead of calling role()');
+
 check(/function licenceWritable\(\)/.test(fsRules), 'licenceWritable() helper exists');
 // EXPRESSION BUDGET: rules abort at 1000 evaluated expressions per request.
 // The findings/relegations rules already carry huge boolean chains, so the

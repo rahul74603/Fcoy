@@ -48,59 +48,54 @@ service cloud.firestore {
       return userDocExists() ? userDoc().role : '';
     }
 
+    // ── EXPRESSION BUDGET ──
+    // Firestore aborts a request after 1000 evaluated expressions. Every
+    // role() call expands to exists() + get(), and roleKey() called role()
+    // again, so the old isCC() (role() once + roleKey() three times) cost
+    // FOUR role() expansions. The findings rule invokes isCC()/isSO() three
+    // times each, which blew the budget: the emulator reported "maximum of
+    // 1000 expressions" and — worse — several DENY tests passed only because
+    // evaluation aborted, not because the security logic ran.
+    //
+    // The role predicates below therefore evaluate roleKey() exactly ONCE
+    // via an `in` list. Semantics are unchanged: every previous branch was
+    // either a lowercase alias or an exact-case value whose .lower() equals
+    // the alias already listed.
+
     // First-run wizard has not yet completed (config/firstRun marker absent).
     function firstRunOpen() {
       return !exists(/databases/$(database)/documents/config/firstRun);
     }
     // Match client AuthContext.normalizeRole — stored values may be 'CC', 'qm', etc.
+    // Single get(): reads the profile once and lowercases in place, instead of
+    // calling role() twice (which was two more exists()+get() expansions).
     function roleKey() {
-      return role() is string ? role().lower() : '';
+      return userDocExists() && userDoc().role is string
+        ? userDoc().role.lower() : '';
     }
     function isCC() {
-      return signedIn() && (
-        role() == 'Company Commander'
-        || roleKey() == 'cc'
-        || roleKey() == 'commander'
-        || roleKey() == 'company commander'
-      );
+      return signedIn() && roleKey() in
+        ['company commander', 'cc', 'commander'];
     }
     function isClerk() {
-      return signedIn() && (role() == 'Clerk' || roleKey() == 'clerk');
+      return signedIn() && roleKey() == 'clerk';
     }
     function isQM() {
-      return signedIn() && (
-        role() == 'Quarter Master'
-        || roleKey() == 'qm'
-        || roleKey() == 'quartermaster'
-        || roleKey() == 'quarter master'
-      );
+      return signedIn() && roleKey() in
+        ['quarter master', 'qm', 'quartermaster'];
     }
     function isUstad() {
-      return signedIn() && (
-        role() == 'Ustad'
-        || roleKey() == 'ustad'
-        || roleKey() == 'instructor'
-      );
+      return signedIn() && roleKey() in ['ustad', 'instructor'];
     }
     function isSO() {
-      return signedIn() && (
-        role() == 'Senior Officer / Inspector'
-        || roleKey() == 'so'
-        || roleKey() == 'senior officer'
-        || roleKey() == 'inspector'
-        || roleKey() == 'senior officer / inspector'
-        || roleKey() == 'senior officer/inspector'
-      );
+      return signedIn() && roleKey() in
+        ['senior officer / inspector', 'senior officer/inspector',
+         'so', 'senior officer', 'inspector'];
     }
     function isTrainee() {
-      return signedIn() && (
-        role() == 'Trainee'
-        || roleKey() == 'trainee'
-        || roleKey() == 'trainee senior'
-        || roleKey() == 'course trainee senior'
-        || roleKey() == 'senior trainee'
-        || roleKey() == 'course trainee'
-      );
+      return signedIn() && roleKey() in
+        ['trainee', 'trainee senior', 'course trainee senior',
+         'senior trainee', 'course trainee'];
     }
     function isStaff() {
       return signedIn() && (isCC() || isClerk() || isQM() || isUstad() || isSO());
