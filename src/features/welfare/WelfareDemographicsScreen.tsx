@@ -135,21 +135,27 @@ export const WelfareDemographicsScreen: React.FC<WelfareScreenProps> = ({ embedd
   return (
     <div className={embedded ? 'space-y-3' : 'space-y-3 pb-6'}>
 
-      {/* ══════════ HEADER ══════════ */}
-      <div className="bg-military-900 px-4 py-3 flex items-center justify-between flex-wrap gap-3">
+      {/* ══════════ HEADER ══════════
+          Embedded (CC dashboard) me parent card apna collapsible header
+          deta hai — yahan sirf action buttons chahiye, title repeat nahi. */}
+      <div className={`px-4 py-3 flex items-center flex-wrap gap-3 ${
+        embedded ? 'justify-end bg-slate-50 border-b border-slate-200' : 'justify-between bg-military-900'
+      }`}>
+        {!embedded && (
         <div className="flex items-center gap-3">
           <div className="bg-rose-600 p-2">
             <HeartHandshake size={20} className="text-white" />
           </div>
           <div>
             <h1 className="text-sm font-black text-white uppercase tracking-widest">
-              {embedded ? 'Company Information Board' : 'Welfare & Demographics Cell'}
+              Welfare &amp; Demographics Cell
             </h1>
             <p className="text-[9.5px] text-military-300">
               कल्याण एवं जनसांख्यिकी — त्योहार आधारित विशेष सुविधा योजना
             </p>
           </div>
         </div>
+        )}
 
         <div className="flex items-center gap-2 flex-wrap">
           {activeBatch && (

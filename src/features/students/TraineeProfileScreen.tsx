@@ -19,6 +19,7 @@ import type { TraineeSearchResult } from '../../hooks/useTraineeSearch';
 import { ReportButton } from '../../components/common/ReportButton';
 import { rejoinChestNo } from '../relegation/utils/relegation.utils';
 import { TraineeTestResultsPanel } from './TraineeTestResultsPanel';
+import { TraineeBrowser } from './TraineeBrowser';
 
 type TraineeData = TraineeSearchResult;
 
@@ -489,6 +490,15 @@ export const TraineeProfileScreen = () => {
     await searchTrainee(searchQuery);
   };
 
+  /** Browser list se trainee chuna gaya — usi ko profile me khol do. */
+  const handlePickFromList = async (chestNo: string) => {
+    if (!chestNo) return;
+    setSearchQuery(chestNo);
+    setShowRegistrationForm(false);
+    await searchTrainee(chestNo);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   useEffect(() => {
     if (searchedTrainee) {
       setEditData({ ...searchedTrainee, id: searchedTrainee.id || searchedTraineeId });
@@ -758,6 +768,13 @@ export const TraineeProfileScreen = () => {
           </button>
         </div>
       </div>
+
+      {/* ALL TRAINEES — browse + operational filters */}
+      <TraineeBrowser
+        batchId={activeBatch?.id}
+        batchLabel={activeBatch?.batchNumber}
+        onSelect={handlePickFromList}
+      />
 
       {/* REGISTRATION FORM */}
       {showRegistrationForm && (
