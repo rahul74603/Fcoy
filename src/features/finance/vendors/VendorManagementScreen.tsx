@@ -432,7 +432,7 @@ export const VendorManagementScreen: React.FC = () => {
         if (result.data) {
           newBills.push({
             id:         `bill_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-            base64:     result.data.billBase64,
+            base64:     result.data.billDownloadUrl || result.data.billBase64,
             fileName:   result.data.billFileName,
             fileType:   result.data.billFileType,
             fileSize:   result.data.billFileSize,

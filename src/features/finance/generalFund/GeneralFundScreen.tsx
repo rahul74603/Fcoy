@@ -67,6 +67,8 @@ interface GeneralExpense {
   transactionId: string;
   billStatus: 'Pending' | 'Received' | 'Verified' | 'No Bill';
   billBase64: string;
+  billDownloadUrl?: string;
+  billStoragePath?: string;
   billFileName: string;
   billFileType: string;
   billFileSize: number;
@@ -283,6 +285,8 @@ export const GeneralFundScreen: React.FC = () => {
           transactionId: data.transactionId ?? '',
           billStatus: data.billStatus ?? 'Pending',
           billBase64: data.billBase64 ?? '',
+          billDownloadUrl: data.billDownloadUrl ?? '',
+          billStoragePath: data.billStoragePath ?? '',
           billFileName: data.billFileName ?? '',
           billFileType: data.billFileType ?? '',
           billFileSize: Number(data.billFileSize ?? 0),
@@ -581,6 +585,7 @@ export const GeneralFundScreen: React.FC = () => {
     setExpLoading(true);
     try {
       let billBase64 = '', billFileName = '', billFileType = '', billFileSize = 0;
+      let billUrl = '', billPath = '';
 
       if (expBillFile) {
         const result = await processBillFile(expBillFile);
@@ -591,6 +596,10 @@ export const GeneralFundScreen: React.FC = () => {
         }
         if (result.data) {
           billBase64 = result.data.billBase64;
+
+          billUrl  = result.data.billDownloadUrl ?? '';
+
+          billPath = result.data.billStoragePath ?? '';
           billFileName = result.data.billFileName;
           billFileType = result.data.billFileType;
           billFileSize = result.data.billFileSize;
@@ -636,7 +645,7 @@ export const GeneralFundScreen: React.FC = () => {
           ((expPayNow !== 'none') || !expVendorId)
             ? getPaymentRef(expPaymentMode, expCheckNumber, expTransactionId)
             : '',
-        billStatus: billBase64 ? 'Received' : expBillStatus,
+        billStatus: (billUrl || billBase64) ? 'Received' : expBillStatus,
         billBase64,
         billFileName,
         billFileType,
@@ -654,7 +663,7 @@ export const GeneralFundScreen: React.FC = () => {
         if (billBase64) {
           bills.push({
             id: `bill_${Date.now()}`,
-            base64: billBase64,
+            base64: billUrl || billBase64,
             fileName: billFileName,
             fileType: billFileType,
             fileSize: billFileSize,

@@ -1,3 +1,4 @@
+import { uploadBillToStorage } from '../../shared/storage.utils';
 // D:\ALL PROJECTS\BSF COYs\frontend\src\features\finance\shared\utils.ts
 
 // ─────────────────────────────────────────────
@@ -134,14 +135,37 @@ export const MAX_BASE64_SIZE   = 800 * 1024;        // 800KB for Firestore
 // BILL PROCESSING (used in multiple screens)
 // ─────────────────────────────────────────────
 export interface ProcessedBill {
+  /** LEGACY. Naye bills me khaali rehta hai — file ab Storage me jaati hai.
+   *  Purane records me abhi bhi bhara mil sakta hai, isliye padhna zaroori. */
   billBase64:   string;
   billFileName: string;
   billFileType: string;
   billFileSize: number;
+  /** Storage me file ka public download link (naya tarika). */
+  billDownloadUrl?: string;
+  /** Storage path — delete karne ke liye. */
+  billStoragePath?: string;
 }
 
+/**
+ * Bill ko Firebase Storage par bhejta hai.
+ *
+ * Pehle ye base64 banakar Firestore document me thoos deta tha. Firestore
+ * document ki hard limit 1 MiB hai aur base64 file ko ~33% bada kar deta
+ * hai — yaani ek 800 KB ki PDF document ko phaad sakti thi, aur poora
+ * expense record save hona band ho jaata.
+ *
+ * Ab file Storage me jaati hai aur document me sirf link rehta hai.
+ *
+ * `entityId` optional isliye hai ki bahut jagah expense id save hone se
+ * pehle hi bill process ho jaata hai — us case me ek temp folder use hota
+ * hai. Agar Storage available na ho (Blaze plan enable nahi) to purane
+ * base64 tarike par gir jaata hai taaki kaam na ruke.
+ */
 export const processBillFile = async (
-  file: File
+  file: File,
+  category = 'general',
+  entityId?: string,
 ): Promise<{ data: ProcessedBill | null; error: string | null }> => {
   if (!ALLOWED_FILE_TYPES.includes(file.type)) {
     return { data: null, error: 'Sirf PDF, JPG, PNG, WEBP allowed hai' };
@@ -153,6 +177,31 @@ export const processBillFile = async (
     };
   }
 
+  // ── 1) Sahi raasta: Firebase Storage ──
+  try {
+    const target = entityId && entityId.trim()
+      ? entityId.trim()
+      : `unfiled/${Date.now()}`;
+    const up = await uploadBillToStorage(file, category, target);
+    return {
+      data: {
+        billBase64:      '',              // ab kuch bhi Firestore me nahi jaata
+        billFileName:    up.billFileName,
+        billFileType:    up.billFileType,
+        billFileSize:    up.billFileSize,
+        billDownloadUrl: up.billDownloadUrl,
+        billStoragePath: up.billStoragePath,
+      },
+      error: null,
+    };
+  } catch (storageErr) {
+    // Storage abhi enable nahi hai (Blaze plan) — neeche fallback chalega.
+    console.warn('Bill Storage upload failed, base64 par gir rahe hain:', storageErr);
+  }
+
+  // ── 2) Fallback: purana base64 tarika ──
+  // Sirf tab chalta hai jab Storage available na ho. Sakht size limit isi
+  // liye hai ki Firestore document phate nahi.
   try {
     let base64: string;
     const isPdf = file.type === 'application/pdf';
@@ -161,7 +210,8 @@ export const processBillFile = async (
       if (file.size > MAX_PDF_SIZE) {
         return {
           data: null,
-          error: `PDF ${formatFileSize(file.size)} hai. Max 800KB allowed.`,
+          error: `PDF ${formatFileSize(file.size)} hai. Storage band hai isliye max 800KB. `
+               + `Firebase Storage enable karo (Blaze plan) — phir 10MB tak chalega.`,
         };
       }
       base64 = await fileToBase64(file);
@@ -191,6 +241,15 @@ export const processBillFile = async (
     return { data: null, error: `File process nahi hua: ${String(err)}` };
   }
 };
+
+/**
+ * Bill dikhane ke liye sahi source chuno.
+ * Naye records me Storage URL hota hai, purano me base64. Dono chalein.
+ */
+export const billViewSource = (b: {
+  billDownloadUrl?: string;
+  billBase64?: string;
+} | null | undefined): string => (b?.billDownloadUrl || b?.billBase64 || '');
 
 // ─────────────────────────────────────────────
 // MESS FUND CATEGORIES (Single Source of Truth)

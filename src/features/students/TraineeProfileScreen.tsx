@@ -20,6 +20,7 @@ import { ReportButton } from '../../components/common/ReportButton';
 import { rejoinChestNo } from '../relegation/utils/relegation.utils';
 import { TraineeTestResultsPanel } from './TraineeTestResultsPanel';
 import { TraineeBrowser } from './TraineeBrowser';
+import { uploadTraineePhoto, deleteFromStorage } from '../shared/storage.utils';
 
 type TraineeData = TraineeSearchResult;
 
@@ -113,7 +114,7 @@ interface PhotoUploadProps {
 }
 
 const PhotoUpload: React.FC<PhotoUploadProps> = ({
-  traineeId, traineeName, currentPhotoURL,
+  traineeId, traineeName, currentPhotoURL, currentPhotoPath,
   onUploadComplete, onDeleteComplete, compact = false,
 }) => {
   const fileInputRef              = useRef<HTMLInputElement>(null);
@@ -140,23 +141,63 @@ const PhotoUpload: React.FC<PhotoUploadProps> = ({
     const validErr = validateFile(file);
     if (validErr) { setError(validErr); return; }
     setUploading(true); setProgress(10);
+    const localURL = URL.createObjectURL(file);
     try {
-      const localURL = URL.createObjectURL(file);
-      setPreview(localURL); setProgress(30);
-      const base64 = await compressImageToBase64(file);
-      setProgress(60);
+      setPreview(localURL); setProgress(25);
+
+      // ── Firebase Storage par bhejo (sahi tarika) ──
+      // Firestore document ki limit 1 MiB hai aur base64 file ko ~33% bada
+      // kar deta hai — photo document me rakhna kabhi bhi phat sakta hai.
+      // Isliye photo Storage me jaati hai, Firestore me sirf link.
+      const up = await uploadTraineePhoto(file, traineeId);
+      setProgress(75);
+
       await updateDoc(doc(db, 'trainees', traineeId), {
-        photoURL: base64, photoPath: `base64_${traineeId}`,
+        photoURL: up.downloadUrl,
+        photoPath: up.storagePath,
         updatedAt: new Date().toISOString(),
       });
-      setProgress(100); setPreview(base64);
-      onUploadComplete(base64, `base64_${traineeId}`);
+
+      // Purani photo Storage me thi to hata do (base64 wali ka path nahi hota).
+      if (currentPhotoPath && !currentPhotoPath.startsWith('base64_')) {
+        try { await deleteFromStorage(currentPhotoPath); } catch { /* best effort */ }
+      }
+
+      setProgress(100); setPreview(up.downloadUrl);
+      onUploadComplete(up.downloadUrl, up.storagePath);
       setSuccess('Photo saved!');
       setTimeout(() => { setSuccess(''); setProgress(0); }, 2000);
     } catch (err: any) {
+      // Storage abhi enable nahi hua (Blaze plan) — kaam rukna nahi chahiye.
+      // Purane base64 tarike par gir jao, par saaf-saaf bata do.
+      const code = String(err?.code ?? '');
+      const storageBlocked =
+        code.startsWith('storage/') || /storage|cors|blaze/i.test(String(err?.message ?? ''));
+
+      if (storageBlocked) {
+        try {
+          setProgress(50);
+          const base64 = await compressImageToBase64(file);
+          await updateDoc(doc(db, 'trainees', traineeId), {
+            photoURL: base64, photoPath: `base64_${traineeId}`,
+            updatedAt: new Date().toISOString(),
+          });
+          setProgress(100); setPreview(base64);
+          onUploadComplete(base64, `base64_${traineeId}`);
+          setSuccess('Photo saved (Storage band hai — purane tarike se)');
+          setTimeout(() => { setSuccess(''); setProgress(0); }, 3000);
+          return;
+        } catch (fallbackErr: any) {
+          setError(`Error: ${fallbackErr.message}`);
+          setPreview(currentPhotoURL || null);
+          return;
+        }
+      }
+
       setError(`Error: ${err.message}`);
       setPreview(currentPhotoURL || null);
     } finally {
+      URL.revokeObjectURL(localURL);
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
@@ -169,6 +210,10 @@ const PhotoUpload: React.FC<PhotoUploadProps> = ({
       await updateDoc(doc(db, 'trainees', traineeId), {
         photoURL: '', photoPath: '', updatedAt: new Date().toISOString(),
       });
+      // Storage wali file bhi hatao, warna orphan padi rahegi.
+      if (currentPhotoPath && !currentPhotoPath.startsWith('base64_')) {
+        try { await deleteFromStorage(currentPhotoPath); } catch { /* best effort */ }
+      }
       setPreview(null); onDeleteComplete();
     } catch (err: any) { setError(`Delete failed: ${err.message}`); }
     finally { setDeleting(false); }

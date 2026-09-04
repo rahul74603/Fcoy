@@ -11,11 +11,20 @@ import {
 // TYPES
 // ─────────────────────────────────────────────
 export interface BillData {
+  /** LEGACY — purane records me. Naye bills Storage me jaate hain. */
   billBase64: string;
   billFileName: string;
   billFileType: string;
   billFileSize: number;
+  /** Storage download link (naya tarika). */
+  billDownloadUrl?: string;
+  /** Storage path — delete ke liye. */
+  billStoragePath?: string;
 }
+
+/** Bill dikhane ke liye source: naya Storage URL, warna purana base64. */
+const billSrc = (b?: BillData | null): string =>
+  b?.billDownloadUrl || b?.billBase64 || '';
 
 interface BillUploadWidgetProps {
   /** Current bill data (if already uploaded) */
@@ -270,7 +279,7 @@ export const BillUploadWidget: React.FC<BillUploadWidgetProps> = ({
   const [dragOver, setDragOver]     = useState(false);
 
   // Derived
-  const hasBill   = !!(currentBill?.billBase64);
+  const hasBill   = !!billSrc(currentBill);
   const isPdf     = currentBill?.billFileType === 'application/pdf' ||
                     currentBill?.billFileName?.toLowerCase().endsWith('.pdf');
 
@@ -472,9 +481,9 @@ export const BillUploadWidget: React.FC<BillUploadWidgetProps> = ({
         )}
 
         {/* Preview Modal */}
-        {preview && currentBill?.billBase64 && (
+        {preview && billSrc(currentBill) && currentBill && (
           <BillPreviewModal
-            base64={currentBill.billBase64}
+            base64={billSrc(currentBill)}
             fileName={currentBill.billFileName}
             fileType={currentBill.billFileType}
             onClose={() => setPreview(false)}
@@ -618,9 +627,9 @@ export const BillUploadWidget: React.FC<BillUploadWidgetProps> = ({
       )}
 
       {/* Preview Modal */}
-      {preview && currentBill?.billBase64 && (
+      {preview && billSrc(currentBill) && currentBill && (
         <BillPreviewModal
-          base64={currentBill.billBase64}
+          base64={billSrc(currentBill)}
           fileName={currentBill.billFileName}
           fileType={currentBill.billFileType}
           onClose={() => setPreview(false)}

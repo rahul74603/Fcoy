@@ -78,6 +78,8 @@ interface AssetExpense {
   transactionId: string;
   billStatus: 'Pending' | 'Received' | 'Verified' | 'No Bill';
   billBase64: string;
+  billDownloadUrl?: string;
+  billStoragePath?: string;
   billFileName: string;
   billFileType: string;
   billFileSize: number;
@@ -312,6 +314,8 @@ export const CompanyAssetsFundScreen: React.FC = () => {
           transactionId: data.transactionId ?? '',
           billStatus:    data.billStatus ?? 'Pending',
           billBase64:    data.billBase64 ?? '',
+          billDownloadUrl: data.billDownloadUrl ?? '',
+          billStoragePath: data.billStoragePath ?? '',
           billFileName:  data.billFileName ?? '',
           billFileType:  data.billFileType ?? '',
           billFileSize:  Number(data.billFileSize ?? 0),
@@ -575,11 +579,16 @@ export const CompanyAssetsFundScreen: React.FC = () => {
     setExpLoading(true);
     try {
       let billBase64 = '', billFileName = '', billFileType = '', billFileSize = 0;
+      let billUrl = '', billPath = '';
       if (expBillFile) {
         const result = await processBillFile(expBillFile);
         if (result.error) { setErrorMsg(result.error); setExpLoading(false); return; }
         if (result.data) {
           billBase64    = result.data.billBase64;
+
+          billUrl  = result.data.billDownloadUrl ?? '';
+
+          billPath = result.data.billStoragePath ?? '';
           billFileName  = result.data.billFileName;
           billFileType  = result.data.billFileType;
           billFileSize  = result.data.billFileSize;
@@ -610,8 +619,9 @@ export const CompanyAssetsFundScreen: React.FC = () => {
         paymentMode:   expPayNow !== 'none' ? expPaymentMode : (expVendorId ? '' : expPaymentMode),
         checkNumber:   (expPayNow !== 'none' || !expVendorId) && expPaymentMode === 'Check' ? expCheckNumber : '',
         transactionId: (expPayNow !== 'none' || !expVendorId) ? getPaymentRef(expPaymentMode, expCheckNumber, expTransactionId) : '',
-        billStatus:    billBase64 ? 'Received' : expBillStatus,
+        billStatus:    (billUrl || billBase64) ? 'Received' : expBillStatus,
         billBase64, billFileName, billFileType, billFileSize,
+        billDownloadUrl: billUrl, billStoragePath: billPath,
         assetStatus:   'Active',
         paidAmount,
         dueAmount,
@@ -627,7 +637,7 @@ export const CompanyAssetsFundScreen: React.FC = () => {
         if (billBase64) {
           bills.push({
             id:         `bill_${Date.now()}`,
-            base64:     billBase64,
+            base64:     billUrl || billBase64,
             fileName:   billFileName,
             fileType:   billFileType,
             fileSize:   billFileSize,
@@ -739,7 +749,7 @@ export const CompanyAssetsFundScreen: React.FC = () => {
         if (result.data) {
           bills.push({
             id:         `bill_${Date.now()}`,
-            base64:     result.data.billBase64,
+            base64:     result.data.billDownloadUrl || result.data.billBase64,
             fileName:   result.data.billFileName,
             fileType:   result.data.billFileType,
             fileSize:   result.data.billFileSize,
