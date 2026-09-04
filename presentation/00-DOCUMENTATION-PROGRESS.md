@@ -2,9 +2,9 @@
 
 ## Overall Status
 
-**BATCH 5 COMPLETE — WAITING FOR USER CONFIRMATION (YES / OK / NEXT)**
+**BATCH 6 COMPLETE — WAITING FOR USER CONFIRMATION (YES / OK / NEXT)**
 
-Batches 1–4 confirmed by user and closed.
+Batches 1–5 confirmed by user and closed.
 
 ---
 
@@ -25,21 +25,25 @@ Batches 1–4 confirmed by user and closed.
 - [x] `presentation/modules/09-training-delivery.md` — 33 BSF subjects, 7 FPT events, 11 test types
 - [x] `presentation/modules/10-staff-duty.md` — staff master, duty availability checker, auto-attendance chain, deputation
 - [x] `presentation/modules/11-inspections.md` — 5-stage finding lifecycle, authorisation rules, compliance score
+- [x] `presentation/modules/12-ai-agent.md` — 31 tools, 6 safety guards, 20 blocked collections
+- [x] `presentation/modules/13-audit-today.md` — Lekha-Jokha Register + Today Special daily feed
+- [x] `presentation/modules/14-company-master.md` — users, settings, subscription (COMPANY-LEVEL ONLY), master tools
 
 ---
 
 ## Current Batch
 
-**Batch 5 — Training Delivery & Inspections** (complete)
+**Batch 6 — AI, Audit & Company/Master Side** (complete)
 
-1. Training delivery module
-2. Staff, attendance, duty & deputation module
-3. Inspections, findings & corrective actions module
+1. AI agent module
+2. Lekha-Jokha Register & Today Special module
+3. Company setup, users, settings & subscription module
 
 *Batch 1 — Foundation: complete.*
 *Batch 2 — Catalog, roles, CC dashboard: complete.*
 *Batch 3 — Leave, personnel, notifications: complete.*
 *Batch 4 — QM/inventory, finance, reports: complete.*
+*Batch 5 — Training delivery, staff/duty, inspections: complete.*
 
 ---
 
@@ -184,19 +188,22 @@ Anything not yet traced is listed under "Workflows Inspected" as unchecked.
 
 ## Next Batch
 
-**Batch 6 — AI, Subscription & Company/Master Side**
+**Batch 7 — The Presentation Layer** (all module docs are now done)
 
-1. `presentation/modules/12-ai-agent.md` — the CC-only AI agent, its 30
-   tools, what it can and cannot do, and the safety story
-2. `presentation/modules/13-audit-today.md` — Lekha-Jokha Register
-   (`/audit-log`) and the Today Special daily feed (`/today`)
-3. `presentation/modules/14-company-master.md` — company setup, user
-   management, settings, subscription (COMPANY-LEVEL ONLY), company
-   monitor, developer sandbox
+1. `presentation/06-WOW-FEATURES.md` — the ranked highlight reel drawn from
+   every module written so far
+2. `presentation/07-SMART-DETAILS.md` — the small touches that signal care
+   (Hindi labels, empty states, IST date handling, UTF-8 BOM, ESC to close,
+   deactivate-don't-delete, honest banners)
+3. `presentation/05-WORKFLOW-CATALOG.md` — end-to-end workflows in the
+   USER → SCREEN → ACTION → SYSTEM RESPONSE → STATUS CHANGE → NEXT ROLE →
+   FINAL RESULT format
 
-Required inspection before writing: `features/aiAgent/*` (28 files, 8,943 L
-— note 13 are orphans), `auditLog`, `activity`, `system/UserManagement`,
-`SettingsScreen`, `subscription/*`.
+Then **Batch 8 (final)**: `presentation/02-SLIDES.md` and
+`presentation/99-DOCUMENTATION-AUDIT.md`.
+
+No new code inspection required — Batch 7 is synthesis of the 13 module
+documents already written.
 
 ---
 
@@ -213,4 +220,4 @@ Required inspection before writing: `features/aiAgent/*` (28 files, 8,943 L
 
 ## Last Updated
 
-2026-09-04 — Batch 5 complete (training delivery, staff/duty, inspections)
+2026-09-04 — Batch 6 complete (AI agent, audit/today, company/master)
