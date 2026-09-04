@@ -2,9 +2,9 @@
 
 ## Overall Status
 
-**BATCH 6 COMPLETE — WAITING FOR USER CONFIRMATION (YES / OK / NEXT)**
+**BATCH 7 COMPLETE — WAITING FOR USER CONFIRMATION (YES / OK / NEXT)**
 
-Batches 1–5 confirmed by user and closed.
+Batches 1–6 confirmed by user and closed. Only the final batch remains.
 
 ---
 
@@ -28,22 +28,28 @@ Batches 1–5 confirmed by user and closed.
 - [x] `presentation/modules/12-ai-agent.md` — 31 tools, 6 safety guards, 20 blocked collections
 - [x] `presentation/modules/13-audit-today.md` — Lekha-Jokha Register + Today Special daily feed
 - [x] `presentation/modules/14-company-master.md` — users, settings, subscription (COMPANY-LEVEL ONLY), master tools
+- [x] `presentation/06-WOW-FEATURES.md` — top 10 ranked highlight reel + audience selection guide
+- [x] `presentation/07-SMART-DETAILS.md` — 11 categories of polish that signal care
+- [x] `presentation/05-WORKFLOW-CATALOG.md` — 8 end-to-end workflows in USER→SCREEN→ACTION→…→FINAL RESULT format
 
 ---
 
 ## Current Batch
 
-**Batch 6 — AI, Audit & Company/Master Side** (complete)
+**Batch 7 — The Presentation Layer** (complete)
 
-1. AI agent module
-2. Lekha-Jokha Register & Today Special module
-3. Company setup, users, settings & subscription module
+1. WOW features highlight reel
+2. Smart details
+3. Workflow catalog
+
+All 13 module documents are complete.
 
 *Batch 1 — Foundation: complete.*
 *Batch 2 — Catalog, roles, CC dashboard: complete.*
 *Batch 3 — Leave, personnel, notifications: complete.*
 *Batch 4 — QM/inventory, finance, reports: complete.*
 *Batch 5 — Training delivery, staff/duty, inspections: complete.*
+*Batch 6 — AI, audit/today, company/master: complete.*
 
 ---
 
@@ -188,22 +194,17 @@ Anything not yet traced is listed under "Workflows Inspected" as unchecked.
 
 ## Next Batch
 
-**Batch 7 — The Presentation Layer** (all module docs are now done)
+**Batch 8 — FINAL**
 
-1. `presentation/06-WOW-FEATURES.md` — the ranked highlight reel drawn from
-   every module written so far
-2. `presentation/07-SMART-DETAILS.md` — the small touches that signal care
-   (Hindi labels, empty states, IST date handling, UTF-8 BOM, ESC to close,
-   deactivate-don't-delete, honest banners)
-3. `presentation/05-WORKFLOW-CATALOG.md` — end-to-end workflows in the
-   USER → SCREEN → ACTION → SYSTEM RESPONSE → STATUS CHANGE → NEXT ROLE →
-   FINAL RESULT format
+1. `presentation/02-SLIDES.md` — the actual slide deck: slide-by-slide
+   titles, on-slide text and speaker notes, built from the roadmap, the
+   WOW list and the workflow catalog
+2. `presentation/99-DOCUMENTATION-AUDIT.md` — the self-audit: what was
+   verified and how, what is labelled PARTIAL or NOT VERIFIED, the
+   consolidated "never promise" list gathered from every module, the list
+   of orphan/unrouted screens, and known open issues
 
-Then **Batch 8 (final)**: `presentation/02-SLIDES.md` and
-`presentation/99-DOCUMENTATION-AUDIT.md`.
-
-No new code inspection required — Batch 7 is synthesis of the 13 module
-documents already written.
+After Batch 8 the documentation package is complete.
 
 ---
 
@@ -220,4 +221,4 @@ documents already written.
 
 ## Last Updated
 
-2026-09-04 — Batch 6 complete (AI agent, audit/today, company/master)
+2026-09-04 — Batch 7 complete (WOW features, smart details, workflow catalog)
