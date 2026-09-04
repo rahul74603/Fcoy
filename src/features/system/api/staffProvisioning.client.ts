@@ -68,3 +68,83 @@ export async function createStaffAccount(input: CreateStaffInput): Promise<Creat
     throw new Error(e?.message ?? 'Staff account create nahi ho paya.');
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// LOGIN AUDIT + REPAIR
+// ───────────────────────────────────────────────────────────────────────
+// Purane staff accounts sirf Firestore me bane the, Firebase Auth me nahi.
+// Aise account se login KABHI nahi hota — Firebase seedha
+// `auth/invalid-credential` deta hai, kyunki us email ka Auth user hai hi
+// nahi. Screen par profile dikhta hai, isliye lagta hai account theek hai.
+// ═══════════════════════════════════════════════════════════════════════
+
+export interface LoginAuditRow {
+  profileId: string;
+  name: string;
+  email: string;
+  role: string;
+  isActive: boolean;
+  /** Is email ka Firebase Auth account maujood hai? */
+  authExists: boolean;
+  /** Profile ka doc id auth uid ke barabar hai? (app ka login contract) */
+  idMatchesAuth: boolean;
+  /** Teeno sahi — ye banda sach me login kar sakta hai. */
+  canLogin: boolean;
+}
+
+export interface RepairResult {
+  uid: string;
+  email: string;
+  role: string;
+  /** 'auth-created' = naya Auth account bana · 'password-reset' = tha, password badla */
+  action: 'auth-created' | 'password-reset';
+  /** Profile ko naye doc id par move karna pada? */
+  moved: boolean;
+}
+
+const friendly = (e: any, fallback: string): Error => {
+  const code = e?.code ?? '';
+  if (code === 'permission-denied' || code === 'unauthenticated') {
+    return new Error('SURAKSHA: ye kaam sirf Company Commander kar sakta hai.');
+  }
+  if (code === 'invalid-argument') {
+    return new Error(e?.message ?? 'Input galat hai.');
+  }
+  if (code === 'unavailable' || code === 'deadline-exceeded' || code === 'failed-precondition') {
+    return new Error('Server abhi reachable nahi. Cloud Functions deploy hue hain? (firebase deploy --only functions)');
+  }
+  if (code === 'not-found' || /not.?found/i.test(e?.message ?? '')) {
+    return new Error('Ye function deploy nahi hua. Chalao: firebase deploy --only functions');
+  }
+  return new Error(e?.message ?? fallback);
+};
+
+/** Har profile ke liye batata hai ki login ho sakta hai ya nahi. Read-only. */
+export async function auditStaffLogins(): Promise<LoginAuditRow[]> {
+  const callable = httpsCallable<Record<string, never>, { rows: LoginAuditRow[] }>(
+    functionsInstance(), 'auditStaffLogins');
+  try {
+    const res = await callable({} as Record<string, never>);
+    return res.data.rows ?? [];
+  } catch (e: any) {
+    throw friendly(e, 'Login audit nahi ho paya.');
+  }
+}
+
+/**
+ * Ek toote hue profile ko login-capable banata hai.
+ * Auth account nahi hai to banata hai, hai to password reset karta hai.
+ * Role/name/phone/assignedBatchIds sab preserve rehte hain.
+ */
+export async function repairStaffLogin(
+  profileId: string, password: string,
+): Promise<RepairResult> {
+  const callable = httpsCallable<{ profileId: string; password: string }, RepairResult>(
+    functionsInstance(), 'repairStaffLogin');
+  try {
+    const res = await callable({ profileId, password });
+    return res.data;
+  } catch (e: any) {
+    throw friendly(e, 'Repair nahi ho paya.');
+  }
+}

@@ -139,3 +139,150 @@ export async function provisionStaff(adminAuth, adminDb, caller, input) {
     throw new ProvisioningError('internal', 'Staff account create nahi ho paya.');
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// BROKEN PROFILE REPAIR
+// ───────────────────────────────────────────────────────────────────────
+// Purane accounts (QM, SO, Clerk...) us zamane me bane the jab ye page
+// sirf Firestore profile banata tha aur Firebase Auth account NAHI. Aise
+// account se login kabhi nahi hota — Firebase `auth/invalid-credential`
+// deta hai, kyunki us email ka Auth user exist hi nahi karta.
+//
+// Ye function unhe theek karta hai, WITHOUT data loss:
+//   • Auth account nahi hai  → bana do, aur profile ko naye uid par le jao
+//   • Auth account hai       → sirf password reset kar do
+//   • Profile doc id != uid  → naye doc id par copy, purana deactivate
+//
+// Role, name, phone, designation, assignedBatchIds — sab preserve hote
+// hain. isDeveloper hamesha false force hota hai (client kabhi trust nahi).
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * @param {object} adminAuth firebase-admin Auth
+ * @param {object} adminDb   firebase-admin Firestore
+ * @param {object} caller    { uid }
+ * @param {object} input     { profileId: string, password: string }
+ */
+export async function repairStaffAccount(adminAuth, adminDb, caller, input) {
+  const profileId = String(input?.profileId ?? '').trim();
+  const password = String(input?.password ?? '');
+
+  if (!profileId) {
+    throw new ProvisioningError('invalid-argument', 'Profile id required.');
+  }
+  if (password.length < 6) {
+    throw new ProvisioningError('invalid-argument', 'Password kam se kam 6 character ka ho.');
+  }
+
+  const snap = await adminDb.collection('users').doc(profileId).get();
+  if (!snap.exists) {
+    throw new ProvisioningError('invalid-argument', 'Ye profile Firestore me nahi mila.');
+  }
+  const p = snap.data() || {};
+
+  const email = String(p.email ?? '').trim().toLowerCase();
+  if (!EMAIL_RE.test(email)) {
+    throw new ProvisioningError('invalid-argument',
+      'Is profile me valid email nahi hai — pehle email theek karo.');
+  }
+
+  const role = String(p.role ?? '').trim();
+  if (!STAFF_ROLES.includes(role)) {
+    throw new ProvisioningError('invalid-argument',
+      `Is profile ka role "${role}" pehchana nahi gaya — pehle role theek karo.`);
+  }
+
+  const name = String(p.name ?? '').trim() || email.split('@')[0];
+
+  // 1) Auth account dhundo, warna banao.
+  let uid;
+  let action;
+  try {
+    const existing = await adminAuth.getUserByEmail(email);
+    uid = existing.uid;
+    // Account hai — sirf password reset karo taaki CC turant de sake.
+    await adminAuth.updateUser(uid, { password, displayName: name, disabled: false });
+    action = 'password-reset';
+  } catch (err) {
+    if (err && err.code === 'auth/user-not-found') {
+      const created = await adminAuth.createUser({ email, password, displayName: name });
+      uid = created.uid;
+      action = 'auth-created';
+    } else {
+      throw new ProvisioningError('internal', 'Auth account check nahi ho paya.');
+    }
+  }
+
+  // 2) Profile ko sahi doc id (= auth uid) par le jao.
+  const payload = {
+    name,
+    email,
+    role,
+    phone: String(p.phone ?? '').trim(),
+    designation: String(p.designation ?? '').trim(),
+    isActive: true,
+    isDeveloper: false, // forced — kabhi client se nahi
+    assignedBatchIds: Array.isArray(p.assignedBatchIds)
+      ? p.assignedBatchIds.map(String).filter(Boolean)
+      : [],
+    createdAt: String(p.createdAt ?? new Date().toISOString()),
+    createdBy: String(p.createdBy ?? caller.uid),
+    repairedAt: new Date().toISOString(),
+    repairedBy: caller.uid,
+  };
+
+  let moved = false;
+  if (profileId !== uid) {
+    // Naye uid par likho, purana doc deactivate karke chhod do (delete nahi
+    // — history aur audit trail bacha rehna chahiye).
+    await adminDb.collection('users').doc(uid).set(payload, { merge: true });
+    await adminDb.collection('users').doc(profileId).set({
+      isActive: false,
+      supersededBy: uid,
+      supersededAt: new Date().toISOString(),
+      note: 'Broken profile — repair ke baad naye uid par move ho gaya.',
+    }, { merge: true });
+    moved = true;
+  } else {
+    await adminDb.collection('users').doc(uid).set(payload, { merge: true });
+  }
+
+  return { uid, email, role, action, moved };
+}
+
+/**
+ * Sirf report karta hai — kuch badalta nahi.
+ * Har profile ke liye batata hai ki uska Auth account hai ya nahi.
+ */
+export async function auditStaffAccounts(adminAuth, adminDb) {
+  const snap = await adminDb.collection('users').get();
+  const rows = [];
+
+  for (const d of snap.docs) {
+    const p = d.data() || {};
+    const email = String(p.email ?? '').trim().toLowerCase();
+    let authExists = false;
+    let authUid = '';
+
+    if (EMAIL_RE.test(email)) {
+      try {
+        const u = await adminAuth.getUserByEmail(email);
+        authExists = true;
+        authUid = u.uid;
+      } catch { /* user-not-found */ }
+    }
+
+    rows.push({
+      profileId: d.id,
+      name: String(p.name ?? ''),
+      email,
+      role: String(p.role ?? ''),
+      isActive: p.isActive !== false,
+      authExists,
+      idMatchesAuth: authExists && authUid === d.id,
+      canLogin: authExists && authUid === d.id && p.isActive !== false,
+    });
+  }
+
+  return rows;
+}

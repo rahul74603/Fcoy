@@ -37,6 +37,7 @@ import {
 } from './aiFailover.mjs';
 import {
   assertCallerIsCommander, normalizeStaffInput, provisionStaff, ProvisioningError,
+  repairStaffAccount, auditStaffAccounts,
 } from './staffProvisioning.mjs';
 
 // ───────────────────────────────────────────────────────────────────────
@@ -397,6 +398,73 @@ export const createStaffAccount = onCall(
       }
       logger.error('Staff provisioning failed', { uid: request.auth?.uid, err: String(err) });
       throw new HttpsError('internal', 'Staff account create nahi ho paya.');
+    }
+  },
+);
+
+// ───────────────────────────────────────────────────────────────────────
+// auditStaffLogins — READ ONLY. Kaunsa profile login kar sakta hai?
+//    data: {}  →  [{ profileId, name, email, role, authExists,
+//                    idMatchesAuth, canLogin, isActive }]
+//
+// Purane accounts sirf Firestore me bane the, Firebase Auth me nahi —
+// unse login kabhi nahi hota tha (auth/invalid-credential). Ye callable
+// bas batata hai kaun toota hua hai. Kuch badalta nahi.
+// ───────────────────────────────────────────────────────────────────────
+export const auditStaffLogins = onCall(
+  { timeoutSeconds: 120, memory: '256MiB' },
+  async (request) => {
+    await assertAiAuthorized(request);
+    try {
+      const callerSnap = await getDb().collection('users').doc(request.auth.uid).get();
+      assertCallerIsCommander(callerSnap.exists ? callerSnap.data() : null);
+      return { rows: await auditStaffAccounts(getAdminAuth(), getDb()) };
+    } catch (err) {
+      if (err instanceof HttpsError) throw err;
+      if (err instanceof ProvisioningError) {
+        throw new HttpsError(err.code === 'permission-denied' ? 'permission-denied' : 'internal', err.message);
+      }
+      logger.error('Staff login audit failed', { uid: request.auth?.uid, err: String(err) });
+      throw new HttpsError('internal', 'Audit nahi ho paya.');
+    }
+  },
+);
+
+// ───────────────────────────────────────────────────────────────────────
+// repairStaffLogin — ek toote hue profile ko login-capable banata hai.
+//    data: { profileId: string, password: string }
+//
+// Auth account nahi hai to banata hai; hai to password reset karta hai.
+// Agar profile ka doc id auth uid se alag hai to profile ko sahi id par
+// move karta hai aur purane ko deactivate kar deta hai (delete NAHI —
+// history bachi rehni chahiye). Role/name/phone/assignedBatchIds preserve
+// hote hain; isDeveloper hamesha false.
+// ───────────────────────────────────────────────────────────────────────
+export const repairStaffLogin = onCall(
+  { timeoutSeconds: 60, memory: '256MiB' },
+  async (request) => {
+    const caller = await assertAiAuthorized(request);
+    try {
+      const callerSnap = await getDb().collection('users').doc(request.auth.uid).get();
+      assertCallerIsCommander(callerSnap.exists ? callerSnap.data() : null);
+
+      const result = await repairStaffAccount(
+        getAdminAuth(), getDb(), { uid: caller.uid }, request.data || {},
+      );
+      return result;
+    } catch (err) {
+      if (err instanceof HttpsError) throw err;
+      if (err instanceof ProvisioningError) {
+        const statusByCode = {
+          'permission-denied': 'permission-denied',
+          'invalid-argument': 'invalid-argument',
+          'already-exists':    'already-exists',
+          'internal':          'internal',
+        };
+        throw new HttpsError(statusByCode[err.code] || 'internal', err.message);
+      }
+      logger.error('Staff login repair failed', { uid: request.auth?.uid, err: String(err) });
+      throw new HttpsError('internal', 'Repair nahi ho paya.');
     }
   },
 );

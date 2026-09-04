@@ -13,14 +13,17 @@
 // ─────────────────────────────────────────────
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { UserPlus, Shield, Search, Trash2, AlertTriangle, Eye, EyeOff, Loader2, KeyRound } from 'lucide-react';
+import { UserPlus, Shield, Search, Trash2, AlertTriangle, Eye, EyeOff, Loader2, KeyRound, Wrench, ShieldAlert, CheckCircle2 } from 'lucide-react';
 import { collection, getDocs, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { getAuth, sendPasswordResetEmail } from 'firebase/auth';
 import { getApps, initializeApp } from 'firebase/app';
 import { db, firebaseConfig } from '../../config/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBatch } from '../../contexts/BatchContext';
-import { createStaffAccount } from './api/staffProvisioning.client';
+import {
+  createStaffAccount, auditStaffLogins, repairStaffLogin,
+  type LoginAuditRow,
+} from './api/staffProvisioning.client';
 import { Layers } from 'lucide-react';
 
 interface UserModel {
@@ -71,6 +74,67 @@ export const UserManagementPage = () => {
   const [assignFor, setAssignFor] = useState<UserModel | null>(null);
   const [assignDraft, setAssignDraft] = useState<string[]>([]);
   const [assigning, setAssigning] = useState(false);
+
+  // ── LOGIN AUDIT ──
+  // Purane profiles Firestore me to hain par Firebase Auth me nahi — unse
+  // login kabhi nahi hota. Ye server se poochta hai ki kaun sach me login
+  // kar sakta hai.
+  const [audit, setAudit] = useState<Record<string, LoginAuditRow>>({});
+  const [auditing, setAuditing] = useState(false);
+  const [auditRun, setAuditRun] = useState(false);
+  const [repairing, setRepairing] = useState('');
+
+  const runAudit = async () => {
+    setAuditing(true);
+    setMessage('');
+    try {
+      const rows = await auditStaffLogins();
+      const map: Record<string, LoginAuditRow> = {};
+      rows.forEach(r => { map[r.profileId] = r; });
+      setAudit(map);
+      setAuditRun(true);
+      const broken = rows.filter(r => !r.canLogin).length;
+      setMessage(broken === 0
+        ? `SUCCESS: sab ${rows.length} profiles login kar sakte hain ✓`
+        : `${broken} profile login NAHI kar sakte — neeche laal me marked hain. "Repair" dabao.`);
+    } catch (err: any) {
+      setMessage(`ERROR: ${err.message}`);
+    } finally {
+      setAuditing(false);
+    }
+  };
+
+  const handleRepair = async (u: UserModel) => {
+    const pw = window.prompt(
+      `${u.name} (${u.email}) ka LOGIN theek karna hai.\n\n` +
+      'Naya password daalo (kam se kam 6 character). Yehi password staff ko dena hai.\n\n' +
+      '• Auth account nahi hai to ban jayega\n' +
+      '• Pehle se hai to password reset ho jayega\n' +
+      '• Role, naam, phone, assigned batches — sab waise hi rahenge'
+    );
+    if (pw === null) return;
+    if (pw.trim().length < 6) { setMessage('ERROR: password kam se kam 6 character ka ho.'); return; }
+
+    setRepairing(u.id);
+    setMessage('');
+    try {
+      const r = await repairStaffLogin(u.id, pw.trim());
+      const what = r.action === 'auth-created'
+        ? 'naya login account ban gaya'
+        : 'password reset ho gaya';
+      setMessage(
+        `SUCCESS: ${r.email} ka ${what} ✓` +
+        (r.moved ? ' (profile sahi ID par move kar diya)' : '') +
+        ' — ab is password se login karke dekho.'
+      );
+      await runAudit();
+      fetchUsers();
+    } catch (err: any) {
+      setMessage(`ERROR: ${err.message}`);
+    } finally {
+      setRepairing('');
+    }
+  };
 
   const openAssign = (u: UserModel) => { setAssignFor(u); setAssignDraft(u.assignedBatchIds ?? []); };
 
@@ -347,6 +411,39 @@ export const UserManagementPage = () => {
               />
             </div>
           </div>
+
+          {/* ── LOGIN CHECK ──
+              Profile dikhne ka matlab ye nahi ki login hoga. Purane accounts
+              sirf Firestore me bane the, Firebase Auth me nahi. */}
+          <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-amber-50/60 px-4 py-2">
+            <button
+              onClick={runAudit}
+              disabled={auditing}
+              className="flex items-center gap-1.5 rounded-sm border border-military-700 bg-military-800 px-3 py-1.5 text-[10px] font-black uppercase text-white hover:bg-military-900 disabled:opacity-50"
+            >
+              {auditing ? <Loader2 size={12} className="animate-spin" /> : <ShieldAlert size={12} />}
+              {auditing ? 'Check ho raha hai…' : 'Login check karo'}
+            </button>
+            <p className="text-[10px] leading-tight text-slate-600">
+              {auditRun ? (
+                (() => {
+                  const rows = Object.values(audit);
+                  const bad = rows.filter(r => !r.canLogin);
+                  return bad.length === 0
+                    ? <span className="font-bold text-green-700">Sab {rows.length} profiles login kar sakte hain ✓</span>
+                    : <span className="font-bold text-red-700">
+                        {bad.length} profile login NAHI kar sakte — unke aage laal "Repair" button aa gaya hai.
+                      </span>;
+                })()
+              ) : (
+                <>Profile dikhne ka matlab login hona nahi hai. Purane accounts sirf
+                Firestore me bane the, <b>Firebase Auth me nahi</b> — unse login kabhi nahi hota
+                (<code className="rounded bg-slate-200 px-1">auth/invalid-credential</code>).
+                Ye button server se sach poochta hai.</>
+              )}
+            </p>
+          </div>
+
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm whitespace-nowrap">
               <thead className="bg-slate-50 border-b border-slate-200">
@@ -367,7 +464,10 @@ export const UserManagementPage = () => {
                   </td></tr>
                 ) : (
                   filteredUsers.map(u => {
-                    const broken = !isLoginCapable(u.id);
+                    const row = audit[u.id];
+                    // Audit chal gaya ho to server ka sach maano; warna doc-id se andaza.
+                    const broken = row ? !row.canLogin : !isLoginCapable(u.id);
+                    const noAuth = row ? !row.authExists : false;
                     return (
                       <tr key={u.id} className={`border-b border-slate-100 hover:bg-slate-50 ${broken ? 'bg-red-50/40' : ''}`}>
                         <td className="px-4 py-2">
@@ -393,8 +493,18 @@ export const UserManagementPage = () => {
                             </div>
                           )}
                           {broken && (
-                            <div className="mt-1 flex items-center gap-1 text-[9px] font-black text-red-600" title="Firestore doc ID Auth UID se match nahi karta — is profile se login possible nahi. Delete karke naya account banao.">
-                              <AlertTriangle size={10} /> NO LOGIN (broken)
+                            <div
+                              className="mt-1 flex items-center gap-1 text-[9px] font-black text-red-600"
+                              title={noAuth
+                                ? 'Is email ka Firebase Auth account hai hi nahi — login kabhi nahi hoga. "Repair" dabao.'
+                                : 'Profile ka doc ID Auth UID se match nahi karta — login nahi hoga. "Repair" dabao.'}
+                            >
+                              <AlertTriangle size={10} /> {noAuth ? 'AUTH ACCOUNT HI NAHI' : 'LOGIN NAHI HOGA'}
+                            </div>
+                          )}
+                          {row?.canLogin && (
+                            <div className="mt-1 flex items-center gap-1 text-[9px] font-bold text-green-600">
+                              <CheckCircle2 size={10} /> Login OK
                             </div>
                           )}
                         </td>
@@ -415,6 +525,19 @@ export const UserManagementPage = () => {
                               className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-sm border border-transparent hover:border-indigo-200 transition-colors"
                             >
                               <Layers size={13} />
+                            </button>
+                          )}
+                          {broken && (
+                            <button
+                              onClick={() => handleRepair(u)}
+                              disabled={repairing === u.id}
+                              title="Login theek karo — Auth account bana kar password set karta hai"
+                              className="flex items-center gap-1 rounded-sm border border-red-300 bg-red-600 px-2 py-1 text-[9px] font-black uppercase text-white hover:bg-red-700 disabled:opacity-40"
+                            >
+                              {repairing === u.id
+                                ? <Loader2 size={11} className="animate-spin" />
+                                : <Wrench size={11} />}
+                              Repair
                             </button>
                           )}
                           <button
