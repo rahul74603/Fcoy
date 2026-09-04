@@ -184,8 +184,15 @@ const PhotoUpload: React.FC<PhotoUploadProps> = ({
           });
           setProgress(100); setPreview(base64);
           onUploadComplete(base64, `base64_${traineeId}`);
-          setSuccess('Photo saved (Storage band hai — purane tarike se)');
-          setTimeout(() => { setSuccess(''); setProgress(0); }, 3000);
+          // Chupchap mat nikalo — base64 ka matlab Firestore ki 1 MiB limit
+          // wapas aa gayi. Operator ko pata hona chahiye.
+          setSuccess('');
+          setError(
+            'Photo save ho gayi, LEKIN Firebase Storage band hai isliye purane '
+            + '(base64) tarike se — ye Firestore ki 1 MB limit me ginti hai. '
+            + 'Storage enable karke photo dobara upload karo.'
+          );
+          setTimeout(() => { setProgress(0); }, 3000);
           return;
         } catch (fallbackErr: any) {
           setError(`Error: ${fallbackErr.message}`);

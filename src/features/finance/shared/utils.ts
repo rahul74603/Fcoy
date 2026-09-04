@@ -145,6 +145,12 @@ export interface ProcessedBill {
   billDownloadUrl?: string;
   /** Storage path — delete karne ke liye. */
   billStoragePath?: string;
+  /** TRUE = Storage fail hua aur purana base64 tarika use hua.
+   *  Iska matlab Firestore ki 1 MiB limit wapas lag gayi — UI ko warn karna
+   *  chahiye, chupchap nahi nikalna chahiye. */
+  storageFallback?: boolean;
+  /** Fallback kyun hua — troubleshooting ke liye. */
+  storageError?: string;
 }
 
 /**
@@ -177,6 +183,8 @@ export const processBillFile = async (
     };
   }
 
+  let lastStorageError = '';
+
   // ── 1) Sahi raasta: Firebase Storage ──
   try {
     const target = entityId && entityId.trim()
@@ -194,8 +202,11 @@ export const processBillFile = async (
       },
       error: null,
     };
-  } catch (storageErr) {
-    // Storage abhi enable nahi hai (Blaze plan) — neeche fallback chalega.
+  } catch (storageErr: any) {
+    // Storage available nahi hai (Blaze plan enable nahi / rules deploy nahi
+    // hue). Neeche base64 fallback chalega, par ye CHUPCHAP nahi hona
+    // chahiye — base64 ka matlab hai Firestore ki 1 MiB limit wapas aa gayi.
+    lastStorageError = String(storageErr?.code || storageErr?.message || storageErr);
     console.warn('Bill Storage upload failed, base64 par gir rahe hain:', storageErr);
   }
 
@@ -234,6 +245,8 @@ export const processBillFile = async (
         billFileName: file.name,
         billFileType: file.type,
         billFileSize: file.size,
+        storageFallback: true,
+        storageError: lastStorageError,
       },
       error: null,
     };

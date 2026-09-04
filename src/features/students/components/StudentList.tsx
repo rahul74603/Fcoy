@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
+import { collection, getDocs, getDoc, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { useBatch } from '../../../contexts/BatchContext';
 import { Trash2 } from 'lucide-react';
+import { deleteFromStorage } from '../../shared/storage.utils';
 
 interface StudentListProps {
   refreshKey: number;
@@ -40,7 +41,23 @@ export const StudentList = ({ refreshKey, onDeleteSuccess }: StudentListProps) =
   const handleDelete = async (id: string) => {
     if (window.confirm('Kya aap is jawan ka record delete karna chahte hain?')) {
       try {
+        // Record hatane se pehle uski Storage photo ka path nikal lo — doc
+        // delete hone ke baad path kahin nahi milega aur file Storage me
+        // hamesha ke liye padi reh jayegi (orphan + billable).
+        let photoPath = '';
+        try {
+          const snap = await getDoc(doc(db, 'trainees', id));
+          photoPath = String(snap.data()?.photoPath ?? '');
+        } catch { /* best effort — delete phir bhi hona chahiye */ }
+
         await deleteDoc(doc(db, 'trainees', id));
+
+        // Purane records base64 the (photoPath = "base64_<id>"), unka koi
+        // Storage object nahi hota — sirf asli Storage path delete karo.
+        if (photoPath && !photoPath.startsWith('base64_')) {
+          try { await deleteFromStorage(photoPath); } catch { /* best effort */ }
+        }
+
         onDeleteSuccess();
       } catch (err) {
         alert('Could not delete record');

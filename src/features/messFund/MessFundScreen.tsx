@@ -493,6 +493,12 @@ export const MessFundScreen: React.FC = () => {
           billUrl  = result.data.billDownloadUrl ?? '';
 
           billPath = result.data.billStoragePath ?? '';
+
+          if (result.data.storageFallback) {
+
+            console.warn('Bill Storage unavailable, saved as base64:', result.data.storageError);
+
+          }
           billFileName  = result.data.billFileName;
           billFileType  = result.data.billFileType;
           billFileSize  = result.data.billFileSize;
