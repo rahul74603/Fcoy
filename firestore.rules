@@ -141,27 +141,29 @@ service cloud.firestore {
     // role helpers above already rely on. Access-call limits (10 per
     // single-document request, 20 per batch/transaction) are not at risk:
     // this adds one distinct document to the existing users/ lookup.
-    // Path is written inline (not returned from a helper) to match the
-    // userDoc() pattern already proven in this ruleset.
-    function licenceData() {
-      return get(/databases/$(database)/documents/subscription/current).data;
-    }
-    function licenceExists() {
-      return exists(/databases/$(database)/documents/subscription/current);
-    }
-    // GRACE_DAYS = 30, same constant as the app and functions/subscriptionAuth.mjs.
-    // 30 * 24 * 60 * 60 * 1000 written out, since rules have no named consts.
-    function licenceGraceMs() { return 2592000000; }
-
-    // `is number` (not `is int`): endMillis comes from JS Date.getTime(), and
-    // Firestore may store a whole number as either an integer or a double.
-    // A non-numeric or absent value means "cannot evaluate" → allow, which is
+    // ── LICENCE GATE (see canWriteDevData) ──
+    // EXPRESSION BUDGET: rules abort at 1000 evaluated expressions per
+    // request. The findings/relegations rules already carry very large
+    // boolean chains, so this helper is written to be as small as possible:
+    // exactly ONE exists() and ONE get(), with the grace constant inlined.
+    // An earlier version called licenceData() three times and tipped those
+    // rules over the limit (emulator: "maximum of 1000 expressions").
+    //
+    // 2592000000 = GRACE_DAYS(30) * 24 * 60 * 60 * 1000 — same grace window
+    // as the app and functions/subscriptionAuth.mjs. Rules have no consts.
+    //
+    // `is number` (not `is int`): endMillis comes from JS Date.getTime() and
+    // Firestore may store a whole number as an integer or a double.
+    // Missing/non-numeric endMillis means "cannot evaluate" → allow, which is
     // safe because clients can no longer write subscription/current at all.
     function licenceWritable() {
-      return !licenceExists()
-        || !('endMillis' in licenceData())
-        || !(licenceData().endMillis is number)
-        || licenceData().endMillis + licenceGraceMs() > request.time.toMillis();
+      return !exists(/databases/$(database)/documents/subscription/current)
+        || licenceEndOk(get(/databases/$(database)/documents/subscription/current).data);
+    }
+    function licenceEndOk(d) {
+      return !('endMillis' in d)
+        || !(d.endMillis is number)
+        || d.endMillis + 2592000000 > request.time.toMillis();
     }
 
     // Management tier = CC or Clerk (per existing business rules)
@@ -212,6 +214,10 @@ service cloud.firestore {
     // fcm_tokens, auditLogs / staff_activity_logs / activity_logs. Those are
     // login/bootstrap, renewal and append-only audit paths — see GROUP A.
     function canWriteDevData() {
+      // ORDER MATTERS for the 1000-expression budget: the cheap, purely
+      // local dev-tag test runs first and short-circuits on failure, so the
+      // licence lookup (one exists + one get) is only evaluated for writes
+      // that would otherwise be allowed.
       return (!requestIsDev() || canUseDevSandbox()) && licenceWritable();
     }
 

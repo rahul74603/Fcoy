@@ -78,6 +78,21 @@ check(!/emulators:exec/.test(fnPkg.scripts['test:rules'] || ''),
 // Every business write must pass a licence check, so an expired company can
 // read its data and renew but cannot mutate anything.
 check(/function licenceWritable\(\)/.test(fsRules), 'licenceWritable() helper exists');
+// EXPRESSION BUDGET: rules abort at 1000 evaluated expressions per request.
+// The findings/relegations rules already carry huge boolean chains, so the
+// licence helper must stay minimal - exactly one exists() and one get().
+const lw = fsRules.match(/function licenceWritable\(\)[\s\S]*?\n    \}/);
+check(!!lw, 'licenceWritable block parseable');
+if (lw) {
+  const gets = (lw[0].match(/\bget\(/g) || []).length;
+  const exs  = (lw[0].match(/\bexists\(/g) || []).length;
+  check(gets <= 1, `licenceWritable performs at most one get() (found ${gets})`);
+  check(exs  <= 1, `licenceWritable performs at most one exists() (found ${exs})`);
+}
+// Reads must never be gated on the licence - expired stays readable.
+const crd = fsRules.match(/function canReadDevData\(\)[\s\S]*?\n    \}/);
+check(!!crd && !/licenceWritable/.test(crd[0]),
+  'read path is not licence-gated (expired company can still read)');
 check(/endMillis/.test(fsRules),
   'rules compare endMillis (rules cannot parse the ISO endDate string)');
 check(/2592000000/.test(fsRules), 'grace window matches GRACE_DAYS = 30');

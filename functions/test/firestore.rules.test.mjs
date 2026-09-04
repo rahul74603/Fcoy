@@ -348,7 +348,12 @@ describe('Firestore rules', () => {
       await assert.isFulfilled(authedDb(testEnv, CLERK).doc('subscription/current').get());
     });
     // The setup wizard must still be able to seed the very first licence.
+    // seedProfiles() writes config/firstRun to simulate a CONFIGURED company,
+    // so this test must first remove it to reproduce a fresh install.
     it('first-run seeding still works before config/firstRun exists', async () => {
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        await ctx.firestore().doc('config/firstRun').delete();
+      });
       await assert.isFulfilled(
         authedDb(testEnv, CC).doc('subscription/current').set({ planId: '' }));
     });
@@ -382,10 +387,17 @@ describe('Firestore rules', () => {
         authedDb(testEnv, CC).doc('subscription/current')
           .set({ planId: 'monthly', endDate: '2099-12-31T00:00:00.000Z' }));
     });
-    // The wizard must still be able to arm the latch exactly once.
+    // The wizard must still be able to arm the latch exactly once — and only
+    // while it is genuinely unset (the fixture pre-arms it, so clear it here).
     it('setup wizard can create config/firstRun once', async () => {
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        await ctx.firestore().doc('config/firstRun').delete();
+      });
       await assert.isFulfilled(
         authedDb(testEnv, CC).doc('config/firstRun').set({ done: true }));
+      // ...and never again: the latch is one-way.
+      await assert.isRejected(
+        authedDb(testEnv, CC).doc('config/firstRun').set({ done: false }));
     });
     // Ordinary config docs must keep working (activeBatch pointer etc.).
     it('CC can still write and delete ordinary config docs', async () => {
