@@ -28,7 +28,13 @@ import { readFileSync } from 'node:fs';
 assert.isFulfilled = (p) => assertSucceeds(p);
 assert.isRejected = (p) => assertFails(p);
 
-const PROJECT_ID = 'training-command-erp';
+// MUST start with 'demo-' so firebase-tools treats this as a fake project and
+// never reaches production. Using the real project id here made the emulator
+// try to resolve the live project (and warn about production credentials).
+// Honours the emulator's own env var when it is set.
+const PROJECT_ID = process.env.GCLOUD_PROJECT
+  || process.env.FIREBASE_PROJECT
+  || 'demo-fcoy-test';
 
 // Explicit emulator endpoints so the suite works when run directly with
 // mocha against an already-running emulator (no `emulators:exec` wrapper,

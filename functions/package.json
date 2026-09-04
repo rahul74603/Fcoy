@@ -1,6 +1,6 @@
 {
   "name": "fcoy-functions",
-  "description": "FCOY Training-Command ERP — server-side AI proxy. Holds cloud AI secrets; the browser never sees them.",
+  "description": "FCOY Training-Command ERP \u2014 server-side AI proxy. Holds cloud AI secrets; the browser never sees them.",
   "private": true,
   "type": "module",
   "main": "index.js",
@@ -14,8 +14,11 @@
     "test": "npm run test:staff:unit && npm run test:rules && npm run test:storage",
     "test:staff:unit": "node test/staffProvisioning.test.mjs",
     "test:staff:runtime": "mocha --timeout 40000 test/staffProvisioning.runtime.test.mjs",
-    "test:rules": "firebase emulators:exec --project fcoy-test 'mocha test/firestore.rules.test.mjs'",
-    "test:storage": "firebase emulators:exec --project fcoy-test 'mocha test/storage.rules.test.mjs'"
+    "test:rules": "mocha --timeout 20000 test/firestore.rules.test.mjs",
+    "test:storage": "mocha --timeout 20000 test/storage.rules.test.mjs",
+    "test:rules:emu": "firebase emulators:exec --project demo-fcoy-test --only firestore \"npm run test:rules\"",
+    "test:storage:emu": "firebase emulators:exec --project demo-fcoy-test --only storage,firestore \"npm run test:storage\"",
+    "test:all": "firebase emulators:exec --project demo-fcoy-test --only firestore,storage \"npm test\""
   },
   "dependencies": {
     "firebase-admin": "^12.6.0",

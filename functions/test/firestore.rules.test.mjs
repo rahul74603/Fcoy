@@ -4,10 +4,18 @@
 // PREPARED, NOT RUNTIME-EXECUTED IN THE SANDBOX (no Java/emulator here).
 //
 // Run on a machine with Java + firebase-tools:
-//   cd functions && npm install
-//   firebase emulators:exec --project fcoy-test 'npm run test:rules'
-// or from repo root:
-//   firebase emulators:start --only firestore,auth   (then: npm run test:rules)
+//   cd functions
+//   npm install          <-- REQUIRED. Without functions/node_modules both the
+//                            emulator and `firebase deploy --only functions`
+//                            fail with "Couldn't find firebase-functions".
+//   npm run test:all     <-- starts the emulator and runs every suite
+//
+// Or, if an emulator is ALREADY running, use the bare script (it must not
+// start a nested emulator):
+//   npm run test:rules
+//
+// NOTE: the project id must start with 'demo-' so firebase-tools treats it as
+// a fake project and never touches production.
 //
 // Deps (in functions/package.json devDependencies):
 //   @firebase/rules-unit-testing, firebase-admin, mocha
@@ -36,7 +44,13 @@ import { readFileSync } from 'node:fs';
 assert.isFulfilled = (p) => assertSucceeds(p);
 assert.isRejected = (p) => assertFails(p);
 
-const PROJECT_ID = 'training-command-erp';
+// MUST start with 'demo-' so firebase-tools treats this as a fake project and
+// never reaches production. Using the real project id here made the emulator
+// try to resolve the live project (and warn about production credentials).
+// Honours the emulator's own env var when it is set.
+const PROJECT_ID = process.env.GCLOUD_PROJECT
+  || process.env.FIREBASE_PROJECT
+  || 'demo-fcoy-test';
 
 /** @type {RulesTestEnvironment} */
 let testEnv;

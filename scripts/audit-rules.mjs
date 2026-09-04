@@ -64,6 +64,16 @@ if (subBlock) {
   check(/allow read: if signedIn\(\)/.test(subBlock[0]),
     'licence remains readable for the login-time listener');
 }
+// ── TEST HARNESS SAFETY ──
+// Rules tests must never run against the real project id.
+const fsTest = read('functions/test/firestore.rules.test.mjs');
+check(!/const PROJECT_ID = 'training-command-erp'/.test(fsTest),
+  'rules tests do not hardcode the production project id');
+check(/demo-/.test(fsTest), 'rules tests use a demo- project id (no production calls)');
+const fnPkg = JSON.parse(read('functions/package.json'));
+check(!/emulators:exec/.test(fnPkg.scripts['test:rules'] || ''),
+  'test:rules does not nest an emulator inside a running one');
+
 // ── READ-ONLY DEGRADATION WHEN EXPIRED ──
 // Every business write must pass a licence check, so an expired company can
 // read its data and renew but cannot mutate anything.
