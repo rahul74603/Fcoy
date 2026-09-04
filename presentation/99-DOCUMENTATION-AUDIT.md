@@ -224,7 +224,7 @@ Firestore rules gap has also since been closed — see
 | # | Issue | Impact | Action |
 |---|---|---|---|
 | 1 | ~~`/ustad` is a 20-line placeholder~~ **FIXED 2026-09-04** | Was empty; now a real read-only dashboard (today's periods, duty, staff strength, week ahead) | **Safe to demo.** See `04-ROLE-MATRIX.md` |
-| 2 | **Legacy relegation tab bug** — `remainingSubjects` is saved as a comma-string but read as a list, which can blank the tab | White screen risk on camera | **Do not open the Relegation tab inside `/trainee-management`.** Use `/relegation` |
+| 2 | ~~Legacy relegation tab crashes on `remainingSubjects`~~ **Re-verified 2026-09-04 — the crash is fixed** (the `asList()` helper accepts both the comma-string and array shapes) | No crash risk. It is still a *duplicate* read-only view of `/relegation` | Prefer `/relegation` in a demo to avoid confusion — but the tab is no longer dangerous |
 | 3 | **Firestore rules have never been deployed by the owner** | Trainee-visible data (Today Special, files, notices) may appear empty for a trainee login | **Deploy rules before any demo involving a trainee login.** See §9 |
 | 4 | Two relegation implementations coexist | Confusion | `features/relegation/*` is authoritative; the `traineeModule` one is legacy read-only |
 | 5 | Three parallel audit systems | Audit coverage is not universal | Phrase audit claims narrowly (§5) |
