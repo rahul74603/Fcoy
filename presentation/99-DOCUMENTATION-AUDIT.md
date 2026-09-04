@@ -57,6 +57,7 @@ not reachable by any user.
 | `06-WOW-FEATURES.md` | Top 10 ranked highlight reel |
 | `07-SMART-DETAILS.md` | 11 categories of polish |
 | `modules/02` – `modules/15` | 14 module deep-dives |
+| `98-SECURITY-RULES-AUDIT.md` | Line-by-line read of both rule files |
 | `99-DOCUMENTATION-AUDIT.md` | This file |
 
 ---
@@ -212,8 +213,9 @@ complete API layer. **None was a stub.**
 3. **The Mismatch Dashboard runs 15+ data-integrity checks**, including
    duplicate chest and regimental numbers, each with a suggested fix.
 
-**Remaining unverified:** none of the previously listed routes. The only
-outstanding verification gap is the Firestore rules audit (§10.3).
+**Remaining unverified:** none of the previously listed routes. The
+Firestore rules gap has also since been closed — see
+**`98-SECURITY-RULES-AUDIT.md`**.
 
 ---
 
@@ -265,11 +267,13 @@ of what must not be claimed.
 1. ~~Ten routes are marked UI PRESENT — NOT VERIFIED.~~ **Resolved in the
    follow-up pass — all ten are confirmed (§7).**
 2. Audit coverage was assessed by sampling call sites, not exhaustively.
-3. Firestore security rules were **not** line-by-line audited. The claim
-   "the database enforces this" rests on the app's own layered design and
-   the comments in `permissions.ts`. **An independent rules audit is
-   recommended before making strong security claims to a security-conscious
-   buyer.**
+3. ~~Firestore security rules were not line-by-line audited.~~ **Resolved.**
+   Both `firestore.rules` (801 L) and `storage.rules` (80 L) have now been
+   read in full — see **`98-SECURITY-RULES-AUDIT.md`**. Result: **0
+   coverage gaps** across 56 collections, default-deny present, privilege
+   escalation blocked, leave-approval authority enforced at the data layer.
+   The claim "the database enforces this" is **supported**. The one caveat
+   stands: **the rules have never been deployed** (issue #3 above).
 4. Nothing here was verified against a **running** instance with real data —
    this is a code audit, not a QA pass.
 

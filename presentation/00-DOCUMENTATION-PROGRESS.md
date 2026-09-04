@@ -42,6 +42,7 @@ Start here: `99-DOCUMENTATION-AUDIT.md` (what is safe to claim), then
 - [x] `presentation/05-WORKFLOW-CATALOG.md` — 8 end-to-end workflows in USER→SCREEN→ACTION→…→FINAL RESULT format
 - [x] `presentation/02-SLIDES.md` — 24-slide deck with on-slide text + speaker notes + presenter's card
 - [x] `presentation/99-DOCUMENTATION-AUDIT.md` — self-audit, consolidated never-promise list, orphan screens, known issues
+- [x] `presentation/98-SECURITY-RULES-AUDIT.md` — full read of firestore.rules + storage.rules; 0 coverage gaps, but never deployed
 - [x] `presentation/modules/15-registers-and-lifecycle.md` — the 10 traced registers (Final Board, Festival Planner, Mismatch Dashboard + 7 more)
 
 ---
@@ -213,8 +214,8 @@ for when and how.
 
 Highest-value follow-up work, if anyone wants to continue:
 1. ~~Trace the 10 unverified routes~~ — **DONE (follow-up pass)**
-2. An independent audit of `firestore.rules` before making strong security
-   claims (`99-DOCUMENTATION-AUDIT.md` §10.3)
+2. ~~An independent audit of `firestore.rules`~~ — **DONE**, see
+   `98-SECURITY-RULES-AUDIT.md`
 3. Fix the known issues in §8 — especially the `/ustad` placeholder and the
    legacy relegation tab bug (**these are code changes**)
 
