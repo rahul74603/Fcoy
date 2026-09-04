@@ -32,8 +32,15 @@ service firebase.storage {
     // File-type/size guard for uploads (images + PDF).
     // NOTE: `&&` binds tighter than `||`, so the size check MUST wrap both
     // type branches — warna koi bhi PDF (chahe 500MB ka ho) pass ho jata.
+    // NULL GUARD: on a DELETE, request.resource is null. Storage's `write`
+    // covers delete, so this ran on deletes too and threw
+    // "line [36] Null value error" (seen in the emulator run). The delete
+    // still worked - the erroring rule denies and the separate `allow
+    // delete: if isCC()` grants it - but relying on an evaluation error is
+    // fragile and noisy. Return false for deletes and let the delete rule decide.
     function validDocUpload() {
-      return request.resource.size < 10 * 1024 * 1024
+      return request.resource != null
+        && request.resource.size < 10 * 1024 * 1024
         && ( request.resource.contentType.matches('image/.*')
              || request.resource.contentType == 'application/pdf' );
     }
@@ -51,6 +58,7 @@ service firebase.storage {
     match /trainees/{allPaths=**} {
       allow read:  if isActive();
       allow write: if (isCC() || isClerk() || isQM())
+                   && request.resource != null
                    && request.resource.size < 15 * 1024 * 1024
                    && request.resource.contentType.matches('image/.*');
       allow delete: if isCC();

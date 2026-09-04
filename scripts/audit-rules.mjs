@@ -166,6 +166,20 @@ console.log('\n■ STORAGE RULES');
 const stRules = read('storage.rules');
 check(/allow read, write: if false/.test(stRules), 'storage default-deny present');
 check(/allow delete: if isCC\(\)/.test(stRules), 'storage deletes restricted to CC');
+// NULL GUARD: storage `write` covers DELETE, and request.resource is null on
+// a delete. Touching request.resource.size/contentType there throws a rules
+// evaluation error (emulator: "line [36] Null value error"). Every size or
+// contentType test must be preceded by a null check.
+const stLines = stRules.split('\n');
+let guardMissing = 0;
+stLines.forEach((l, i) => {
+  if (!/request\.resource\.(size|contentType)/.test(l)) return;
+  // Look back a few lines for the guard within the same expression.
+  const win = stLines.slice(Math.max(0, i - 4), i + 1).join('\n');
+  if (!/request\.resource != null/.test(win)) guardMissing++;
+});
+check(guardMissing === 0,
+  `storage size/type checks are null-guarded for deletes (${guardMissing} unguarded)`);
 
 console.log('\n■ FRONTEND SECRET EXPOSURE');
 // Production frontend code must not read cloud-AI secrets.
