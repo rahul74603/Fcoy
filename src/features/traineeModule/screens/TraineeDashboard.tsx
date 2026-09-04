@@ -16,6 +16,7 @@ import { useBatch } from '../../../contexts/BatchContext';
 import { getTraineeUpdates, getUpdatesSubmittedBy, getNotices, findMyTrainee } from '../api/trainee.api';
 import { ChangePasswordModal } from '../../../components/ChangePasswordModal';
 import { AbsenceReportPanel } from '../components/AbsenceReportPanel';
+import { FilesPanel } from '../components/FilesPanel';
 import type { TraineeUpdate, TraineeNotice } from '../types/trainee.types';
 import { UPDATE_CATEGORIES, NOTICE_CATEGORIES, PRIORITY_COLORS, STATUS_COLORS } from '../types/trainee.types';
 import { getDocs, collection, query, where } from 'firebase/firestore';
@@ -37,7 +38,7 @@ export const TraineeDashboard: React.FC = () => {
   const [attendanceData, setAttendanceData] = useState<Record<string, { present: number; absent: number; total: number }>>({});
   const [loading, setLoading] = useState(true);
   const isTraineeUser = user?.role === 'Trainee' || /trainee/i.test(String(user?.role ?? ''));
-  const [activeTab, setActiveTab] = useState<'report' | 'platoon' | 'updates' | 'notices' | 'myinfo'>(
+  const [activeTab, setActiveTab] = useState<'report' | 'platoon' | 'updates' | 'notices' | 'files' | 'myinfo'>(
     isTraineeUser ? 'report' : 'platoon'
   );
   const [expandedPlatoon, setExpandedPlatoon] = useState<string | null>(null);
@@ -242,6 +243,7 @@ export const TraineeDashboard: React.FC = () => {
             { key: 'platoon', label: '🏢 Platoon View', icon: <Users size={14} /> },
             { key: 'updates', label: '📋 Updates', icon: <ClipboardList size={14} />, badge: updates.filter(u => u.status === 'pending').length },
             { key: 'notices', label: '🔔 Notice Board', icon: <Bell size={14} />, badge: notices.filter(n => n.priority === 'urgent').length },
+            { key: 'files', label: '📁 Files', icon: <FileText size={14} /> },
             { key: 'myinfo', label: '👤 My Info', icon: <User size={14} /> },
           ].map(tab => (
             <button key={tab.key} onClick={() => setActiveTab(tab.key as any)}
@@ -270,6 +272,20 @@ export const TraineeDashboard: React.FC = () => {
             onSubmitted={loadData}
           />
         )}
+
+        {/* FILES — clerk ne jo bheji, sirf wahi */}
+        {activeTab === 'files' && (() => {
+          const me = findMyTrainee(trainees, user);
+          return (
+            <FilesPanel
+              batchId={batch.id}
+              canUpload={false}
+              userName={user?.name || ''}
+              traineeId={me?.id}
+              platoon={me?.platoon}
+            />
+          );
+        })()}
 
         {/* PLATOON VIEW */}
         {activeTab === 'platoon' && (

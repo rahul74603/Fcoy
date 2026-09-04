@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Shield, Plus, Loader2, X, Save, Trash2, CheckCircle2,
   AlertTriangle, Bell, UserPlus, ClipboardList, Eye, EyeOff,
-  Search, Filter,
+  Search, Filter, FileText,
 } from 'lucide-react';
 import { useBatch } from '../../../contexts/BatchContext';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -23,6 +23,7 @@ import type {
   TraineeUpdateCategory, NoticeCategory, RelegationReason,
 } from '../types/trainee.types';
 import { UPDATE_CATEGORIES, NOTICE_CATEGORIES, RELEGATION_REASONS, RELEGATION_STATUS_COLORS, PRIORITY_COLORS, STATUS_COLORS } from '../types/trainee.types';
+import { FilesPanel } from '../components/FilesPanel';
 import { getDocs, collection, query, where } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 
@@ -42,7 +43,7 @@ export const TraineeManagementScreen: React.FC = () => {
   const { activeBatch } = useBatch();
   const { user } = useAuth();
 
-  const [tab, setTab] = useState<'accounts' | 'updates' | 'notices' | 'relegation'>('accounts');
+  const [tab, setTab] = useState<'accounts' | 'updates' | 'notices' | 'files' | 'relegation'>('accounts');
   const [trainees, setTrainees] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<TraineeAccount[]>([]);
   const [updates, setUpdates] = useState<TraineeUpdate[]>([]);
@@ -86,7 +87,7 @@ export const TraineeManagementScreen: React.FC = () => {
   const [noticeSearch, setNoticeSearch] = useState('');
 
   // Updates inbox filter
-  const [updFilter, setUpdFilter] = useState<'pending' | 'urgent' | 'general' | 'approved' | 'rejected' | 'all'>('pending');
+  const [updFilter, setUpdFilter] = useState<'pending' | 'urgent' | 'general' | 'staff' | 'approved' | 'rejected' | 'all'>('pending');
   const [updSearch, setUpdSearch] = useState('');
 
   // Reject modal
@@ -159,7 +160,7 @@ export const TraineeManagementScreen: React.FC = () => {
         category: updateForm.category, title: updateForm.title,
         description: updateForm.description, priority: updateForm.priority,
       }, user.name, user.role);
-      setMessage('✅ Update submitted for approval');
+      setMessage('✅ Record save ho gaya (clerk entry — approval ki zaroorat nahi)');
       setShowSubmitUpdate(false);
       setUpdateForm({ traineeId: '', category: 'Medical Issue', title: '', description: '', priority: 'medium' });
       loadData();
@@ -170,6 +171,12 @@ export const TraineeManagementScreen: React.FC = () => {
   const handleApprove = async (id: string) => {
     if (!user) return;
     const upd = updates.find(u => u.id === id);
+    // Apni hi bheji hui report approve karna = self-approval. Allowed nahi.
+    if (upd && upd.submittedByUid && upd.submittedByUid === user.uid) {
+      setMessage('❌ Apni hi bheji hui report khud approve nahi kar sakte');
+      setTimeout(() => setMessage(''), 3000);
+      return;
+    }
     try {
       if (upd) await approveAbsenceReport(upd, user.name);
       else await approveTraineeUpdate(id, user.name);
@@ -264,7 +271,7 @@ export const TraineeManagementScreen: React.FC = () => {
         </div>
         <div className="flex gap-2">
           <button onClick={() => setShowSubmitUpdate(true)} className="bg-white text-green-800 px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1 hover:bg-green-50">
-            <ClipboardList size={14} /> Submit Update
+            <ClipboardList size={14} /> Add Record
           </button>
           <button onClick={() => setShowCreateNotice(true)} className="bg-white text-green-800 px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1 hover:bg-green-50">
             <Bell size={14} /> Post Notice
@@ -286,6 +293,7 @@ export const TraineeManagementScreen: React.FC = () => {
           { key: 'accounts', label: 'Accounts', icon: <UserPlus size={14} /> },
           { key: 'updates', label: 'Updates', icon: <ClipboardList size={14} />, badge: pendingCount },
           { key: 'notices', label: 'Notices', icon: <Bell size={14} /> },
+          { key: 'files', label: 'Files', icon: <FileText size={14} /> },
           { key: 'relegation', label: 'Relegation', icon: <AlertTriangle size={14} /> },
         ].map(t => (
           <button key={t.key} onClick={() => setTab(t.key as any)}
@@ -347,6 +355,7 @@ export const TraineeManagementScreen: React.FC = () => {
           <div className="bg-white rounded-xl shadow p-3 flex flex-wrap items-center gap-2">
             {([
               { k: 'pending', label: 'Pending', n: updates.filter(u => u.status === 'pending').length },
+              { k: 'staff', label: '🖊 Clerk entries', n: updates.filter(u => u.staffEntry).length },
               { k: 'urgent', label: '🚨 Urgent', n: updates.filter(u => u.priority === 'urgent' && u.status === 'pending').length },
               { k: 'general', label: '📢 General', n: updates.filter(u => u.isGeneral).length },
               { k: 'approved', label: 'Approved', n: updates.filter(u => u.status === 'approved').length },
@@ -375,6 +384,7 @@ export const TraineeManagementScreen: React.FC = () => {
                 if (updFilter === 'all') return true;
                 if (updFilter === 'urgent') return u.priority === 'urgent' && u.status === 'pending';
                 if (updFilter === 'general') return !!u.isGeneral;
+                if (updFilter === 'staff') return !!u.staffEntry;
                 return u.status === updFilter;
               })
               .filter(u => !q
@@ -408,6 +418,11 @@ export const TraineeManagementScreen: React.FC = () => {
                       <h4 className="text-sm font-bold">{u.title}</h4>
                       <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${STATUS_COLORS[u.status]}`}>{u.status}</span>
                       <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${PRIORITY_COLORS[u.priority]}`}>{u.priority}</span>
+                      {u.staffEntry && (
+                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">
+                          clerk entry
+                        </span>
+                      )}
                     </div>
                     <p className="text-xs text-slate-600">{u.description}</p>
                     {u.isGeneral ? (
@@ -439,7 +454,7 @@ export const TraineeManagementScreen: React.FC = () => {
                     )}
                     {u.rejectionReason && <p className="text-[10px] text-red-600 mt-1">Rejection: {u.rejectionReason}</p>}
                   </div>
-                  {u.status === 'pending' && (
+                  {u.status === 'pending' && !u.staffEntry && u.submittedByUid !== user?.uid && (
                     <div className="flex flex-col gap-2 ml-4">
                       <button onClick={() => handleApprove(u.id)} className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold hover:bg-green-700 flex items-center gap-1 whitespace-nowrap">
                         <CheckCircle2 size={12} /> Approve
@@ -483,6 +498,16 @@ export const TraineeManagementScreen: React.FC = () => {
             </div>
           ))}
         </div>
+      )}
+
+      {/* FILES TAB — clerk uploads, trainees ko turant dikhta hai */}
+      {tab === 'files' && activeBatch && (
+        <FilesPanel
+          batchId={activeBatch.id}
+          canUpload
+          userName={user?.name || 'Clerk'}
+          trainees={trainees}
+        />
       )}
 
       {/* RELEGATION TAB — read-only view. Asli lifecycle RelID register me. */}

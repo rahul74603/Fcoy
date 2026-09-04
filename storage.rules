@@ -30,10 +30,12 @@ service firebase.storage {
     function isQM()    { return isActive() && role() == 'Quarter Master'; }
 
     // File-type/size guard for uploads (images + PDF).
+    // NOTE: `&&` binds tighter than `||`, so the size check MUST wrap both
+    // type branches — warna koi bhi PDF (chahe 500MB ka ho) pass ho jata.
     function validDocUpload() {
       return request.resource.size < 10 * 1024 * 1024
-        && request.resource.contentType.matches('image/.*')
-        || request.resource.contentType == 'application/pdf';
+        && ( request.resource.contentType.matches('image/.*')
+             || request.resource.contentType == 'application/pdf' );
     }
 
     // ── Trainee verification documents ──
@@ -52,6 +54,15 @@ service firebase.storage {
                    && request.resource.size < 15 * 1024 * 1024
                    && request.resource.contentType.matches('image/.*');
       allow delete: if isCC();
+    }
+
+    // ── Trainee files (weekly program, syllabus, orders, results) ──
+    // Clerk/CC upload karte hain; har signed-in active user (trainee
+    // included) padh/download kar sakta hai. Trainee upload NAHI kar sakta.
+    match /traineeFiles/{allPaths=**} {
+      allow read:  if isActive();
+      allow write: if (isCC() || isClerk()) && validDocUpload();
+      allow delete: if isCC() || isClerk();
     }
 
     // ── Bill / receipt uploads (finance) — CC + QM ──

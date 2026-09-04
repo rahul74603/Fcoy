@@ -56,6 +56,8 @@ export interface TraineeUpdate {
   reportedForChestNo?: string;
   /** true = general report — kisi ek trainee par nahi, poore group/company ke liye */
   isGeneral?: boolean;
+  /** true = clerk/CC ne khud likha (approval ki zaroorat nahi thi) */
+  staffEntry?: boolean;
 }
 
 export type TraineeUpdateCategory =

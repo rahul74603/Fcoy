@@ -119,6 +119,14 @@ const medStatFor = (type: AbsentTypeCode): string => {
   return 'Sick';
 };
 
+/**
+ * Clerk / CC khud record likhta hai.
+ *
+ * Ye APPROVAL KE LIYE NAHI jaata — clerk hi approving authority hai, usse
+ * apni hi entry approve karwana bekaar tha (khud maango, khud do). Isliye
+ * seedha 'approved' likhte hain, apne hi naam ki stamp ke saath.
+ * Approval queue sirf TRAINEE ki bheji hui reports ke liye hai.
+ */
 export const submitTraineeUpdate = async (
   data: {
     traineeId: string; traineeName: string; chestNo: string;
@@ -128,14 +136,17 @@ export const submitTraineeUpdate = async (
   },
   submittedBy: string, submittedByRole: string
 ): Promise<string> => {
+  const now = new Date().toISOString();
   const ref = await addDoc(collection(db, 'traineeUpdates'), {
-    ...data, status: 'pending',
+    ...data,
+    status: 'approved',
+    staffEntry: true,
     submittedBy, submittedByRole,
     submittedByUid: data.submittedByUid || '',
-    approvedBy: '',
-    approvedAt: '',
-    submittedAt: new Date().toISOString(),
-    createdAt: new Date().toISOString(),
+    approvedBy: submittedBy,
+    approvedAt: now,
+    submittedAt: now,
+    createdAt: now,
   });
   return ref.id;
 };

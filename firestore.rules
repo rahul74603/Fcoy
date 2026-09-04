@@ -459,6 +459,17 @@ service cloud.firestore {
     }
 
     // ──────────────────────────────────────────────────────────────────
+    // TRAINEE FILES — clerk uploads, trainees download
+    // ──────────────────────────────────────────────────────────────────
+    // Clerk/CC PDF ya image upload karte hain (weekly program, syllabus,
+    // order, result). Trainee ko sirf padhne/download karne ka haq hai —
+    // wo na file daal sakta hai, na delete kar sakta hai.
+    match /traineeFiles/{id} {
+      allow read: if isTrainee() || (isStaff() && canReadDevData());
+      allow write: if canManage() && canWriteDevData();
+    }
+
+    // ──────────────────────────────────────────────────────────────────
     // TRAINEE REPORTS → CLERK INBOX
     // ──────────────────────────────────────────────────────────────────
     // Flow: a trainee (incl. a senior/course-senior trainee) raises a report
