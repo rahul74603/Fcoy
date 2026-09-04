@@ -64,6 +64,20 @@ if (subBlock) {
   check(/allow read: if signedIn\(\)/.test(subBlock[0]),
     'licence remains readable for the login-time listener');
 }
+// ── FIRST-RUN LATCH ──
+// firstRunOpen() gates subscription/current, subscriptionPlans, unitConfig
+// and bootstrap CC creation. `allow write` includes DELETE, so if a CC can
+// delete config/firstRun they re-open all of it and the licence fix is void.
+const cfgBlock = fsRules.match(/match \/config\/\{docId\}[\s\S]*?\n    \}/);
+check(!!cfgBlock, 'config block parseable');
+if (cfgBlock) {
+  const cfgCode = cfgBlock[0].split('\n').filter(l => !l.trim().startsWith('//')).join('\n');
+  check(!/allow write:/.test(cfgCode),
+    'config/{docId} has no blanket write covering the firstRun latch');
+  check(/allow update, delete: if docId != 'firstRun'/.test(cfgBlock[0]),
+    'config/firstRun cannot be updated or deleted (one-way latch)');
+}
+
 const histBlock = fsRules.match(/match \/subscriptionHistory\/\{id\}[\s\S]*?\n    \}/);
 check(!!histBlock, 'subscriptionHistory block parseable');
 if (histBlock) {

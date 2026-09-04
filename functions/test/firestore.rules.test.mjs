@@ -338,6 +338,52 @@ describe('Firestore rules', () => {
       await assert.isFulfilled(
         authedDb(testEnv, CC).doc('subscription/current').set({ planId: '' }));
     });
+
+    // ── FIRST-RUN LATCH (bypass found in the b839025 re-audit) ──
+    // firstRunOpen() means "config/firstRun does not exist". Because
+    // `allow write` covers DELETE, a CC could delete that marker, re-open
+    // the setup window and with it subscription/current — restoring the
+    // self-renewal bypass one step further down the chain.
+    it('CC CANNOT delete config/firstRun to re-open setup', async () => {
+      await adminDb(testEnv).doc('config/firstRun').set({ done: true });
+      await assert.isRejected(authedDb(testEnv, CC).doc('config/firstRun').delete());
+    });
+    it('Clerk CANNOT delete config/firstRun', async () => {
+      await adminDb(testEnv).doc('config/firstRun').set({ done: true });
+      await assert.isRejected(authedDb(testEnv, CLERK).doc('config/firstRun').delete());
+    });
+    it('CC CANNOT overwrite config/firstRun', async () => {
+      await adminDb(testEnv).doc('config/firstRun').set({ done: true });
+      await assert.isRejected(
+        authedDb(testEnv, CC).doc('config/firstRun').set({ done: false }));
+    });
+    it('full attack chain: delete latch then rewrite licence is blocked', async () => {
+      await adminDb(testEnv).doc('config/firstRun').set({ done: true });
+      await adminDb(testEnv).doc('subscription/current').set({
+        planId: 'monthly', endDate: '2020-01-01T00:00:00.000Z',
+      });
+      // Step 1 must fail, so the licence stays locked.
+      await assert.isRejected(authedDb(testEnv, CC).doc('config/firstRun').delete());
+      await assert.isRejected(
+        authedDb(testEnv, CC).doc('subscription/current')
+          .set({ planId: 'monthly', endDate: '2099-12-31T00:00:00.000Z' }));
+    });
+    // The wizard must still be able to arm the latch exactly once.
+    it('setup wizard can create config/firstRun once', async () => {
+      await assert.isFulfilled(
+        authedDb(testEnv, CC).doc('config/firstRun').set({ done: true }));
+    });
+    // Ordinary config docs must keep working (activeBatch pointer etc.).
+    it('CC can still write and delete ordinary config docs', async () => {
+      await assert.isFulfilled(
+        authedDb(testEnv, CC).doc('config/activeBatch').set({ batchId: 'b1' }));
+      await assert.isFulfilled(
+        authedDb(testEnv, CC).doc('config/activeBatch').delete());
+    });
+    it('Clerk can still write the activeBatch pointer', async () => {
+      await assert.isFulfilled(
+        authedDb(testEnv, CLERK).doc('config/activeBatch').set({ batchId: 'b2' }));
+    });
     it('normal user cannot write customers/bridge', async () => {
       await assert.isRejected(
         authedDb(testEnv, CLERK).doc('customers/c1').set({ x: 1 }));

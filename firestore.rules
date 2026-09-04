@@ -225,11 +225,26 @@ service cloud.firestore {
 
     match /config/{docId} {
       allow read: if signedIn();
-      // activeBatch pointer is written by CC/Clerk batch lifecycle.
-      // The firstRun marker is written once by the setup wizard (allowed
-      // only while setup is still open).
-      allow write: if isCC() || isClerk()
-                   || (docId == 'firstRun' && signedIn() && firstRunOpen());
+
+      // ⚠️ SECURITY-CRITICAL: config/firstRun is a LATCH, not ordinary config.
+      //
+      // firstRunOpen() == "config/firstRun does not exist", and several rules
+      // open up while setup is still running — including subscription/current,
+      // subscriptionPlans, unitConfig and the bootstrap CC user creation.
+      //
+      // The old rule was `allow write: if isCC() || isClerk()` across the
+      // whole config/{docId} wildcard. In Firestore, `write` covers DELETE.
+      // So a Company Commander could simply DELETE config/firstRun, which
+      // re-opened firstRunOpen() and with it the licence document — handing
+      // back the exact self-renewal bypass that was just closed, one step
+      // further down the chain.
+      //
+      // The marker may now be created once and can never be updated or
+      // deleted by anyone. The latch is one-way, so setup cannot be re-armed.
+      allow create: if docId == 'firstRun' && signedIn() && firstRunOpen();
+      allow update, delete: if docId != 'firstRun' && (isCC() || isClerk());
+      // Ordinary config docs (activeBatch pointer etc.) — unchanged behaviour.
+      allow create: if docId != 'firstRun' && (isCC() || isClerk());
     }
 
     match /unitConfig/{docId} {
