@@ -2,9 +2,9 @@
 
 ## Overall Status
 
-**BATCH 4 COMPLETE — WAITING FOR USER CONFIRMATION (YES / OK / NEXT)**
+**BATCH 5 COMPLETE — WAITING FOR USER CONFIRMATION (YES / OK / NEXT)**
 
-Batches 1, 2 and 3 confirmed by user and closed.
+Batches 1–4 confirmed by user and closed.
 
 ---
 
@@ -22,20 +22,24 @@ Batches 1, 2 and 3 confirmed by user and closed.
 - [x] `presentation/modules/06-quartermaster-inventory.md` — inventory hub, 15 kit items, atomic stock transaction
 - [x] `presentation/modules/07-finance-funds.md` — 4 funds, orders-vs-paid distinction, bill statuses, vendors
 - [x] `presentation/modules/08-reports.md` — 20 reports, CSV+print, UTF-8 BOM Hindi detail
+- [x] `presentation/modules/09-training-delivery.md` — 33 BSF subjects, 7 FPT events, 11 test types
+- [x] `presentation/modules/10-staff-duty.md` — staff master, duty availability checker, auto-attendance chain, deputation
+- [x] `presentation/modules/11-inspections.md` — 5-stage finding lifecycle, authorisation rules, compliance score
 
 ---
 
 ## Current Batch
 
-**Batch 4 — Stores & Money** (complete)
+**Batch 5 — Training Delivery & Inspections** (complete)
 
-1. Quarter Master / inventory / kit issue module
-2. Finance — four funds and vendors module
-3. Reports centre module
+1. Training delivery module
+2. Staff, attendance, duty & deputation module
+3. Inspections, findings & corrective actions module
 
 *Batch 1 — Foundation: complete.*
 *Batch 2 — Catalog, roles, CC dashboard: complete.*
 *Batch 3 — Leave, personnel, notifications: complete.*
+*Batch 4 — QM/inventory, finance, reports: complete.*
 
 ---
 
@@ -180,19 +184,19 @@ Anything not yet traced is listed under "Workflows Inspected" as unchecked.
 
 ## Next Batch
 
-**Batch 5 — Training Delivery & Inspections**
+**Batch 6 — AI, Subscription & Company/Master Side**
 
-1. `presentation/modules/09-training-delivery.md` — training schedule,
-   subjects, subject assignment, batch progress, period attendance,
-   test records, syllabus tracking, final board
-2. `presentation/modules/10-staff-duty.md` — staff master, staff
-   attendance, duty management, deputation
-3. `presentation/modules/11-inspections.md` — SO inspection hub, findings,
-   corrective actions, ownership rules
+1. `presentation/modules/12-ai-agent.md` — the CC-only AI agent, its 30
+   tools, what it can and cannot do, and the safety story
+2. `presentation/modules/13-audit-today.md` — Lekha-Jokha Register
+   (`/audit-log`) and the Today Special daily feed (`/today`)
+3. `presentation/modules/14-company-master.md` — company setup, user
+   management, settings, subscription (COMPANY-LEVEL ONLY), company
+   monitor, developer sandbox
 
-Required inspection before writing: `features/ustad/*` (53 files, 18,448 L
-— the largest module), `SOInspectionHub`, and the training screens listed
-above.
+Required inspection before writing: `features/aiAgent/*` (28 files, 8,943 L
+— note 13 are orphans), `auditLog`, `activity`, `system/UserManagement`,
+`SettingsScreen`, `subscription/*`.
 
 ---
 
@@ -209,4 +213,4 @@ above.
 
 ## Last Updated
 
-2026-09-04 — Batch 4 complete (QM/inventory, finance/funds, reports)
+2026-09-04 — Batch 5 complete (training delivery, staff/duty, inspections)
