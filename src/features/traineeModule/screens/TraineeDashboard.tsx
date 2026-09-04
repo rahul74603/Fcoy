@@ -113,8 +113,14 @@ export const TraineeDashboard: React.FC = () => {
         setUpdates(allUpdates.slice(0, 50));
       }
 
-      // Load notices
-      const ntc = await getNotices(batch.id);
+      // Load notices — trainee ko sirf uske liye targeted + group notices dikhein
+      const me = findMyTrainee(tList, user);
+      const isTrainee = user.role === 'Trainee' || /trainee/i.test(String(user.role ?? ''));
+      const ntc = await getNotices(
+        batch.id,
+        undefined,
+        isTrainee && me ? me.id : undefined,
+      );
       setNotices(ntc);
     } catch (err) {
       console.error('Trainee dashboard load error:', err);

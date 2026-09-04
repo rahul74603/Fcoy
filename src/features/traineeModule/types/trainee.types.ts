@@ -69,6 +69,10 @@ export interface TraineeNotice {
   category: NoticeCategory;
   priority: 'normal' | 'important' | 'urgent';
   targetPlatoon: string;
+  /** Specific trainees ko hi bhejna ho to unke ids. Khaali = poora platoon/batch. */
+  targetTraineeIds?: string[];
+  /** Display ke liye — "1092 Thomas Ekka, 1005 Sunil Sharma" */
+  targetTraineeLabel?: string;
   publishedBy: string;
   publishedAt: string;
   expiresAt?: string;

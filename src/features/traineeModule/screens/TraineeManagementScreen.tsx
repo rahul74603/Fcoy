@@ -26,6 +26,18 @@ import { UPDATE_CATEGORIES, NOTICE_CATEGORIES, RELEGATION_REASONS, RELEGATION_ST
 import { getDocs, collection, query, where } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 
+/**
+ * Subjects field do alag screens se aata hai:
+ *   • RelegationRegisterScreen → comma-separated STRING
+ *   • purana trainee-module    → ARRAY
+ * Dono (aur undefined) ko safely list bana do.
+ */
+const asList = (v: unknown): string[] => {
+  if (Array.isArray(v)) return v.map(String).map(x => x.trim()).filter(Boolean);
+  if (typeof v === 'string') return v.split(',').map(x => x.trim()).filter(Boolean);
+  return [];
+};
+
 export const TraineeManagementScreen: React.FC = () => {
   const { activeBatch } = useBatch();
   const { user } = useAuth();
@@ -68,6 +80,10 @@ export const TraineeManagementScreen: React.FC = () => {
     priority: 'normal' as 'normal' | 'important' | 'urgent',
     targetPlatoon: 'all', expiresAt: '',
   });
+  // Notice kis-kis ko jaye: 'group' = platoon/all, 'picked' = chune hue trainees
+  const [noticeAudience, setNoticeAudience] = useState<'group' | 'picked'>('group');
+  const [noticeTraineeIds, setNoticeTraineeIds] = useState<string[]>([]);
+  const [noticeSearch, setNoticeSearch] = useState('');
 
   // Updates inbox filter
   const [updFilter, setUpdFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
@@ -176,15 +192,30 @@ export const TraineeManagementScreen: React.FC = () => {
 
   const handleCreateNotice = async () => {
     if (!noticeForm.title || !noticeForm.content || !activeBatch || !user) return;
+    const picked = noticeAudience === 'picked' ? noticeTraineeIds : [];
+    if (noticeAudience === 'picked' && picked.length === 0) {
+      setMessage('❌ Kam se kam ek trainee chuno, ya "Poore group ko" select karo');
+      setTimeout(() => setMessage(''), 3000);
+      return;
+    }
+    const label = picked
+      .map(id => { const t = trainees.find(x => x.id === id); return t ? `${t.chestNo} ${t.name}` : ''; })
+      .filter(Boolean).join(', ');
     try {
       await createNotice({
         batchId: activeBatch.id, title: noticeForm.title, content: noticeForm.content,
         category: noticeForm.category, priority: noticeForm.priority,
-        targetPlatoon: noticeForm.targetPlatoon, expiresAt: noticeForm.expiresAt || undefined,
+        targetPlatoon: noticeAudience === 'picked' ? 'all' : noticeForm.targetPlatoon,
+        expiresAt: noticeForm.expiresAt || undefined,
+        targetTraineeIds: picked,
+        targetTraineeLabel: label,
       }, user.name);
-      setMessage('✅ Notice published');
+      setMessage(picked.length
+        ? `✅ Notice ${picked.length} trainee ko bheja gaya`
+        : '✅ Notice published');
       setShowCreateNotice(false);
       setNoticeForm({ title: '', content: '', category: 'General Notice', priority: 'normal', targetPlatoon: 'all', expiresAt: '' });
+      setNoticeAudience('group'); setNoticeTraineeIds([]); setNoticeSearch('');
       loadData();
     } catch (err: any) { setMessage(`❌ ${err.message}`); }
     setTimeout(() => setMessage(''), 3000);
@@ -226,8 +257,10 @@ export const TraineeManagementScreen: React.FC = () => {
       {/* Header */}
       <div className="bg-gradient-to-r from-green-900 to-green-700 rounded-xl px-6 py-4 flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-black text-white uppercase tracking-wider">🎓 Trainee Management</h1>
-          <p className="text-[10px] text-green-200">Accounts · Updates · Notices · Approvals</p>
+          <h1 className="text-lg font-black text-white uppercase tracking-wider">🎓 Trainee Reports & Accounts</h1>
+          <p className="text-[10px] text-green-200">
+            Trainees ki bheji hui reports approve karo · login accounts · notice board
+          </p>
         </div>
         <div className="flex gap-2">
           <button onClick={() => setShowSubmitUpdate(true)} className="bg-white text-green-800 px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1 hover:bg-green-50">
@@ -239,9 +272,9 @@ export const TraineeManagementScreen: React.FC = () => {
           <button onClick={() => setShowCreateAccount(true)} className="bg-white text-green-800 px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1 hover:bg-green-50">
             <UserPlus size={14} /> Create Account
           </button>
-          <button onClick={() => setShowRelegationModal(true)} className="bg-white text-red-800 px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1 hover:bg-red-50">
+          <a href="/relegation" className="bg-white text-red-800 px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1 hover:bg-red-50">
             <AlertTriangle size={14} /> Relegate Trainee
-          </button>
+          </a>
         </div>
       </div>
 
@@ -418,7 +451,12 @@ export const TraineeManagementScreen: React.FC = () => {
                 <div>
                   <h4 className="text-sm font-bold">{n.title}</h4>
                   <p className="text-xs text-slate-600 mt-1">{n.content}</p>
-                  <p className="text-[10px] text-slate-400 mt-1">{n.publishedBy} · {new Date(n.publishedAt).toLocaleDateString('en-IN')} · {n.targetPlatoon === 'all' ? 'All Platoons' : `Platoon ${n.targetPlatoon}`}</p>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    {n.publishedBy} · {new Date(n.publishedAt).toLocaleDateString('en-IN')} ·{' '}
+                    {(n.targetTraineeIds && n.targetTraineeIds.length > 0)
+                      ? `🎯 ${n.targetTraineeIds.length} trainee${n.targetTraineeLabel ? ` — ${n.targetTraineeLabel}` : ''}`
+                      : (n.targetPlatoon === 'all' ? 'All Platoons' : n.targetPlatoon)}
+                  </p>
                 </div>
                 <button onClick={async () => { if (confirm('Delete notice?')) { await deleteNotice(n.id); loadData(); }}}
                   className="text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
@@ -428,52 +466,78 @@ export const TraineeManagementScreen: React.FC = () => {
         </div>
       )}
 
-      {/* RELEGATION TAB */}
+      {/* RELEGATION TAB — read-only view. Asli lifecycle RelID register me. */}
       {tab === 'relegation' && (
         <div className="space-y-3">
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-black text-amber-900">Relegation yahan se manage nahi hoti</p>
+              <p className="text-[11px] text-amber-800 mt-0.5">
+                RelID banana, destination batch, rejoin — sab kuch <b>Relegation / RelID</b> register me hota hai.
+                Yahan sirf is batch ka status dikh raha hai.
+              </p>
+            </div>
+            <a href="/relegation"
+              className="whitespace-nowrap rounded-lg bg-amber-600 px-3 py-2 text-[10px] font-black uppercase text-white hover:bg-amber-700">
+              RelID Register kholo →
+            </a>
+          </div>
+
           {relegations.length === 0 ? (
             <div className="bg-white rounded-xl p-8 text-center">
               <AlertTriangle size={40} className="mx-auto text-slate-300 mb-2" />
-              <p className="text-sm font-bold text-slate-400">Koi relegation record nahi</p>
+              <p className="text-sm font-bold text-slate-400">Is batch me koi relegation record nahi</p>
             </div>
-          ) : relegations.map(r => (
-            <div key={r.id} className={`bg-white rounded-xl shadow p-4 border-l-4 ${
-              r.status === 'pending' ? 'border-yellow-500' : r.status === 'approved' ? 'border-blue-500' :
-              r.status === 'completed' ? 'border-green-500' : 'border-slate-300'
-            }`}>
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <h4 className="text-sm font-bold">{r.chestNo} — {r.traineeName}</h4>
-                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${RELEGATION_STATUS_COLORS[r.status] || 'bg-slate-100 text-slate-700'}`}>{r.status}</span>
-                  </div>
-                  <p className="text-xs text-slate-600">{r.reason} — {r.reasonDetail}</p>
-                  <p className="text-[10px] text-slate-400 mt-1">
-                    From: {r.fromBatchName} ({r.fromPlatoon}) → To: {r.toBatchName} ({r.toPlatoon})
-                  </p>
-                  <p className="text-[10px] text-slate-400">
-                    Authority: {r.authorityRank} {r.authorityName} · Order: {r.orderNumber || '—'}
-                    {r.medicalCertificate && ' · ✅ MC Attached'}
-                  </p>
-                  {r.remainingSubjects.length > 0 && (
-                    <p className="text-[10px] text-blue-600 mt-1">Remaining: {r.remainingSubjects.join(', ')}</p>
+          ) : relegations.map(r => {
+            const st = String(r.status || '');
+            const stLabel = st === 'awaiting_rejoin' ? 'Awaiting rejoin'
+              : st === 'rejoined' ? 'Rejoined'
+              : st === 'cancelled' ? 'Cancelled'
+              : st || 'unknown';
+            const stColor = st === 'awaiting_rejoin' ? 'bg-amber-100 text-amber-800'
+              : st === 'rejoined' ? 'bg-green-100 text-green-700'
+              : st === 'cancelled' ? 'bg-slate-100 text-slate-600'
+              : 'bg-slate-100 text-slate-700';
+            const border = st === 'awaiting_rejoin' ? 'border-amber-500'
+              : st === 'rejoined' ? 'border-green-500' : 'border-slate-300';
+            const relId = (r as any).relegateId || (r as any).relId || '';
+            const chest = r.chestNo || (r as any).fromChestNo || '—';
+            const detail = r.reasonDetail || (r as any).details || '';
+            const authority = [r.authorityRank, r.authorityName].filter(Boolean).join(' ')
+              || (r as any).authority || '';
+            const orderNo = r.orderNumber || (r as any).orderNo || '';
+            const remaining = asList(r.remainingSubjects);
+
+            return (
+              <div key={r.id} className={`bg-white rounded-xl shadow p-4 border-l-4 ${border}`}>
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  {relId && (
+                    <span className="rounded bg-amber-100 px-2 py-0.5 font-mono text-[10px] font-black text-amber-800">
+                      {relId}
+                    </span>
                   )}
+                  <h4 className="text-sm font-bold">{chest} — {r.traineeName || '—'}</h4>
+                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${stColor}`}>{stLabel}</span>
                 </div>
-                {r.status === 'pending' && (
-                  <div className="flex gap-2">
-                    <button onClick={async () => { await approveRelegation(r.id, user!.name); setMessage('✅ Relegation approved'); loadData(); }}
-                      className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold hover:bg-green-700">Approve</button>
-                    <button onClick={async () => { await cancelRelegation(r.id); setMessage('❌ Relegation cancelled'); loadData(); }}
-                      className="bg-red-100 text-red-700 px-3 py-1.5 rounded-lg text-[10px] font-bold hover:bg-red-200">Cancel</button>
-                  </div>
+                <p className="text-xs text-slate-600">{r.reason}{detail ? ` — ${detail}` : ''}</p>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  From: {r.fromBatchName || (r as any).fromBatchNumber || '—'}
+                  {r.fromPlatoon ? ` (${r.fromPlatoon})` : ''}
+                  {' → '}To: {r.toBatchName || (r as any).toBatchNumber || 'not yet known'}
+                </p>
+                {(authority || orderNo) && (
+                  <p className="text-[10px] text-slate-400">
+                    {authority ? `Authority: ${authority}` : ''}
+                    {authority && orderNo ? ' · ' : ''}
+                    {orderNo ? `Order: ${orderNo}` : ''}
+                  </p>
                 )}
-                {r.status === 'approved' && (
-                  <button onClick={async () => { await completeRelegation(r.id); setMessage('✅ Relegation completed'); loadData(); }}
-                    className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold hover:bg-blue-700">Mark Completed</button>
+                {remaining.length > 0 && (
+                  <p className="text-[10px] text-blue-600 mt-1">Remaining: {remaining.join(', ')}</p>
                 )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -595,15 +659,88 @@ export const TraineeManagementScreen: React.FC = () => {
                   </select>
                 </div>
               </div>
+              {/* ── Kisko bhejna hai ── */}
               <div>
-                <label className="block text-[10px] font-bold text-slate-600 mb-1">Target Platoon</label>
-                <select value={noticeForm.targetPlatoon} onChange={e => setNoticeForm(p => ({ ...p, targetPlatoon: e.target.value }))} className="w-full px-3 py-2 border rounded-lg text-sm">
-                  <option value="all">All Platoons</option>
-                  <option value="Platoon 1">Platoon 1</option>
-                  <option value="Platoon 2">Platoon 2</option>
-                  <option value="Platoon 3">Platoon 3</option>
-                  <option value="Platoon 4">Platoon 4</option>
-                </select>
+                <label className="block text-[10px] font-bold text-slate-600 mb-1">Notice kisko jayega? *</label>
+                <div className="grid grid-cols-2 gap-2 mb-2">
+                  <button type="button" onClick={() => setNoticeAudience('group')}
+                    className={`rounded-lg border px-3 py-2 text-left ${
+                      noticeAudience === 'group' ? 'border-green-700 bg-green-50' : 'border-slate-200 bg-slate-50'
+                    }`}>
+                    <p className="text-xs font-black">👥 Poore group ko</p>
+                    <p className="text-[9px] text-slate-500">All / ek platoon</p>
+                  </button>
+                  <button type="button" onClick={() => setNoticeAudience('picked')}
+                    className={`rounded-lg border px-3 py-2 text-left ${
+                      noticeAudience === 'picked' ? 'border-green-700 bg-green-50' : 'border-slate-200 bg-slate-50'
+                    }`}>
+                    <p className="text-xs font-black">🎯 Chune hue trainee</p>
+                    <p className="text-[9px] text-slate-500">
+                      {noticeTraineeIds.length ? `${noticeTraineeIds.length} selected` : 'Search karke chuno'}
+                    </p>
+                  </button>
+                </div>
+
+                {noticeAudience === 'group' ? (
+                  <select value={noticeForm.targetPlatoon} onChange={e => setNoticeForm(p => ({ ...p, targetPlatoon: e.target.value }))} className="w-full px-3 py-2 border rounded-lg text-sm">
+                    <option value="all">All Platoons</option>
+                    <option value="Platoon 1">Platoon 1</option>
+                    <option value="Platoon 2">Platoon 2</option>
+                    <option value="Platoon 3">Platoon 3</option>
+                    <option value="Platoon 4">Platoon 4</option>
+                  </select>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="relative">
+                      <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input value={noticeSearch} onChange={e => setNoticeSearch(e.target.value)}
+                        placeholder="Chest no / naam se dhundo…"
+                        className="w-full pl-8 pr-3 py-2 border rounded-lg text-sm" />
+                    </div>
+                    {noticeTraineeIds.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {noticeTraineeIds.map(id => {
+                          const t = trainees.find(x => x.id === id);
+                          if (!t) return null;
+                          return (
+                            <span key={id} className="flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-800">
+                              {t.chestNo} {t.name}
+                              <button type="button" onClick={() => setNoticeTraineeIds(v => v.filter(x => x !== id))}>
+                                <X size={10} />
+                              </button>
+                            </span>
+                          );
+                        })}
+                        <button type="button" onClick={() => setNoticeTraineeIds([])}
+                          className="text-[10px] font-bold text-red-600 underline">clear all</button>
+                      </div>
+                    )}
+                    <div className="max-h-40 overflow-y-auto border border-slate-200 rounded-lg divide-y">
+                      {trainees
+                        .filter(t => {
+                          const q = noticeSearch.trim().toLowerCase();
+                          if (!q) return true;
+                          return String(t.chestNo || '').toLowerCase().includes(q)
+                            || String(t.name || '').toLowerCase().includes(q)
+                            || String(t.platoon || '').toLowerCase().includes(q);
+                        })
+                        .slice(0, 100)
+                        .map(t => {
+                          const on = noticeTraineeIds.includes(t.id);
+                          return (
+                            <button key={t.id} type="button"
+                              onClick={() => setNoticeTraineeIds(v => on ? v.filter(x => x !== t.id) : [...v, t.id])}
+                              className={`w-full flex items-center justify-between px-3 py-1.5 text-left hover:bg-green-50 ${on ? 'bg-green-50' : ''}`}>
+                              <span className="text-xs font-bold text-slate-800">{t.chestNo} · {t.name}</span>
+                              <span className="text-[10px] text-slate-500">
+                                {on ? '✓ selected' : t.platoon || ''}
+                              </span>
+                            </button>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-slate-600 mb-1">Title *</label>

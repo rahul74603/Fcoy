@@ -415,22 +415,37 @@ export const createNotice = async (
     batchId: string; title: string; content: string;
     category: NoticeCategory; priority: 'normal' | 'important' | 'urgent';
     targetPlatoon: string; expiresAt?: string;
+    /** Sirf in trainees ko dikhe. Khaali array = poora platoon/batch. */
+    targetTraineeIds?: string[];
+    targetTraineeLabel?: string;
   },
   publishedBy: string
 ): Promise<string> => {
   const ref = await addDoc(collection(db, 'traineeNotices'), {
-    ...data, publishedBy, publishedAt: new Date().toISOString(),
+    ...data,
+    targetTraineeIds: data.targetTraineeIds || [],
+    targetTraineeLabel: data.targetTraineeLabel || '',
+    publishedBy, publishedAt: new Date().toISOString(),
     isActive: true, createdAt: new Date().toISOString(),
   });
   return ref.id;
 };
 
-export const getNotices = async (batchId: string, platoon?: string): Promise<TraineeNotice[]> => {
+export const getNotices = async (
+  batchId: string, platoon?: string, traineeId?: string,
+): Promise<TraineeNotice[]> => {
   try {
     const snap = await getDocs(
       query(collection(db, 'traineeNotices'), where('batchId', '==', batchId), where('isActive', '==', true))
     );
     let list = snap.docs.map(d => ({ id: d.id, ...d.data() } as TraineeNotice));
+    // Trainee-specific notice sirf usi trainee ko dikhe. Staff (bina traineeId ke) sab dekhta hai.
+    if (traineeId) {
+      list = list.filter(n => {
+        const ids = n.targetTraineeIds || [];
+        return ids.length === 0 || ids.includes(traineeId);
+      });
+    }
     if (platoon) list = list.filter(n => n.targetPlatoon === 'all' || n.targetPlatoon === platoon);
     const now = new Date().toISOString();
     list = list.filter(n => !n.expiresAt || n.expiresAt > now);
