@@ -187,13 +187,20 @@ Sees: staff list, training schedule, batch progress, subjects, subject
 assignment, own leave, deputation register, duty management, assigned
 corrective actions.
 
-> ⚠️ **HONEST CAVEAT — PARTIAL.** The `/ustad` landing screen itself is a
-> **placeholder**. It renders a header and the text *"Weekly Training
-> Program Will Be Displayed Here"* — 20 lines total, no live data.
+> ✅ **FIXED (2026-09-04).** `/ustad` was previously a 20-line placeholder
+> reading *"Weekly Training Program Will Be Displayed Here"*. It is now a
+> **real, live dashboard** and is safe to open in a demo.
 >
-> **Do not open `/ustad` as a showcase screen.** The real Ustad work lives
-> in `/training-schedule`, `/staff-attendance`, `/duty-management`,
-> `/deputation`. Demo those instead.
+> It answers one question — *"Aaj mera kya kaam hai?"* — using data that
+> already existed: today's training periods (the Ustad's own classes are
+> highlighted), today's duty roster, staff strength (available / leave /
+> TD / hospital / course), who is on approved leave right now, and the next
+> six days of scheduled periods. Every tile links through to the real
+> working screen.
+>
+> **It is strictly read-only.** Nothing can be edited from here — the
+> footer says so. All changes still happen in `/training-schedule`,
+> `/staff-attendance`, `/duty-management`, `/deputation`.
 >
 > Ironically, the `ustad` **module** is the largest in the product
 > (18,448 lines) — the depth is real, only the landing page is empty.

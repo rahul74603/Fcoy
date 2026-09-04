@@ -570,8 +570,9 @@ Then stop talking. Let them ask.
 - [ ] All role logins tested **today**
 - [ ] One pending leave, one pending trainee report, one open finding ready
 - [ ] Network checked · AI question rehearsed · screenshots as backup
-- [ ] `/ustad` — **do not open**, it is a placeholder
-- [ ] Legacy relegation tab — **do not open**
+- [ ] Legacy relegation tab inside `/trainee-management` — **do not open**
+      (use `/relegation` instead)
+- [x] ~~`/ustad` — do not open~~ — **fixed, now a real dashboard**
 
 **During**
 - Pause after every automatic step

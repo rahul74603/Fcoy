@@ -216,8 +216,10 @@ Highest-value follow-up work, if anyone wants to continue:
 1. ~~Trace the 10 unverified routes~~ — **DONE (follow-up pass)**
 2. ~~An independent audit of `firestore.rules`~~ — **DONE**, see
    `98-SECURITY-RULES-AUDIT.md`
-3. Fix the known issues in §8 — especially the `/ustad` placeholder and the
-   legacy relegation tab bug (**these are code changes**)
+3. ~~Fix the `/ustad` placeholder and the legacy relegation bug~~ — **DONE
+   2026-09-04.** `/ustad` is now a real read-only dashboard; the relegation
+   `remainingSubjects` crash was already fixed by the `asList()` helper and
+   was re-verified. This was the only pass that changed app code.
 
 ---
 
