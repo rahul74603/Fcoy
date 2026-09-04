@@ -2,9 +2,9 @@
 
 ## Overall Status
 
-**BATCH 3 COMPLETE — WAITING FOR USER CONFIRMATION (YES / OK / NEXT)**
+**BATCH 4 COMPLETE — WAITING FOR USER CONFIRMATION (YES / OK / NEXT)**
 
-Batches 1 and 2 confirmed by user and closed.
+Batches 1, 2 and 3 confirmed by user and closed.
 
 ---
 
@@ -19,19 +19,23 @@ Batches 1 and 2 confirmed by user and closed.
 - [x] `presentation/modules/03-leave-management.md` — BOTH leave systems (staff + trainee), triple-guard, auto-attendance
 - [x] `presentation/modules/04-personnel-trainees.md` — trainee reporting cascade, documents, medical, absence, relegation
 - [x] `presentation/modules/05-notifications.md` — 7 derived sources, deep links, per-device read-state caveat
+- [x] `presentation/modules/06-quartermaster-inventory.md` — inventory hub, 15 kit items, atomic stock transaction
+- [x] `presentation/modules/07-finance-funds.md` — 4 funds, orders-vs-paid distinction, bill statuses, vendors
+- [x] `presentation/modules/08-reports.md` — 20 reports, CSV+print, UTF-8 BOM Hindi detail
 
 ---
 
 ## Current Batch
 
-**Batch 3 — Trainee Life: Leave, Personnel & Notifications** (complete)
+**Batch 4 — Stores & Money** (complete)
 
-1. Leave management module (staff + trainee)
-2. Personnel & trainee life module
-3. Notifications module
+1. Quarter Master / inventory / kit issue module
+2. Finance — four funds and vendors module
+3. Reports centre module
 
 *Batch 1 — Foundation: complete.*
 *Batch 2 — Catalog, roles, CC dashboard: complete.*
+*Batch 3 — Leave, personnel, notifications: complete.*
 
 ---
 
@@ -176,18 +180,19 @@ Anything not yet traced is listed under "Workflows Inspected" as unchecked.
 
 ## Next Batch
 
-**Batch 4 — Stores & Money**
+**Batch 5 — Training Delivery & Inspections**
 
-1. `presentation/modules/06-quartermaster-inventory.md` — inventory, kit
-   issue, stock movement
-2. `presentation/modules/07-finance-funds.md` — the four funds, vendors,
-   vendor payments, mess boy salary, recoveries
-3. `presentation/modules/08-reports.md` — the reports centre and what can
-   actually be exported
+1. `presentation/modules/09-training-delivery.md` — training schedule,
+   subjects, subject assignment, batch progress, period attendance,
+   test records, syllabus tracking, final board
+2. `presentation/modules/10-staff-duty.md` — staff master, staff
+   attendance, duty management, deputation
+3. `presentation/modules/11-inspections.md` — SO inspection hub, findings,
+   corrective actions, ownership rules
 
-Required inspection before writing: `QuarterMasterDashboard.tsx` (1,064 L),
-`features/finance/*` (5,976 L), `trainingFund` (2,814 L), `/inventory`,
-`/issue-kit`, `/vendor-payments`, and `ReportsScreen`.
+Required inspection before writing: `features/ustad/*` (53 files, 18,448 L
+— the largest module), `SOInspectionHub`, and the training screens listed
+above.
 
 ---
 
@@ -204,4 +209,4 @@ Required inspection before writing: `QuarterMasterDashboard.tsx` (1,064 L),
 
 ## Last Updated
 
-2026-09-04 — Batch 3 complete (leave, personnel/trainees, notifications)
+2026-09-04 — Batch 4 complete (QM/inventory, finance/funds, reports)
