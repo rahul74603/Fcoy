@@ -32,9 +32,30 @@ interface EnterpriseLayoutProps {
 // dikhte hain; real batch yahan aata hi nahi (BatchContext filter).
 // MASTER COY yahan se apne test batches manage karega.
 const BatchSwitcher: React.FC = () => {
-  const { allBatches, currentBatch, setSelectedBatch } = useBatch();
+  const { allBatches, currentBatch, activeBatch, setSelectedBatch } = useBatch();
 
+  // The company running batch comes from config/activeBatch, which every role
+  // can read. Listing the whole `batches` collection is a separate query that
+  // can come back empty for some roles. When that happened the header said
+  // "No batch" even though the sidebar showed the live batch — the same batch,
+  // reported two different ways.
+  //
+  // So: if we know the active batch, always show it. Only fall back to the
+  // warning when there is genuinely no batch at all.
   if (allBatches.length === 0) {
+    if (activeBatch) {
+      return (
+        <div
+          className="hidden xl:flex items-center gap-1.5 border-2 rounded-lg px-2.5 py-1.5 bg-green-50 border-green-400"
+          title="Company ka running batch — sab roles ke liye ek hi hai"
+        >
+          <Layers size={13} className="text-green-700" />
+          <span className="text-[11px] font-black uppercase text-slate-800">
+            {activeBatch.batchNumber}{activeBatch.status === 'active' ? ' ●LIVE' : ''}
+          </span>
+        </div>
+      );
+    }
     return (
       <div className="hidden xl:flex items-center gap-1.5 border-2 rounded-lg px-2.5 py-1.5 bg-amber-50 border-amber-400" title="Koi batch list nahi mili">
         <Layers size={13} className="text-amber-700" />

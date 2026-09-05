@@ -12,7 +12,6 @@ import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { formatCurrency, formatDate, FIXED_MESS_CATEGORIES } from './shared/utils';
 import { scopeVisible } from '../../utils/batchScope';
-import { ReportButton } from '../../components/common/ReportButton';
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -773,7 +772,6 @@ export const FundsDashboard: React.FC = () => {
           <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
           Refresh
         </button>
-        <ReportButton />
       </div>
 
       {/* ── ERROR ── */}

@@ -25,7 +25,6 @@ import type { PaymentMode } from '../shared/PaymentModeSelector';
 import {
   formatCurrency, formatMonth, generateMonthOptions
 } from '../finance/shared/utils';
-import { ReportButton } from '../../components/common/ReportButton';
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -583,7 +582,6 @@ export const MessBoySalaryScreen: React.FC = () => {
           className="flex items-center gap-1.5 text-[11px] font-bold uppercase border border-slate-300 px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50 rounded">
           <RefreshCw size={12} className={dataLoading ? 'animate-spin' : ''} /> Refresh
         </button>
-        <ReportButton />
       </div>
 
       {/* ALERTS */}

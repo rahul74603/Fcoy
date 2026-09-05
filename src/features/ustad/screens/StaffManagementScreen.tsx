@@ -12,7 +12,6 @@ import StaffProfile from '../components/staff/StaffProfile';
 import StaffStatusBadge from '../components/shared/StaffStatusBadge';
 import FormModal from '../components/shared/FormModal';
 import ConfirmDialog from '../components/shared/ConfirmDialog';
-import { ReportButton } from '../../../components/common/ReportButton';
 
 // ─── Status Filter Tabs ──────────────────────
 const STATUS_TABS: { value: StaffStatus | 'all'; label: string }[] = [
@@ -184,8 +183,6 @@ const StaffManagementScreen: React.FC = () => {
                 className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
-
-            <ReportButton className="self-center" />
 
             {/* Reset Filter */}
             {(filter.search || filter.status !== 'all' || filter.rank !== 'all') && (

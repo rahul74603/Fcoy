@@ -16,7 +16,6 @@ import { db } from '../../config/firebase';
 import { useNavigate } from 'react-router-dom';
 import { useTraineeSearch } from '../../hooks/useTraineeSearch';
 import type { TraineeSearchResult } from '../../hooks/useTraineeSearch';
-import { ReportButton } from '../../components/common/ReportButton';
 import { rejoinChestNo } from '../relegation/utils/relegation.utils';
 import { TraineeTestResultsPanel } from './TraineeTestResultsPanel';
 import { TraineeBrowser } from './TraineeBrowser';
@@ -1272,7 +1271,6 @@ export const TraineeProfileScreen = () => {
                     className="text-[10px] font-bold text-military-700 flex items-center gap-1 border border-slate-300 px-2 py-1 hover:bg-slate-50">
                     <RefreshCw size={12} className={qmCatalogLoading ? 'animate-spin' : ''} />Refresh QM
                   </button>
-        <ReportButton />
                 </div>
 
                 {(() => {

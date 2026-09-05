@@ -16,7 +16,6 @@ import {
 import { db, auth } from '../../config/firebase';
 import { showDoc } from '../../utils/devDataFilter';
 import { onAuthStateChanged } from 'firebase/auth';
-import { ReportButton } from '../../components/common/ReportButton';
 import { useBatch } from '../../contexts/BatchContext';
 
 // ─────────────────────────────────────────────
@@ -552,7 +551,6 @@ export const QuarterMasterDashboard: React.FC = () => {
             className="flex items-center gap-1.5 bg-slate-800 text-white px-3 py-1.5 text-[11px] font-bold uppercase rounded-lg hover:bg-slate-700 disabled:opacity-50">
             <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> Refresh
           </button>
-        <ReportButton />
         </div>
       </div>
 
