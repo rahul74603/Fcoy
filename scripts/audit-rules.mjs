@@ -134,11 +134,26 @@ check(/backfillEndMillis/.test(subAuth), 'backfill exists for pre-existing licen
 // createStaffAccount. Every admin-SDK accessor must route through one
 // idempotent initialiser rather than an inline getApps() check.
 const fnSrc = read('functions/index.js');
-check(/function ensureAdminApp\(\)/.test(fnSrc), 'ensureAdminApp() helper exists');
-for (const fn of ['getDb', 'getAdminAuth']) {
-  const blk = fnSrc.match(new RegExp(`function ${fn}\\(\\)[\\s\\S]*?\\n\\}`));
-  check(!!blk && /ensureAdminApp\(\)/.test(blk[0]),
-    `${fn}() initialises the admin app before use`);
+// firebase-admin v12 under ESM can resolve firebase-admin/app and
+// firebase-admin/firestore to separate module instances with separate
+// default-app registries, so the default app is not reliably shared.
+// Production failed with "The default Firebase app does not exist" until
+// the App instance was passed explicitly. Never go back to a bare
+// getFirestore()/getAuth() with no argument.
+check(/function adminApp\(\)/.test(fnSrc), 'adminApp() returns an explicit App instance');
+check(/getFirestore\(adminApp\(\)\)/.test(fnSrc),
+  'getFirestore receives the App explicitly (no default-app lookup)');
+check(/getAuth\(adminApp\(\)\)/.test(fnSrc),
+  'getAuth receives the App explicitly (no default-app lookup)');
+// Strip comments first: the explanatory text mentions the very pattern
+// being banned, which would otherwise trip the check.
+const codeOnly = (src) => src.split('\n')
+  .filter((l) => !l.trim().startsWith('//')).join('\n');
+for (const f of ['functions/index.js', 'functions/backup.mjs']) {
+  const src = codeOnly(read(f));
+  check(!/getFirestore\(\)/.test(src), `${f}: no bare getFirestore() call`);
+  check(!/[^n]getAuth\(\)/.test(src), `${f}: no bare getAuth() call`);
+  check(!/getStorage\(\)/.test(src), `${f}: no bare getStorage() call`);
 }
 
 // ── AI KEY PLACEHOLDERS ──

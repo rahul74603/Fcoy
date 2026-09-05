@@ -12,9 +12,25 @@
 
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
+import { getApps, initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 import * as logger from 'firebase-functions/logger';
+
+// Same fix as functions/index.js: under firebase-admin v12 + ESM the
+// subpath entry points can hold separate default-app registries, so a bare
+// a bare getFirestore call may throw "The default Firebase app does not exist".
+// This file never called initializeApp() at all — it relied entirely on
+// another module having set up the default app first, which is not
+// guaranteed for a scheduled function running in its own instance.
+// Pass the App explicitly instead.
+let _app = null;
+function adminApp() {
+  if (_app) return _app;
+  const existing = getApps();
+  _app = existing.length ? existing[0] : initializeApp();
+  return _app;
+}
 
 // ── Collections to backup per batch ──
 const BATCH_COLLECTIONS = [
@@ -124,7 +140,7 @@ export const scheduledBackup = onSchedule(
     memory: '1GiB',
   },
   async (event) => {
-    const db = getFirestore();
+    const db = getFirestore(adminApp());
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
 
     logger.info(`Daily backup started: ${timestamp}`);
@@ -159,8 +175,8 @@ export const scheduledBackup = onSchedule(
 // HELPER: Backup a single batch
 // ═══════════════════════════════════════════════════════════
 async function backupBatch(batchId, batchNumber, trigger) {
-  const db = getFirestore();
-  const bucket = getStorage().bucket();
+  const db = getFirestore(adminApp());
+  const bucket = getStorage(adminApp()).bucket();
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const backupPath = `backups/batches/${batchNumber}/${timestamp}_${trigger}`;
 
@@ -228,8 +244,8 @@ async function backupBatch(batchId, batchNumber, trigger) {
 // HELPER: Backup global collections
 // ═══════════════════════════════════════════════════════════
 async function backupGlobalCollections(timestamp) {
-  const db = getFirestore();
-  const bucket = getStorage().bucket();
+  const db = getFirestore(adminApp());
+  const bucket = getStorage(adminApp()).bucket();
   const backupPath = `backups/global/${timestamp}`;
 
   logger.info(`Backing up global collections: ${backupPath}`);

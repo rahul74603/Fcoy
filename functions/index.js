@@ -74,27 +74,38 @@ let _auth = null;
 // which is exactly what the production logs showed for createStaffAccount on
 // 2026-09-02 and 2026-09-04. Initialising through one idempotent, exception
 // tolerant helper removes that whole class of failure.
-function ensureAdminApp() {
-  if (getApps().length) return;
-  try {
-    initializeApp();
-  } catch (err) {
-    // initializeApp() throws if a concurrent invocation already created the
-    // default app. That is a success for our purposes.
-    if (!getApps().length) throw err;
-  }
+let _app = null;
+
+// Returns the admin App INSTANCE, which is then passed explicitly to
+// getFirestore(app) / getAuth(app).
+//
+// WHY EXPLICIT AND NOT THE DEFAULT APP:
+// Production kept failing with "The default Firebase app does not exist"
+// even after initializeApp() was guaranteed to run. With firebase-admin v12
+// under ESM ("type": "module"), the subpath entry points
+// (firebase-admin/app, firebase-admin/firestore, firebase-admin/auth) can
+// resolve to separate module instances, each with its own default-app
+// registry. So an app created via firebase-admin/app was invisible to
+// getFirestore() looking up the default app in firebase-admin/firestore —
+// and no getApps() guard can fix that, because getApps() reads the same
+// registry that already looks empty.
+//
+// Passing the App object removes the lookup entirely.
+function adminApp() {
+  if (_app) return _app;
+  const existing = getApps();
+  _app = existing.length ? existing[0] : initializeApp();
+  return _app;
 }
 
 function getDb() {
-  ensureAdminApp();
   if (_db) return _db;
-  _db = getFirestore();
+  _db = getFirestore(adminApp());
   return _db;
 }
 function getAdminAuth() {
-  ensureAdminApp();
   if (_auth) return _auth;
-  _auth = getAuth();
+  _auth = getAuth(adminApp());
   return _auth;
 }
 
