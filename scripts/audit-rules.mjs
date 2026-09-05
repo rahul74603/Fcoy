@@ -129,6 +129,18 @@ const subAuth = read('functions/subscriptionAuth.mjs');
 check(/endMillis: end\.getTime\(\)/.test(subAuth), 'server writes endMillis on renewal');
 check(/backfillEndMillis/.test(subAuth), 'backfill exists for pre-existing licences');
 
+// ── ADMIN SDK INITIALISATION ──
+// Production logs showed "The default Firebase app does not exist" from
+// createStaffAccount. Every admin-SDK accessor must route through one
+// idempotent initialiser rather than an inline getApps() check.
+const fnSrc = read('functions/index.js');
+check(/function ensureAdminApp\(\)/.test(fnSrc), 'ensureAdminApp() helper exists');
+for (const fn of ['getDb', 'getAdminAuth']) {
+  const blk = fnSrc.match(new RegExp(`function ${fn}\\(\\)[\\s\\S]*?\\n\\}`));
+  check(!!blk && /ensureAdminApp\(\)/.test(blk[0]),
+    `${fn}() initialises the admin app before use`);
+}
+
 // ── AI KEY PLACEHOLDERS ──
 // A deploy resolves every declared secret, so projects that never used AI
 // must store a placeholder to deploy at all. That placeholder must never be

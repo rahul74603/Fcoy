@@ -136,7 +136,16 @@ export async function provisionStaff(adminAuth, adminDb, caller, input) {
       throw new ProvisioningError('already-exists', 'Ye email pehle se registered hai.');
     }
     if (err instanceof ProvisioningError) throw err;
-    throw new ProvisioningError('internal', 'Staff account create nahi ho paya.');
+    // Surface WHY it failed. This was previously a flat
+    // "Staff account create nahi ho paya", which hid a real infrastructure
+    // fault ("The default Firebase app does not exist") behind a generic
+    // message for days. The detail here is an operator-facing cause, not a
+    // secret: no keys, tokens or credentials are ever included.
+    const detail = String(err?.message ?? err ?? '').slice(0, 200);
+    throw new ProvisioningError(
+      'internal',
+      detail ? `Staff account create nahi ho paya — ${detail}` : 'Staff account create nahi ho paya.',
+    );
   }
 }
 

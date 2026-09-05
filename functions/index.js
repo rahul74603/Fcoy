@@ -62,15 +62,38 @@ import {
 // ───────────────────────────────────────────────────────────────────────
 let _db = null;
 let _auth = null;
+
+// Single place that guarantees the default app exists. Every entry point
+// calls this before touching firebase-admin.
+//
+// WHY THIS IS NOT JUST `if (!getApps().length)` INSIDE getDb():
+// getApps() is read from the firebase-admin/app module instance. Callers that
+// reach a different admin surface (or a race between two concurrent cold
+// invocations) could still hit
+//   "The default Firebase app does not exist."
+// which is exactly what the production logs showed for createStaffAccount on
+// 2026-09-02 and 2026-09-04. Initialising through one idempotent, exception
+// tolerant helper removes that whole class of failure.
+function ensureAdminApp() {
+  if (getApps().length) return;
+  try {
+    initializeApp();
+  } catch (err) {
+    // initializeApp() throws if a concurrent invocation already created the
+    // default app. That is a success for our purposes.
+    if (!getApps().length) throw err;
+  }
+}
+
 function getDb() {
+  ensureAdminApp();
   if (_db) return _db;
-  if (!getApps().length) initializeApp();
   _db = getFirestore();
   return _db;
 }
 function getAdminAuth() {
+  ensureAdminApp();
   if (_auth) return _auth;
-  if (!getApps().length) initializeApp();
   _auth = getAuth();
   return _auth;
 }
