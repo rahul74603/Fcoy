@@ -167,8 +167,15 @@ async function assertAiAuthorized(request) {
   try {
     snap = await getDb().collection('users').doc(uid).get();
   } catch (err) {
-    logger.error('AI proxy role lookup failed', { uid, err: String(err) });
-    throw new HttpsError('internal', 'Authorization check failed.');
+    // Include the real reason. A bare "Authorization check failed" hid a
+    // genuine infrastructure fault ("The default Firebase app does not
+    // exist") for days, and sent the investigation down two wrong paths
+    // (licence expiry, then IAM). This is an operator-facing cause only:
+    // no keys, tokens or credentials are ever included.
+    const detail = String(err?.message ?? err ?? '').slice(0, 200);
+    logger.error('Role lookup failed', { uid, err: String(err) });
+    throw new HttpsError('internal',
+      detail ? `Authorization check failed — ${detail}` : 'Authorization check failed.');
   }
   if (!snap.exists) {
     throw new HttpsError('permission-denied', 'User profile not found.');
